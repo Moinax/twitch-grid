@@ -361,7 +361,12 @@ function renderList() {
 }
 
 function toggle(s) {
-  tiles.has(s.twitch) ? remove(s.twitch) : add(s);
+  if (focused && focused !== s.twitch) {
+    if (!tiles.has(s.twitch)) add(s);
+    focus(s.twitch);
+  } else {
+    tiles.has(s.twitch) ? remove(s.twitch) : add(s);
+  }
   renderList();
 }
 
