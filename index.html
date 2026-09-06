@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>ZEvent grid</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  :root { --side: 22vw; --bar: 26px; --bg: #0e0e10; --panel: #18181b; --line: #2a2a2e; --fg: #efeff1; --dim: #adadb8; --accent: #9147ff; --live: #eb0400; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.3 system-ui, sans-serif; overflow: hidden; }
+  body { display: flex; }
+
+  /* ---- sidebar ---- */
+  #side { width: 300px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
+  body.collapsed #side { width: 34px; }
+  body.collapsed #side header { padding: 4px; }
+  body.collapsed #side header > :not(.row), body.collapsed .row > :not(#ctl), body.collapsed #list { display: none; }
+  body.collapsed #ctl { flex-direction: column; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row img { display: block; border-radius: 4px; }
+  .row b { flex: 1; }
+  #toggle svg { display: block; margin: auto; }
+  body.collapsed #toggle .in, body:not(.collapsed) #toggle .out { display: none; }
+  #ctl { display: flex; gap: 4px; }
+  #ctl button { width: 26px; height: 26px; border: 0; border-radius: 4px; background: #2a2a30; color: var(--fg); cursor: pointer; font-size: 13px; }
+  #ctl button:hover { background: #3a3a42; }
+  #side header { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  #side header b { font-size: 15px; }
+  #totals { position: absolute; top: calc(var(--bar) + 20px); left: 22px; z-index: 5; padding: 8px 14px; border-radius: 8px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; font-size: 22px; line-height: 1.3; white-space: nowrap; pointer-events: none; }
+  #totals span { display: block; }
+  #q { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+  #list { flex: 1; overflow-y: auto; list-style: none; }
+  #list li { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; border-left: 3px solid transparent; }
+  #list li:hover { background: #222226; }
+  #list li.on { border-left-color: var(--accent); background: #201a2e; }
+  #list li.off { opacity: .45; }
+  #list img { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+  #list .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #list .g { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #list .v { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #list li.live .v::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--live); margin-right: 5px; }
+
+  /* ---- grid ---- */
+  #main { flex: 1; position: relative; min-width: 0; }
+  #grid { height: 100vh; overflow-y: auto; display: grid; gap: 2px; }
+  #grid:empty::after { content: "Choisis des streamers à gauche"; color: var(--dim); align-self: center; justify-self: center; }
+  .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
+  body.dragging iframe { pointer-events: none; }
+  .tile.over { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tile .bar { height: var(--bar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); cursor: pointer; user-select: none; }
+  .tile.loud .bar { background: var(--accent); }
+  .tile.loud .bar span, .tile.loud .bar button { color: var(--fg); }
+  .tile .bar b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .bar span { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .tile .bar button { border: 0; background: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 0 4px; }
+  .tile .bar button:hover { color: var(--fg); }
+  .tile .bar svg { display: block; }
+  .tile:not(:fullscreen) .fs .exit, .tile:fullscreen .fs .enter { display: none; }
+  #hint { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); pointer-events: none; }
+  .tile .ctl { position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 15px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 11px; opacity: .7; }
+  .tile .ctl:hover { opacity: 1; }
+  .tile .ctl button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+  .tile .ctl input { width: 90px; margin: 0; accent-color: var(--fg); cursor: pointer; }
+  .tile:not(.loud) .ctl input, .tile:not(.loud) .ctl output { display: none; }
+  .tile.loud .snd .off, .tile:not(.loud) .snd .on { display: none; }
+  .tile .player { flex: 1; min-height: 0; }
+  .tile .player iframe { width: 100%; height: 100%; display: block; }
+  #grid { --cols: 1; --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar)); }
+  #grid.focused { grid-template-columns: 1fr repeat(var(--cols), calc(var(--side) / var(--cols))); grid-auto-rows: var(--tile-h); }
+  #grid.focused .tile.big { grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; height: 100vh; align-self: start; }
+</style>
+</head>
+<body>
+<aside id="side">
+  <header>
+    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>ZEvent</b><div id="ctl"><button id="playall" title="Play/pause tous les streams">⏸&#xFE0E;</button><button id="toggle" title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
+    <input id="q" placeholder="Filtrer…" autocomplete="off">
+  </header>
+  <ul id="list"></ul>
+</aside>
+<div id="main">
+  <div id="grid"></div>
+  <div id="totals"><span id="viewers"></span><span id="amount"></span></div>
+  <div id="hint" hidden>Clique sur un stream pour activer le son</div>
+</div>
+<script src="https://player.twitch.tv/js/embed/v1.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const list = $('#list'), grid = $('#grid');
+const tiles = new Map();   // twitch login -> { el, player, bar }
+let streamers = [], focused = null, order = [], dragging = null, allPaused = false, restored = false;
+
+// everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
+// with the player's controls hidden, mute can only change through our button: t.muted is the intent, never read back
+// from the iframe (the autoplay policy forces mute on until the first click, and that must not clobber the saved state)
+function save() { localStorage.zg = JSON.stringify({ order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
+function restore() {
+  const st = JSON.parse(localStorage.zg || '{}');
+  for (const login of st.order || []) { const s = streamers.find(x => x.twitch === login); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login]); }
+  focused = tiles.has(st.focused) ? st.focused : null;
+  allPaused = !!st.allPaused;
+  $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
+  document.body.classList.toggle('collapsed', !!st.collapsed);
+  layout();
+}
+
+// a tile plays only while it is in the viewport and the global toggle is not paused
+const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.isIntersecting; sync(t); } }), { root: grid, threshold: 0.2 });
+// a relayout flickers visibility for a frame or two: let it settle before touching the player
+// a fullscreen tile leaves the grid's box, so the observer reports it hidden while it fills the screen
+const onScreen = t => t.visible || document.fullscreenElement === t.el;
+function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => allPaused || t.paused || !onScreen(t) ? t.player.pause() : t.player.play(), 400); }
+// the player also pauses on its own during some reflows: whatever should be playing gets nudged back every second
+function watchdog(t) {
+  if (!t.ready) return;
+  if (!allPaused && !t.paused && onScreen(t) && t.player.isPaused()) t.player.play();
+  if (activated && t.player.getMuted() !== t.muted) t.player.setMuted(t.muted);   // keeps the intent applied once sound is allowed
+}
+
+function viewers(s) { return s.viewersAmount.number; }
+
+async function refresh() {
+  const d = await (await fetch('/api')).json();
+  streamers = d.live.sort((a, b) => b.online - a.online || viewers(b) - viewers(a));
+  $('#viewers').textContent = `${d.viewersCount.formatted} viewers`;   // the amount only ever comes from the 2s poll: mixing in this 15s-old value would skew the rate
+  if (!restored) { restored = true; restore(); } else save();   // periodic save catches mute changes made inside the players
+  renderList();
+  for (const s of streamers) tiles.get(s.twitch)?.bar.querySelector('span').replaceChildren(s.online ? s.viewersAmount.formatted : 'offline');
+}
+
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  list.replaceChildren(...streamers.filter(s => !q || s.display.toLowerCase().includes(q)).map(s => {
+    const li = document.createElement('li');
+    li.className = (s.online ? 'live' : 'off') + (tiles.has(s.twitch) ? ' on' : '');
+    li.innerHTML = `<img src="${s.profileUrl}" loading="lazy"><div class="n"><div>${s.display}</div><div class="g">${s.game}</div></div><span class="v">${s.online ? s.viewersAmount.formatted : ''}</span>`;
+    li.onclick = () => toggle(s);
+    return li;
+  }));
+}
+
+function toggle(s) {
+  tiles.has(s.twitch) ? remove(s.twitch) : add(s);
+  renderList();
+}
+
+function add(s, muted = true, volume = 0.5, paused = false) {
+  const el = document.createElement('div');
+  el.className = 'tile';
+  el.dataset.login = s.twitch;
+  el.innerHTML = `<div class="bar"><b>${s.display}</b><span>${s.viewersAmount.formatted}</span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Mettre en avant"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button><button title="Plein écran" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer">✕</button></div><div class="player"></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
+  const [snd, foc, fs, close] = el.querySelectorAll('button');
+  foc.onclick = e => { e.stopPropagation(); focus(s.twitch); };
+  fs.onclick = e => { e.stopPropagation(); document.fullscreenElement === el ? document.exitFullscreen() : el.requestFullscreen(); };
+  const pp = el.querySelector('.ctl button'), vol = el.querySelector('.ctl input'), pct = el.querySelector('.ctl output');
+  const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
+  pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); save(); };
+  vol.value = volume; pct.value = Math.round(volume * 100) + '%';
+  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; player.setVolume(t.volume); save(); };
+  snd.onclick = e => { e.stopPropagation(); t.muted = !t.muted; player.setMuted(t.muted); save(); };
+  const bar = el.querySelector('.bar');
+  bar.onclick = () => focus(s.twitch);
+  // ponytail: reorder via CSS `order` only — moving an iframe in the DOM reloads the player
+  bar.draggable = true;
+  bar.ondragstart = e => { dragging = s.twitch; document.body.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
+  el.ondragover = e => { e.preventDefault(); el.classList.add('over'); };
+  el.ondragleave = () => el.classList.remove('over');
+  el.ondrop = e => { e.preventDefault(); move(dragging, s.twitch); };
+  close.onclick = e => { e.stopPropagation(); remove(s.twitch); renderList(); };
+  grid.append(el);
+  // always born muted: with controls hidden, an unmuted player the autoplay policy blocks stalls on a play overlay
+  // instead of self-muting — so start muted (always allowed) and apply the saved state once ready
+  const player = new Twitch.Player(el.querySelector('.player'), { channel: s.twitch, parent: [location.hostname], width: '100%', height: '100%', muted: true, controls: false });
+  const t = { el, player, bar, visible: true, muted, volume, paused, ready: false };
+  tiles.set(s.twitch, t);
+  ppIcon();
+  player.addEventListener(Twitch.Player.READY, () => { t.ready = true; if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); });
+  io.observe(el);
+  order.push(s.twitch);
+  layout();
+}
+
+function remove(login) {
+  io.unobserve(tiles.get(login).el);
+  tiles.get(login).el.remove();
+  tiles.delete(login);
+  order.splice(order.indexOf(login), 1);
+  if (focused === login) focused = null;
+  layout();
+}
+
+function move(from, to) {
+  if (!from || from === to) return;
+  order.splice(order.indexOf(from), 1);
+  order.splice(order.indexOf(to), 0, from);
+  layout();
+}
+
+function focus(login) {
+  focused = focused === login ? null : login;
+  layout();
+}
+
+function layout() {
+  const n = tiles.size;
+  grid.classList.toggle('focused', !!focused);
+  for (const [login, t] of tiles) {
+    t.el.classList.toggle('big', login === focused);
+    t.el.style.order = order.indexOf(login);
+  }
+  if (focused) {
+    const wide = innerWidth / innerHeight > 2;   // ultrawide → two side columns
+    grid.style.setProperty('--cols', wide ? 2 : 1);
+    grid.style.setProperty('--side', wide ? '30vw' : '22vw');
+    grid.style.gridTemplateColumns = '';
+    grid.style.gridTemplateRows = `repeat(${Math.max(Math.ceil((n - 1) / (wide ? 2 : 1)), 1)}, var(--tile-h))`;
+  } else {
+    const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols) || 1;
+    grid.style.gridTemplateColumns = `repeat(${cols || 1}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
+  }
+  save();
+}
+
+$('#q').oninput = renderList;
+$('#toggle').onclick = () => { document.body.classList.toggle('collapsed'); save(); };
+$('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(sync); save(); };
+onpagehide = save;
+setInterval(() => { tiles.forEach(t => { watchdog(t); t.el.classList.toggle('loud', !t.muted); }); $('#hint').hidden = activated || ![...tiles.values()].some(t => !t.muted); }, 1000);
+// audible playback is refused until the user clicks the page, and an unmute attempted before that can leave the media
+// paused with no way back: players stay muted until the first click, which then pushes every intent and re-plays
+let activated = false;
+function activate() { if (activated) return; activated = true; tiles.forEach(t => { if (!t.ready) return; t.player.setMuted(t.muted); if (!t.muted && !t.paused) t.player.play(); }); }
+addEventListener('pointerdown', activate, { capture: true });
+addEventListener('keydown', activate, { capture: true });
+// a click on the video itself lands inside the iframe and never reaches this page: the only trace is the focus leaving for it
+addEventListener('blur', () => { if (document.activeElement?.tagName === 'IFRAME') activate(); });
+document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
+onresize = layout;
+document.onfullscreenchange = () => tiles.forEach(sync);
+document.onkeydown = e => { if (e.key === 'Escape' && focused) focus(focused); };
+// the cagnotte alone has a 2s public endpoint (CORS open, so no proxy); viewers only come with the list
+const eur = n => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n) + ' €';
+// a counter that never stalls: it runs at the donation rate observed between polls, about one poll behind the
+// real total, and a proportional term closes the gap when a new value lands (the API repeats values for 2s)
+let shown = 0, target = 0, rate = 0, lastAt = 0, last = performance.now();
+function showAmount(total) {
+  const now = performance.now();
+  if (total <= target) return;
+  if (target) { const r = (total - target) / Math.max(now - lastAt, 1000); rate = rate ? rate * 0.7 + r * 0.3 : r; }   // €/ms
+  target = total; lastAt = now;
+  shown ||= total;
+}
+requestAnimationFrame(function tick(now) {
+  const dt = now - last; last = now;
+  const v = Math.max(0, rate + (target - shown - rate * 2000) / 2000);
+  shown = Math.min(target, shown + v * dt);
+  if (shown) $('#amount').textContent = eur(shown);
+  requestAnimationFrame(tick);
+});
+const refreshAmount = async () => showAmount((await (await fetch('https://api.zevent.fr/donation/current-amount')).json()).total);
+setInterval(() => refreshAmount().catch(() => {}), 2000);
+refresh();
+setInterval(refresh, 15000);   // upstream caches the list 15s, polling faster returns the same body
+// dev reload: index.html changed on disk → reload (state lives in localStorage)
+let lm; setInterval(async () => { const h = (await fetch('/index.html', { method: 'HEAD', cache: 'no-store' })).headers.get('last-modified'); if (lm && h !== lm) location.reload(); lm = h; }, 1000);
+</script>
+</body>
+</html>
