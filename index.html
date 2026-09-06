@@ -83,13 +83,14 @@
   .tile .bar button:hover { color: var(--fg); }
   .tile .bar svg { display: block; }
   .tile:not(:fullscreen) .fs .exit, .tile:fullscreen .fs .enter { display: none; }
-  #hint { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
+  #hint, #update { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
   .tile .ctl { position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 15px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 11px; opacity: .7; }
   .tile .ctl:hover { opacity: 1; }
   .tile .ctl button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
   .tile .ctl input { width: 90px; margin: 0; accent-color: var(--fg); cursor: pointer; }
   .tile:not(.loud) .ctl input, .tile:not(.loud) .ctl output { display: none; }
   .tile.loud .snd .off, .tile:not(.loud) .snd .on { display: none; }
+  .tile.pin .snd svg { stroke-width: 3.5; }   /* bold: pinned, the sound survives leaving the spotlight */
   .tile .player { flex: 1; min-height: 0; position: relative; }
   /* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
   .tile .load { position: absolute; inset: var(--bar) 0 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0e0e10d9; backdrop-filter: blur(20px); color: var(--fg); font-family: Manrope, system-ui, sans-serif; font-weight: 800; font-size: 16px; pointer-events: none; opacity: 0; transition: opacity .25s; }
@@ -134,6 +135,7 @@
   </div>
   <div id="totals"><span id="viewers"></span><span id="amount"></span></div>
   <div id="hint" hidden>🔊 Clique sur la vidéo pour activer le son</div>
+  <div id="update" hidden onclick="location.reload()" style="pointer-events: auto; cursor: pointer; top: 24px; bottom: auto;">🚀 Nouvelle version, clique pour recharger</div>
 </div>
 <script src="https://player.twitch.tv/js/embed/v1.js"></script>
 <script>
@@ -145,10 +147,10 @@ let streamers = [], focused = null, order = [], dragging = null, allPaused = fal
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
 // with the player's controls hidden, mute can only change through our button: t.muted is the intent, never read back
 // from the iframe (the autoplay policy forces mute on until the first click, and that must not clobber the saved state)
-function save() { localStorage.zg = JSON.stringify({ order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
+function save() { localStorage.zg = JSON.stringify({ order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), pinned: Object.fromEntries([...tiles].map(([k, t]) => [k, t.pinned])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
 function restore() {
   const st = JSON.parse(localStorage.zg || '{}');
-  for (const login of st.order || []) { const s = streamers.find(x => x.twitch === login); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login]); }
+  for (const login of st.order || []) { const s = streamers.find(x => x.twitch === login); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login]); }
   focused = tiles.has(st.focused) ? st.focused : null;
   allPaused = !!st.allPaused;
   $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
@@ -225,7 +227,7 @@ function toggle(s) {
   renderList();
 }
 
-function add(s, muted = true, volume = 0.5, paused = false) {
+function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
@@ -238,7 +240,8 @@ function add(s, muted = true, volume = 0.5, paused = false) {
   pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
   vol.value = volume; pct.value = Math.round(volume * 100) + '%';
   vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; player.setVolume(t.volume); save(); };
-  snd.onclick = e => { e.stopPropagation(); t.muted = !t.muted; player.setMuted(t.muted); save(); };
+  // the button cycles muted → loud → pinned (loud, and stays so out of the spotlight) → muted
+  snd.onclick = e => { e.stopPropagation(); if (t.muted) setMuted(t, false); else if (!t.pinned) t.pinned = true; else { t.pinned = false; setMuted(t, true); } save(); };
   const bar = el.querySelector('.bar');
   bar.onclick = () => focus(s.twitch);
   el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
@@ -253,7 +256,7 @@ function add(s, muted = true, volume = 0.5, paused = false) {
   // always born muted: with controls hidden, an unmuted player the autoplay policy blocks stalls on a play overlay
   // instead of self-muting — so start muted (always allowed) and apply the saved state once ready
   const player = new Twitch.Player(el.querySelector('.player'), { channel: s.twitch, parent: [location.hostname], width: '100%', height: '100%', muted: true, controls: false });
-  const t = { el, player, bar, visible: true, muted, volume, paused, ready: false };
+  const t = { el, player, bar, visible: true, muted, volume, paused, pinned, ready: false };
   tiles.set(s.twitch, t);
   ppIcon();
   player.addEventListener(Twitch.Player.READY, () => { t.ready = true; fit(el.querySelector('.player')); if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); mark(t); });
@@ -284,8 +287,13 @@ function move(from, to) {
   layout();
 }
 
+function setMuted(t, m) { t.muted = m; t.player.setMuted(m); }
+// the spotlight brings the sound along; leaving it gives it back unless the button pinned it
 function focus(login) {
+  const prev = focused;
   focused = focused === login ? null : login;
+  if (prev && prev !== focused && !tiles.get(prev).pinned) setMuted(tiles.get(prev), true);
+  if (focused) setMuted(tiles.get(focused), false);
   layout();
 }
 
@@ -337,7 +345,7 @@ onpagehide = save;
 function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
-  tiles.forEach(t => { watchdog(t); t.el.classList.toggle('loud', !t.muted); }); const loud = [...tiles.values()].filter(t => !t.muted);
+  tiles.forEach(t => { watchdog(t); t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }); const loud = [...tiles.values()].filter(t => !t.muted);
   const stuck = loud.some(t => t.since && Date.now() - t.since > 3000);   // a loud tile that should play and has not for 3s: the browser is waiting for a click in it
   $('#hint').hidden = !((!activated && loud.length) || stuck);
   document.body.classList.toggle('needclick', !$('#hint').hidden); }
@@ -387,8 +395,15 @@ const refreshAmount = async () => showAmount((await (await fetch('https://api.ze
 setInterval(() => refreshAmount().catch(() => {}), 2000);
 refresh();
 setInterval(refresh, 15000);   // upstream caches the list 15s, polling faster returns the same body
-// dev reload: index.html changed on disk → reload (state lives in localStorage)
-if (location.hostname === 'localhost') { let lm; setInterval(async () => { const h = (await fetch('/index.html', { method: 'HEAD', cache: 'no-store' })).headers.get('last-modified'); if (lm && h !== lm) location.reload(); lm = h; }, 1000); }
+// index.html changed (edit on disk, or a deploy: Vercel's etag follows the content) → reload on localhost, where the
+// state lives in localStorage anyway; elsewhere a toast, a forced reload would restart every player mid-watch
+const dev = location.hostname === 'localhost';
+let tag; setInterval(async () => {
+  const r = await fetch('/index.html', { method: 'HEAD', cache: 'no-store' }).catch(() => null); if (!r?.ok) return;
+  const h = r.headers.get('etag') || r.headers.get('last-modified');
+  if (tag && h !== tag) dev ? location.reload() : $('#update').hidden = false;
+  tag = h;
+}, dev ? 1000 : 60000);
 </script>
 </body>
 </html>
