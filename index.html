@@ -127,7 +127,7 @@ function viewers(s) { return s.viewersAmount.number; }
 async function refresh() {
   const d = await (await fetch('/api')).json();
   streamers = d.live.sort((a, b) => b.online - a.online || viewers(b) - viewers(a));
-  $('#viewers').textContent = d.viewersCount.formatted;   // the amount only ever comes from the 2s poll: mixing in this 15s-old value would skew the rate
+  showViewers(d.viewersCount.number);   // the amount only ever comes from the 2s poll: mixing in this 15s-old value would skew the rate
   if (!restored) { restored = true; restore(); } else save();   // periodic save catches mute changes made inside the players
   renderList();
   for (const s of streamers) tiles.get(s.twitch)?.bar.querySelector('span').replaceChildren(s.online ? s.viewersAmount.formatted : 'offline');
@@ -247,7 +247,11 @@ onresize = layout;
 document.onfullscreenchange = () => tiles.forEach(sync);
 document.onkeydown = e => { if (e.key === 'Escape' && focused) focus(focused); };
 // the cagnotte alone has a 2s public endpoint (CORS open, so no proxy); viewers only come with the list
-const eur = n => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n) + ' €';
+const fmt = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const eur = n => fmt.format(n) + ' €';
+// viewers only refresh with the list: a two-second glide marks each change without a hard jump
+let vShown = 0, vTarget = 0, vRate = 0;
+function showViewers(n) { vTarget = n; vShown ||= n; vRate = (n - vShown) / 2000; }
 // a counter that never stalls: it runs at the donation rate observed between polls, about one poll behind the
 // real total, and a proportional term closes the gap when a new value lands (the API repeats values for 2s)
 let shown = 0, target = 0, rate = 0, lastAt = 0, last = performance.now();
@@ -263,6 +267,7 @@ requestAnimationFrame(function tick(now) {
   const v = Math.max(0, rate + (target - shown - rate * 2000) / 2000);
   shown = Math.min(target, shown + v * dt);
   if (shown) $('#amount').textContent = eur(shown);
+  if (vShown) { vShown = vRate > 0 ? Math.min(vTarget, vShown + vRate * dt) : Math.max(vTarget, vShown + vRate * dt); $('#viewers').textContent = fmt.format(vShown); }
   requestAnimationFrame(tick);
 });
 const refreshAmount = async () => showAmount((await (await fetch('https://api.zevent.fr/donation/current-amount')).json()).total);
