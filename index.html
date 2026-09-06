@@ -48,7 +48,15 @@
   /* ---- grid ---- */
   #main { flex: 1; position: relative; min-width: 0; }
   #grid { height: 100vh; overflow-y: auto; display: grid; gap: 2px; }
-  #grid:empty::after { content: "Choisis des streamers à gauche"; color: var(--dim); align-self: center; justify-self: center; }
+  #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 40px; text-align: center; font-family: Manrope, system-ui, sans-serif; background: radial-gradient(55% 45% at 50% 42%, #9147ff33, transparent 70%), radial-gradient(35% 30% at 22% 85%, #ff5fa61a, transparent 70%), radial-gradient(35% 30% at 80% 15%, #47c7ff14, transparent 70%); }
+  #grid:not(:empty) ~ #empty { display: none; }
+  #empty img { width: 120px; height: 120px; margin-bottom: 8px; filter: drop-shadow(0 24px 40px #9147ff80); animation: float 6s ease-in-out infinite; }
+  #empty h1 { font-weight: 800; font-size: 46px; letter-spacing: -.035em; line-height: 1; background: linear-gradient(120deg, #fff 30%, #c4a9ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #empty p { max-width: 440px; color: var(--dim); font-size: 15px; font-weight: 600; line-height: 1.55; }
+  #empty button { margin-top: 10px; padding: 13px 26px; border: 0; border-radius: 999px; background: linear-gradient(120deg, #9147ff, #7b2fff); color: #fff; font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 12px 32px #9147ff59, inset 0 1px 0 #ffffff33; transition: transform .15s, box-shadow .15s; }
+  #empty button:hover { transform: translateY(-2px); box-shadow: 0 16px 40px #9147ff80, inset 0 1px 0 #ffffff33; }
+  #empty small { color: var(--dim); font-weight: 600; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
+  @keyframes float { 50% { transform: translateY(-8px); } }
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
   body.dragging iframe { pointer-events: none; }
   .tile.over { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -100,6 +108,13 @@
 </aside>
 <div id="main">
   <div id="grid"></div>
+  <div id="empty">
+    <img src="favicon.svg" alt="">
+    <h1>ZEvent grid</h1>
+    <p>Tous les streams du ZEvent sur un seul écran. Glisse les tuiles pour les ranger, clique une vignette pour la mettre en avant, choisis le son.</p>
+    <button id="top">▶︎&nbsp; Lancer les 4 plus regardés</button>
+    <small>ou choisis-les dans la liste à gauche</small>
+  </div>
   <div id="totals"><span id="viewers"></span><span id="amount"></span></div>
   <div id="hint" hidden>🔊 Clique sur la vidéo pour activer le son</div>
 </div>
@@ -284,6 +299,7 @@ function layout() {
 }
 
 $('#q').oninput = renderList;
+$('#top').onclick = () => { streamers.filter(s => s.online).slice(0, 4).forEach(s => add(s)); renderList(); };
 $('#toggle').onclick = () => { document.body.classList.toggle('collapsed'); save(); };
 $('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(t => { sync(t); mark(t); }); save(); };
 onpagehide = save;
@@ -341,7 +357,7 @@ setInterval(() => refreshAmount().catch(() => {}), 2000);
 refresh();
 setInterval(refresh, 15000);   // upstream caches the list 15s, polling faster returns the same body
 // dev reload: index.html changed on disk → reload (state lives in localStorage)
-let lm; setInterval(async () => { const h = (await fetch('/index.html', { method: 'HEAD', cache: 'no-store' })).headers.get('last-modified'); if (lm && h !== lm) location.reload(); lm = h; }, 1000);
+if (location.hostname === 'localhost') { let lm; setInterval(async () => { const h = (await fetch('/index.html', { method: 'HEAD', cache: 'no-store' })).headers.get('last-modified'); if (lm && h !== lm) location.reload(); lm = h; }, 1000); }
 </script>
 </body>
 </html>
