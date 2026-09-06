@@ -24,15 +24,21 @@
   #toggle svg { display: block; margin: auto; }
   body.collapsed #toggle .in, body:not(.collapsed) #toggle .out { display: none; }
   #ctl { display: flex; gap: 4px; }
-  #ctl button { width: 26px; height: 26px; border: 0; border-radius: 4px; background: #2a2a30; color: var(--fg); cursor: pointer; font-size: 13px; }
-  #ctl button:hover { background: #3a3a42; }
+  #ctl button, #ctl a { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; border-radius: 4px; background: #2a2a30; color: var(--fg); cursor: pointer; font-size: 13px; }
+  #ctl button:hover, #ctl a:hover { background: #3a3a42; }
+  #ctl a svg { fill: currentColor; }
   #side header { padding: 10px 12px; border-bottom: 1px solid var(--line); }
   #side header b { font-size: 15px; }
-  #totals { position: absolute; top: calc(var(--bar) + 20px); left: 22px; z-index: 5; padding: 10px 18px 12px; border-radius: 12px; background: #9147ff40; backdrop-filter: blur(12px); border: 1px solid #ffffff2e; box-shadow: 0 8px 30px #0006; font-family: Manrope, system-ui, sans-serif; font-weight: 800; font-feature-settings: "tnum"; letter-spacing: -.02em; line-height: 1.15; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #0008; }
+  #totals { position: absolute; top: calc(var(--bar) + 20px); left: 22px; z-index: 5; --ease: cubic-bezier(.2, .8, .2, 1); padding: 10px 18px 12px; border-radius: 12px; background: #9147ff40; backdrop-filter: blur(12px); border: 1px solid #ffffff2e; box-shadow: 0 8px 30px #0006; font-family: Manrope, system-ui, sans-serif; font-weight: 800; font-feature-settings: "tnum"; letter-spacing: -.02em; line-height: 1.15; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #0008; }
   #totals span { display: block; }
   #viewers { font-size: 22px; color: #ffffffcc; }
   #viewers::after { content: " viewers"; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #ffffff99; }
   #amount { font-size: 34px; }
+  /* before the first values land, digits-shaped shimmering placeholders keep the box at its final size */
+  #viewers:empty::before { content: "000\202f 000"; }
+  #amount:empty::before { content: "00\202f 000\202f 000 €"; }
+  #viewers:empty::before, #amount:empty::before { color: transparent; text-shadow: none; background: linear-gradient(90deg, #ffffff26 30%, #ffffff66 50%, #ffffff26 70%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shimmer 1.6s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
   #q { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
   #list { flex: 1; overflow-y: auto; list-style: none; }
   #list li { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; border-left: 3px solid transparent; }
@@ -51,11 +57,18 @@
   #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 40px; text-align: center; font-family: Manrope, system-ui, sans-serif; background: radial-gradient(55% 45% at 50% 42%, #9147ff33, transparent 70%), radial-gradient(35% 30% at 22% 85%, #ff5fa61a, transparent 70%), radial-gradient(35% 30% at 80% 15%, #47c7ff14, transparent 70%); }
   #grid:not(:empty) ~ #empty { display: none; }
   #empty img { width: 120px; height: 120px; margin-bottom: 8px; filter: drop-shadow(0 24px 40px #9147ff80); animation: float 6s ease-in-out infinite; }
-  #empty h1 { font-weight: 800; font-size: 46px; letter-spacing: -.035em; line-height: 1; background: linear-gradient(120deg, #fff 30%, #c4a9ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  /* background-clip: text paints nothing outside the box: room for the overshoot of the G and the last glyph */
+  #empty h1 { font-weight: 800; font-size: 46px; letter-spacing: -.035em; line-height: 1.15; padding: 0 .12em; background: linear-gradient(120deg, #fff 30%, #c4a9ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
   #empty p { max-width: 440px; color: var(--dim); font-size: 15px; font-weight: 600; line-height: 1.55; }
   #empty button { margin-top: 10px; padding: 13px 26px; border: 0; border-radius: 999px; background: linear-gradient(120deg, #9147ff, #7b2fff); color: #fff; font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 12px 32px #9147ff59, inset 0 1px 0 #ffffff33; transition: transform .15s, box-shadow .15s; }
   #empty button:hover { transform: translateY(-2px); box-shadow: 0 16px 40px #9147ff80, inset 0 1px 0 #ffffff33; }
   #empty small { color: var(--dim); font-weight: 600; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; opacity: .7; }
+  /* on the empty view the counter sits in a slot above the button; it glides between the slot and the corner */
+  #totals.anim { transition: top .7s var(--ease), left .7s var(--ease); }
+  #empty .gh { position: absolute; top: calc(var(--bar) + 20px); right: 22px; display: flex; align-items: center; gap: 10px; padding: 10px 18px 10px 14px; border-radius: 999px; background: #9147ff40; backdrop-filter: blur(12px); border: 1px solid #ffffff2e; box-shadow: 0 8px 30px #0006; color: var(--fg); font-weight: 800; font-size: 14px; text-decoration: none; transition: background .15s, transform .15s; }
+  #empty .gh:hover { background: #9147ff66; transform: translateY(-1px); }
+  #empty .gh svg { fill: currentColor; }
+  #empty .gh b { color: #ffd166; }
   @keyframes float { 50% { transform: translateY(-8px); } }
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
   body.dragging iframe { pointer-events: none; }
@@ -101,7 +114,7 @@
 <body>
 <aside id="side">
   <header>
-    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>ZEvent</b><div id="ctl"><button id="playall" title="Play/pause tous les streams">⏸&#xFE0E;</button><button id="toggle" title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
+    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>ZEvent</b><div id="ctl"><a href="https://github.com/Moinax/zevent-grid" target="_blank" rel="noopener" title="Mettre une étoile sur GitHub"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a><button id="playall" title="Play/pause tous les streams">⏸&#xFE0E;</button><button id="toggle" title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
     <input id="q" placeholder="Filtrer…" autocomplete="off">
   </header>
   <ul id="list"></ul>
@@ -112,8 +125,10 @@
     <img src="favicon.svg" alt="">
     <h1>ZEvent grid</h1>
     <p>Tous les streams du ZEvent sur un seul écran. Glisse les tuiles pour les ranger, clique une vignette pour la mettre en avant, choisis le son.</p>
+    <div id="slot"></div>
     <button id="top">▶︎&nbsp; Lancer les 4 plus regardés</button>
     <small>ou choisis-les dans la liste à gauche</small>
+    <a class="gh" href="https://github.com/Moinax/zevent-grid" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="20" height="20"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span><b>★</b> Star sur GitHub</span></a>
   </div>
   <div id="totals"><span id="viewers"></span><span id="amount"></span></div>
   <div id="hint" hidden>🔊 Clique sur la vidéo pour activer le son</div>
@@ -274,6 +289,7 @@ function focus(login) {
 
 function layout() {
   const n = tiles.size;
+  placeTotals();
   grid.classList.toggle('focused', !!focused);
   for (const [login, t] of tiles) {
     const f = t.el.querySelector('iframe'), w = f?.offsetWidth;
@@ -298,6 +314,19 @@ function layout() {
   save();
 }
 
+// the counter lives in the corner, or over the slot of the empty view: the move is a transition on top/left
+function placeTotals() {
+  const t = $('#totals'), slot = $('#slot');
+  if (grid.children.length) t.style.top = t.style.left = '';
+  else {
+    slot.style.height = t.offsetHeight + 'px';
+    const r = slot.getBoundingClientRect(), m = $('#main').getBoundingClientRect();
+    t.style.top = r.top - m.top + 'px';
+    t.style.left = r.left - m.left + (r.width - t.offsetWidth) / 2 + 'px';
+  }
+  requestAnimationFrame(() => t.classList.add('anim'));   // placed once before any transition: no glide on load
+}
+new ResizeObserver(placeTotals).observe($('#totals'));   // the digits change the width
 $('#q').oninput = renderList;
 $('#top').onclick = () => { streamers.filter(s => s.online).slice(0, 4).forEach(s => add(s)); renderList(); };
 $('#toggle').onclick = () => { document.body.classList.toggle('collapsed'); save(); };
