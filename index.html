@@ -52,7 +52,8 @@
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
   body.dragging iframe { pointer-events: none; }
   .tile.over { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .tile .bar { height: var(--bar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); cursor: pointer; user-select: none; }
+  .tile .bar { height: var(--bar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); cursor: grab; user-select: none; }
+  .tile .bar::before { content: ""; flex: none; width: 8px; height: 12px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px); color: #ffffff55; }   /* grip: the bar is the drag handle */
   .tile.loud .bar { background: var(--accent); }
   .tile.loud .bar span, .tile.loud .bar button { color: var(--fg); }
   .tile .bar b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -61,14 +62,24 @@
   .tile .bar button:hover { color: var(--fg); }
   .tile .bar svg { display: block; }
   .tile:not(:fullscreen) .fs .exit, .tile:fullscreen .fs .enter { display: none; }
-  #hint { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); cursor: pointer; font-weight: 600; }
+  #hint { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
   .tile .ctl { position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 15px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 11px; opacity: .7; }
   .tile .ctl:hover { opacity: 1; }
   .tile .ctl button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
   .tile .ctl input { width: 90px; margin: 0; accent-color: var(--fg); cursor: pointer; }
   .tile:not(.loud) .ctl input, .tile:not(.loud) .ctl output { display: none; }
   .tile.loud .snd .off, .tile:not(.loud) .snd .on { display: none; }
-  .tile .player { flex: 1; min-height: 0; }
+  .tile .player { flex: 1; min-height: 0; position: relative; }
+  /* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
+  .tile .load { position: absolute; inset: var(--bar) 0 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0e0e10d9; backdrop-filter: blur(20px); color: var(--fg); font-family: Manrope, system-ui, sans-serif; font-weight: 800; font-size: 16px; pointer-events: none; opacity: 0; transition: opacity .25s; }
+  .tile.loading .load { opacity: 1; }
+  .tile .load i { width: 36px; height: 36px; border: 3px solid #9147ff33; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  .tile .load small { font-weight: 600; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .tile.offline .load i, .tile:not(.offline) .load small { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* a click on the video lands inside the iframe: on thumbnails a transparent layer catches it for the spotlight instead */
+  .tile:not(.big) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
+  body.needclick .tile.loud .player::after { display: none; }   /* while a click in the video is what unlocks the sound, let it through */
   .tile .player iframe { width: 100%; height: 100%; display: block; }
   #grid { --cols: 1; --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar)); }
   #grid.focused { grid-template-columns: 1fr repeat(var(--cols), calc(var(--side) / var(--cols))); grid-auto-rows: var(--tile-h); }
@@ -86,7 +97,7 @@
 <div id="main">
   <div id="grid"></div>
   <div id="totals"><span id="viewers"></span><span id="amount"></span></div>
-  <div id="hint" hidden>🔊 Clique ici pour activer le son</div>
+  <div id="hint" hidden>🔊 Clique sur la vidéo pour activer le son</div>
 </div>
 <script src="https://player.twitch.tv/js/embed/v1.js"></script>
 <script>
@@ -107,19 +118,38 @@ function restore() {
   $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
   document.body.classList.toggle('collapsed', !!st.collapsed);
   layout();
+  tick();   // right away, not at the first second: a click that lands before it hits the page instead of the video
 }
 
 // a tile plays only while it is in the viewport and the global toggle is not paused
 const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.isIntersecting; sync(t); } }), { root: grid, threshold: 0.2 });
 // a relayout flickers visibility for a frame or two: let it settle before touching the player
-// a fullscreen tile leaves the grid's box, so the observer reports it hidden while it fills the screen
-const onScreen = t => t.visible || document.fullscreenElement === t.el;
-function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => allPaused || t.paused || !onScreen(t) ? t.player.pause() : t.player.play(), 400); }
+// a fullscreen tile leaves the grid's box, so the observer reports it hidden while it fills the screen; a tile with
+// its sound on keeps playing wherever it is, the sound is the point
+const onScreen = t => t.visible || !t.muted || document.fullscreenElement === t.el;
+function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (allPaused || t.paused || !onScreen(t)) t.player.pause(); else { t.player.play(); t.nudgedAt = Date.now(); } }, 400); }
 // the player also pauses on its own during some reflows: whatever should be playing gets nudged back every second
 function watchdog(t) {
   if (!t.ready) return;
-  if (!allPaused && !t.paused && onScreen(t) && t.player.isPaused()) t.player.play();
-  if (activated && t.player.getMuted() !== t.muted) t.player.setMuted(t.muted);   // keeps the intent applied once sound is allowed
+  // isPaused() is false in the Ready/Idle states the player drops into after a resize, so go by the playback state.
+  // A live stream takes seconds to (re)start and a play() during that restarts it: nudge at most every 5s
+  const st = t.player.getPlayerState().playback;
+  if (!allPaused && !t.paused && onScreen(t) && !t.el.classList.contains('offline') && st !== 'Playing' && st !== 'Buffering' && Date.now() - (t.nudgedAt || 0) > 5000) {
+    // a play() the player swallowed (seen after a window resize) leaves it stuck until a click inside it: the second
+    // nudge pauses first, which is what that click does, then plays again once the teardown had its second
+    if (t.nudged) { t.player.pause(); setTimeout(() => t.player.play(), 1000); } else t.player.play();
+    t.nudgedAt = Date.now(); t.nudged = true;
+  } else if (st === 'Playing') t.nudged = false;
+  if (activated && st === 'Playing' && t.player.getMuted() !== t.muted) t.player.setMuted(t.muted);   // keeps the intent applied once sound is allowed
+  mark(t);
+}
+// loader shown while a tile that should play is not playing: deliberate pauses show Twitch's own frame instead
+function mark(t) {
+  if (!t.ready) return;
+  const st = t.player.getPlayerState();
+  const want = !allPaused && !t.paused && onScreen(t), playing = st.playback === 'Playing';
+  t.el.classList.toggle('loading', want && !playing);
+  t.since = want && !playing ? t.since || Date.now() : 0;
 }
 
 function viewers(s) { return s.viewersAmount.number; }
@@ -151,20 +181,21 @@ function toggle(s) {
 
 function add(s, muted = true, volume = 0.5, paused = false) {
   const el = document.createElement('div');
-  el.className = 'tile';
+  el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><b>${s.display}</b><span>${s.viewersAmount.formatted}</span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Mettre en avant"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button><button title="Plein écran" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer">✕</button></div><div class="player"></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
+  el.innerHTML = `<div class="bar"><b>${s.display}</b><span>${s.viewersAmount.formatted}</span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Mettre en avant"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button><button title="Plein écran" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer">✕</button></div><div class="player"></div><div class="load"><i></i><b>${s.display}</b><small>Hors ligne</small></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
   const [snd, foc, fs, close] = el.querySelectorAll('button');
   foc.onclick = e => { e.stopPropagation(); focus(s.twitch); };
   fs.onclick = e => { e.stopPropagation(); document.fullscreenElement === el ? document.exitFullscreen() : el.requestFullscreen(); };
   const pp = el.querySelector('.ctl button'), vol = el.querySelector('.ctl input'), pct = el.querySelector('.ctl output');
   const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
-  pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); save(); };
+  pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
   vol.value = volume; pct.value = Math.round(volume * 100) + '%';
   vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; player.setVolume(t.volume); save(); };
   snd.onclick = e => { e.stopPropagation(); t.muted = !t.muted; player.setMuted(t.muted); save(); };
   const bar = el.querySelector('.bar');
   bar.onclick = () => focus(s.twitch);
+  el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
   // ponytail: reorder via CSS `order` only — moving an iframe in the DOM reloads the player
   bar.draggable = true;
   bar.ondragstart = e => { dragging = s.twitch; document.body.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
@@ -179,7 +210,12 @@ function add(s, muted = true, volume = 0.5, paused = false) {
   const t = { el, player, bar, visible: true, muted, volume, paused, ready: false };
   tiles.set(s.twitch, t);
   ppIcon();
-  player.addEventListener(Twitch.Player.READY, () => { t.ready = true; if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); });
+  player.addEventListener(Twitch.Player.READY, () => { t.ready = true; if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); mark(t); });
+  // the player's own events drive the loader instantly; the 1s loop is the backstop for whatever they miss
+  for (const ev of ['playing', 'play', 'pause', 'ended', 'playbackBlocked', 'offline', 'online', 'error']) player.addEventListener(ev, () => {
+    if (ev === 'offline' || ev === 'online') el.classList.toggle('offline', ev === 'offline');
+    mark(t);
+  });
   io.observe(el);
   order.push(s.twitch);
   layout();
@@ -210,8 +246,13 @@ function layout() {
   const n = tiles.size;
   grid.classList.toggle('focused', !!focused);
   for (const [login, t] of tiles) {
+    const w = t.el.offsetWidth;
     t.el.classList.toggle('big', login === focused);
     t.el.style.order = order.indexOf(login);
+    // a player that grows switches quality, which restarts its media: Firefox refuses that restart audible unless
+    // this very iframe was clicked once, and the tile hangs until it is. Restart muted, allowed anywhere; the
+    // watchdog gives the sound back once it plays, which unmuting a playing media does without a restart
+    if (!t.muted && t.ready && t.el.offsetWidth > w) t.player.setMuted(true);
   }
   if (focused) {
     const wide = innerWidth / innerHeight > 2;   // ultrawide → two side columns
@@ -229,19 +270,29 @@ function layout() {
 
 $('#q').oninput = renderList;
 $('#toggle').onclick = () => { document.body.classList.toggle('collapsed'); save(); };
-$('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(sync); save(); };
+$('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(t => { sync(t); mark(t); }); save(); };
 onpagehide = save;
-setInterval(() => { tiles.forEach(t => { watchdog(t); t.el.classList.toggle('loud', !t.muted); }); $('#hint').hidden = activated || ![...tiles.values()].some(t => !t.muted); }, 1000);
+function tick() {
+  // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
+  if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
+  tiles.forEach(t => { watchdog(t); t.el.classList.toggle('loud', !t.muted); }); const loud = [...tiles.values()].filter(t => !t.muted);
+  const stuck = loud.some(t => t.since && Date.now() - t.since > 3000);   // a loud tile that should play and has not for 3s: the browser is waiting for a click in it
+  $('#hint').hidden = !((!activated && loud.length) || stuck);
+  document.body.classList.toggle('needclick', !$('#hint').hidden); }
+setInterval(tick, 1000);
 // audible playback is refused until the user clicks the page, and an unmute attempted before that can leave the media
 // paused with no way back: players stay muted until the first click, which then pushes every intent and re-plays
+// Firefox grants audible playback only to the iframe that received the click, never from a click on the page around it:
+// an unmute pushed after a page click pauses the player and every play() is refused until its own video is clicked.
+// So every click that lands in a player pushes the intents again, and the hint stays while a loud tile is not playing.
 let activated = false;
-function activate() { if (activated) return; activated = true; tiles.forEach(t => { if (!t.ready) return; t.player.setMuted(t.muted); if (!t.muted && !t.paused) t.player.play(); }); }
-addEventListener('pointerdown', activate, { capture: true });
-addEventListener('keydown', activate, { capture: true });
-// a click on the video itself lands inside the iframe and never reaches this page: the only trace is the focus leaving for it
+function push() { tiles.forEach(t => { if (!t.ready) return; t.player.setMuted(t.muted); if (!t.muted && !t.paused) { t.player.play(); t.nudgedAt = Date.now(); } }); }
+function activate() { activated = true; push(); }
+addEventListener('pointerdown', () => activated || activate(), { capture: true });
+addEventListener('keydown', () => activated || activate(), { capture: true });
+// a click on the video lands inside the iframe and never reaches this page: the only trace is the focus leaving for it
 // (Firefox fires blur before it moves activeElement to the iframe, hence the tick)
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') activate(); }));
-$('#hint').onclick = activate;
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
 onresize = layout;
 document.onfullscreenchange = () => tiles.forEach(sync);
