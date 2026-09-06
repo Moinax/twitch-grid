@@ -80,7 +80,11 @@
   /* a click on the video lands inside the iframe: on thumbnails a transparent layer catches it for the spotlight instead */
   .tile:not(.big) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
   body.needclick .tile.loud .player::after { display: none; }   /* while a click in the video is what unlocks the sound, let it through */
-  .tile .player iframe { width: 100%; height: 100%; display: block; }
+  /* players render at two fixed sizes and are scaled to the tile with a transform: the Twitch player restarts its
+     stream whenever its box grows (quality switch), and a transform is not a resize. ponytail: 720p on the spotlight
+     whatever the screen; bump the big size if a 4K spotlight ever matters */
+  .tile .player iframe { position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; display: block; }
+  .tile.big .player iframe, .tile:fullscreen .player iframe { width: 1280px; height: 720px; }
   #grid { --cols: 1; --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar)); }
   #grid.focused { grid-template-columns: 1fr repeat(var(--cols), calc(var(--side) / var(--cols))); grid-auto-rows: var(--tile-h); }
   #grid.focused .tile.big { grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; height: 100vh; align-self: start; }
@@ -122,12 +126,22 @@ function restore() {
 }
 
 // a tile plays only while it is in the viewport and the global toggle is not paused
+function fit(p) {
+  const f = p.firstElementChild;
+  if (!f) return;
+  const s = Math.min(p.clientWidth / f.offsetWidth, p.clientHeight / f.offsetHeight);   // offsetWidth ignores the transform
+  f.style.transform = `translate(${(p.clientWidth - f.offsetWidth * s) / 2}px, ${(p.clientHeight - f.offsetHeight * s) / 2}px) scale(${s})`;
+}
+const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)));
 const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.isIntersecting; sync(t); } }), { root: grid, threshold: 0.2 });
 // a relayout flickers visibility for a frame or two: let it settle before touching the player
 // a fullscreen tile leaves the grid's box, so the observer reports it hidden while it fills the screen; a tile with
 // its sound on keeps playing wherever it is, the sound is the point
 const onScreen = t => t.visible || !t.muted || document.fullscreenElement === t.el;
-function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (allPaused || t.paused || !onScreen(t)) t.player.pause(); else { t.player.play(); t.nudgedAt = Date.now(); } }, 400); }
+// Firefox refuses an audible (re)start in an iframe that was never clicked, and the player then sits paused for good:
+// start muted, always allowed, and the watchdog gives the sound back once it plays (no restart in that)
+function start(t) { if (!t.muted && t.player.getPlayerState().playback !== 'Playing') t.player.setMuted(true); t.player.play(); t.nudgedAt = Date.now(); }
+function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (allPaused || t.paused || !onScreen(t)) t.player.pause(); else start(t); }, 400); }
 // the player also pauses on its own during some reflows: whatever should be playing gets nudged back every second
 function watchdog(t) {
   if (!t.ready) return;
@@ -137,8 +151,8 @@ function watchdog(t) {
   if (!allPaused && !t.paused && onScreen(t) && !t.el.classList.contains('offline') && st !== 'Playing' && st !== 'Buffering' && Date.now() - (t.nudgedAt || 0) > 5000) {
     // a play() the player swallowed (seen after a window resize) leaves it stuck until a click inside it: the second
     // nudge pauses first, which is what that click does, then plays again once the teardown had its second
-    if (t.nudged) { t.player.pause(); setTimeout(() => t.player.play(), 1000); } else t.player.play();
-    t.nudgedAt = Date.now(); t.nudged = true;
+    if (t.nudged) { t.player.pause(); setTimeout(() => start(t), 1000); } else start(t);
+    t.nudged = true;
   } else if (st === 'Playing') t.nudged = false;
   if (activated && st === 'Playing' && t.player.getMuted() !== t.muted) t.player.setMuted(t.muted);   // keeps the intent applied once sound is allowed
   mark(t);
@@ -210,13 +224,14 @@ function add(s, muted = true, volume = 0.5, paused = false) {
   const t = { el, player, bar, visible: true, muted, volume, paused, ready: false };
   tiles.set(s.twitch, t);
   ppIcon();
-  player.addEventListener(Twitch.Player.READY, () => { t.ready = true; if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); mark(t); });
+  player.addEventListener(Twitch.Player.READY, () => { t.ready = true; fit(el.querySelector('.player')); if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); mark(t); });
   // the player's own events drive the loader instantly; the 1s loop is the backstop for whatever they miss
   for (const ev of ['playing', 'play', 'pause', 'ended', 'playbackBlocked', 'offline', 'online', 'error']) player.addEventListener(ev, () => {
     if (ev === 'offline' || ev === 'online') el.classList.toggle('offline', ev === 'offline');
     mark(t);
   });
   io.observe(el);
+  ro.observe(el.querySelector('.player'));
   order.push(s.twitch);
   layout();
 }
@@ -246,13 +261,13 @@ function layout() {
   const n = tiles.size;
   grid.classList.toggle('focused', !!focused);
   for (const [login, t] of tiles) {
-    const w = t.el.offsetWidth;
+    const f = t.el.querySelector('iframe'), w = f?.offsetWidth;
     t.el.classList.toggle('big', login === focused);
     t.el.style.order = order.indexOf(login);
     // a player that grows switches quality, which restarts its media: Firefox refuses that restart audible unless
     // this very iframe was clicked once, and the tile hangs until it is. Restart muted, allowed anywhere; the
     // watchdog gives the sound back once it plays, which unmuting a playing media does without a restart
-    if (!t.muted && t.ready && t.el.offsetWidth > w) t.player.setMuted(true);
+    if (!t.muted && t.ready && f && f.offsetWidth > w) t.player.setMuted(true);
   }
   if (focused) {
     const wide = innerWidth / innerHeight > 2;   // ultrawide → two side columns
