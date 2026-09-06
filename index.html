@@ -82,9 +82,14 @@
   #empty .gh b { color: #ffd166; }
   @keyframes float { 50% { transform: translateY(-8px); } }
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
+  /* a frame around bar + video reads as one card even when the player letterboxes; an overlay, the iframe would hide an outline */
+  .tile::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid var(--line); pointer-events: none; transition: border-color .15s; }
+  .tile:hover::after { border-color: var(--accent); }
+  .tile:hover .bar { background: #2b2140; }
+  .tile:hover .bar b { color: #fff; }
   body.dragging iframe { pointer-events: none; }
   .tile.over { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .tile .bar { height: var(--bar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); cursor: grab; user-select: none; }
+  .tile .bar { height: var(--bar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); cursor: grab; user-select: none; transition: background .15s; }
   .tile .bar::before { content: ""; flex: none; width: 8px; height: 12px; background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px); color: #ffffff55; }   /* grip: the bar is the drag handle */
   .tile.loud .bar { background: var(--accent); }
   .tile.loud .bar span, .tile.loud .bar button { color: var(--fg); }
