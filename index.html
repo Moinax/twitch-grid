@@ -120,6 +120,12 @@
   .tile .load i { width: 36px; height: 36px; border: 3px solid #9147ff33; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   .tile .load small { font-weight: 600; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
   .tile.offline .load i, .tile:not(.offline) .load small { display: none; }
+  .tile .load .more { display: none; }
+  .tile.partial .load { opacity: 1; }
+  .tile.partial:not(.offline) .load i { display: none; }
+  /* sticky against the grid's scrollport: the message stays in the visible slice, whichever edge cuts the tile */
+  .tile.partial:not(.offline) .load b { display: none; }
+  .tile.partial:not(.offline) .load .more { display: block; position: sticky; top: 16px; bottom: 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   /* a click on the video lands inside the iframe: on thumbnails a transparent layer catches it for the spotlight instead */
   .tile:not(.big) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
@@ -189,7 +195,10 @@ function fit(p) {
   f.style.transform = `translate(${(p.clientWidth - f.offsetWidth * s) / 2}px, ${(p.clientHeight - f.offsetHeight * s) / 2}px) scale(${s})`;
 }
 const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)));
-const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.isIntersecting; sync(t); } }), { root: grid, threshold: 0.2 });
+// the player tracks its own viewability and refuses to start under half visible, whatever play() says: below that
+// a tile shows "scroll" instead of a spinner that would never end. ponytail: 0.5 mirrors the player's bar, raise if a
+// half-visible tile still spins
+const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.intersectionRatio >= 0.5; sync(t); mark(t); } }), { root: grid, threshold: 0.5 });
 // a relayout flickers visibility for a frame or two: let it settle before touching the player
 // a fullscreen tile leaves the grid's box, so the observer reports it hidden while it fills the screen; a tile with
 // its sound on keeps playing wherever it is, the sound is the point
@@ -219,6 +228,7 @@ function mark(t) {
   const st = t.player.getPlayerState();
   const want = !allPaused && !t.paused && onScreen(t), playing = st.playback === 'Playing';
   t.el.classList.toggle('loading', want && !playing);
+  t.el.classList.toggle('partial', !allPaused && !t.paused && !t.visible && !playing);   // on screen but not enough for the player to start
   t.since = want && !playing ? t.since || Date.now() : 0;
 }
 
@@ -253,7 +263,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><b>${s.display}</b><span>${s.viewersAmount.formatted}</span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Plein écran" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" class="close">✕</button></div><div class="player"></div><div class="load"><i></i><b>${s.display}</b><small>Hors ligne</small></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
+  el.innerHTML = `<div class="bar"><b>${s.display}</b><span>${s.viewersAmount.formatted}</span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Plein écran" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" class="close">✕</button></div><div class="player"></div><div class="load"><i></i><b>${s.display}</b><small>Hors ligne</small><small class="more">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
   const [snd, min, fs, close] = el.querySelectorAll('button');
   min.onclick = e => { e.stopPropagation(); focus(s.twitch); };
   fs.onclick = e => { e.stopPropagation(); document.fullscreenElement === el ? document.exitFullscreen() : el.requestFullscreen(); };
