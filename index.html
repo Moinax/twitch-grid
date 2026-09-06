@@ -13,8 +13,9 @@
   body { display: flex; }
 
   /* ---- sidebar ---- */
-  #side { width: 300px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
-  body.collapsed #side { width: 34px; }
+  body { --sb: 300px; }
+  body.collapsed { --sb: 34px; }
+  #side { width: var(--sb); flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
   body.collapsed #side header { padding: 4px; }
   body.collapsed #side header > :not(.row), body.collapsed .row > :not(#ctl), body.collapsed #list { display: none; }
   body.collapsed #ctl { flex-direction: column; }
@@ -83,13 +84,15 @@
   .tile .bar button:hover { color: var(--fg); }
   .tile .bar svg { display: block; }
   .tile:not(:fullscreen) .fs .exit, .tile:fullscreen .fs .enter { display: none; }
-  #hint, #update { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
+  #hint, #update { position: fixed; bottom: 24px; left: calc(50% + var(--sb) / 2); transform: translateX(-50%);   /* centred on the grid, not the window */ z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
   .tile .ctl { position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 15px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 11px; opacity: .7; }
   .tile .ctl:hover { opacity: 1; }
   .tile .ctl button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
   .tile .ctl input { width: 90px; margin: 0; accent-color: var(--fg); cursor: pointer; }
   .tile:not(.loud) .ctl input, .tile:not(.loud) .ctl output { display: none; }
   .tile.loud .snd .off, .tile:not(.loud) .snd .on { display: none; }
+  #update { pointer-events: auto; cursor: pointer; }
+  #hint:not([hidden]) ~ #update { bottom: 70px; }   /* both at once: the update sits above the sound hint */
   .tile.pin .snd svg { stroke-width: 3.5; }   /* bold: pinned, the sound survives leaving the spotlight */
   .tile .player { flex: 1; min-height: 0; position: relative; }
   /* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
@@ -135,7 +138,7 @@
   </div>
   <div id="totals"><span id="viewers"></span><span id="amount"></span></div>
   <div id="hint" hidden>🔊 Clique sur la vidéo pour activer le son</div>
-  <div id="update" hidden onclick="location.reload()" style="pointer-events: auto; cursor: pointer; top: 24px; bottom: auto;">🚀 Nouvelle version, clique pour recharger</div>
+  <div id="update" hidden onclick="location.reload()">🚀 Nouvelle version, clique pour recharger</div>
 </div>
 <script src="https://player.twitch.tv/js/embed/v1.js"></script>
 <script>
@@ -241,7 +244,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   vol.value = volume; pct.value = Math.round(volume * 100) + '%';
   vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; player.setVolume(t.volume); save(); };
   // the button cycles muted → loud → pinned (loud, and stays so out of the spotlight) → muted
-  snd.onclick = e => { e.stopPropagation(); if (t.muted) setMuted(t, false); else if (!t.pinned) t.pinned = true; else { t.pinned = false; setMuted(t, true); } save(); };
+  snd.onclick = e => { e.stopPropagation(); if (t.muted) setMuted(t, false); else if (!t.pinned) t.pinned = true; else { t.pinned = false; setMuted(t, true); } paint(t); save(); };
   const bar = el.querySelector('.bar');
   bar.onclick = () => focus(s.twitch);
   el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
@@ -287,7 +290,8 @@ function move(from, to) {
   layout();
 }
 
-function setMuted(t, m) { t.muted = m; t.player.setMuted(m); }
+function setMuted(t, m) { t.muted = m; t.player.setMuted(m); paint(t); }
+function paint(t) { t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }
 // the spotlight brings the sound along; leaving it gives it back unless the button pinned it
 function focus(login) {
   const prev = focused;
@@ -345,7 +349,7 @@ onpagehide = save;
 function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
-  tiles.forEach(t => { watchdog(t); t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }); const loud = [...tiles.values()].filter(t => !t.muted);
+  tiles.forEach(t => { watchdog(t); paint(t); }); const loud = [...tiles.values()].filter(t => !t.muted);
   const stuck = loud.some(t => t.since && Date.now() - t.since > 3000);   // a loud tile that should play and has not for 3s: the browser is waiting for a click in it
   $('#hint').hidden = !((!activated && loud.length) || stuck);
   document.body.classList.toggle('needclick', !$('#hint').hidden); }
