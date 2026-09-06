@@ -64,6 +64,20 @@
   #list .g { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #list .v { color: var(--dim); font-variant-numeric: tabular-nums; }
   #list li.live .v::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--live); margin-right: 5px; }
+  #list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  #preview { position: fixed; z-index: 10; width: 362px; max-width: calc(100vw - 16px); overflow: hidden; border: 1px solid #9147ff66; border-radius: 10px; background: var(--panel); box-shadow: 0 12px 40px #0009; }
+  #preview .video { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  #preview .player { position: absolute; inset: 0; pointer-events: none; }
+  #preview iframe { position: absolute; width: 640px; height: 360px; transform-origin: 0 0; border: 0; }
+  #preview .status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: var(--bg); color: var(--dim); }
+  #preview .status[hidden] { display: none; }
+  #preview .status img { width: 56px; height: 56px; border-radius: 50%; }
+  #preview .info { padding: 10px 12px; }
+  #preview .heading { display: flex; align-items: center; gap: 12px; }
+  #preview .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #preview .badge { color: var(--dim); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  #preview.live .badge { color: #ff7775; }
+  #preview .details { margin-top: 4px; color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ---- grid ---- */
   #main { flex: 1; position: relative; min-width: 0; }
@@ -150,6 +164,10 @@
   </header>
   <ul id="list"></ul>
 </aside>
+<div id="preview" role="tooltip" hidden>
+  <div class="video"><div class="player"></div><div class="status"><img alt=""><span></span></div></div>
+  <div class="info"><div class="heading"><b class="name"></b><span class="badge"></span></div><div class="details"></div></div>
+</div>
 <div id="main">
   <div id="grid"></div>
   <div id="empty">
@@ -234,6 +252,77 @@ function mark(t) {
 
 function viewers(s) { return s.viewersAmount.number; }
 
+// One temporary, muted player; removing its iframe stops playback and network activity.
+const preview = $('#preview'), previewVideo = preview.querySelector('.player');
+let previewRow = null, previewOnline = null, previewTimer, previewCloseTimer, previewLoadTimer;
+function hidePreview() {
+  clearTimeout(previewTimer);
+  clearTimeout(previewCloseTimer);
+  clearTimeout(previewLoadTimer);
+  previewRow?.removeAttribute('aria-describedby');
+  previewRow = null;
+  preview.hidden = true;
+  previewVideo.replaceChildren();
+}
+function positionPreview() {
+  if (!previewRow || preview.hidden) return;
+  const r = previewRow.getBoundingClientRect(), edge = $('#side').getBoundingClientRect().right;
+  preview.style.left = Math.max(8, Math.min(edge + 10, innerWidth - preview.offsetWidth - 8)) + 'px';
+  preview.style.top = Math.max(8, Math.min(r.top, innerHeight - preview.offsetHeight - 8)) + 'px';
+  fit(previewVideo);
+}
+function previewInfo(s) {
+  preview.classList.toggle('live', s.online);
+  preview.querySelector('.name').textContent = s.display;
+  preview.querySelector('.badge').textContent = s.online ? 'En direct · Muet' : 'Hors ligne';
+  preview.querySelector('.details').textContent = [s.game, s.online ? s.viewersAmount.formatted + ' viewers' : ''].filter(Boolean).join(' · ');
+}
+function showPreview(row) {
+  const s = streamers.find(s => s.twitch === row.dataset.login);
+  if (!s || !row.isConnected || document.hidden) return;
+  previewRow = row;
+  previewOnline = s.online;
+  previewInfo(s);
+  row.setAttribute('aria-describedby', 'preview');
+  const status = preview.querySelector('.status'), message = status.querySelector('span');
+  status.querySelector('img').src = s.profileUrl;
+  message.textContent = s.online ? 'Chargement de l’aperçu…' : 'Ce streamer est hors ligne';
+  status.hidden = false;
+  preview.hidden = false;
+  positionPreview();
+  if (!s.online) return;
+  if (!window.Twitch?.Player) { message.textContent = 'Aperçu indisponible'; return; }
+  const player = new Twitch.Player(previewVideo, { channel: s.twitch, parent: [location.hostname], width: 640, height: 360, autoplay: true, muted: true, controls: false });
+  const frame = previewVideo.querySelector('iframe');
+  frame.tabIndex = -1;
+  frame.title = 'Aperçu de ' + s.display;
+  fit(previewVideo);
+  const current = () => previewVideo.firstElementChild === frame;
+  player.addEventListener(Twitch.Player.READY, () => { if (current()) { player.setMuted(true); player.setVolume(0); } });
+  player.addEventListener(Twitch.Player.PLAYING, () => { if (current()) { clearTimeout(previewLoadTimer); status.hidden = true; } });
+  for (const event of ['offline', 'playbackBlocked', 'error']) player.addEventListener(event, () => {
+    if (!current()) return;
+    clearTimeout(previewLoadTimer);
+    status.hidden = false;
+    message.textContent = event === 'offline' ? 'Ce streamer est hors ligne' : 'Aperçu indisponible';
+  });
+  previewLoadTimer = setTimeout(() => { if (current()) message.textContent = 'L’aperçu tarde à démarrer'; }, 12000);
+}
+function queuePreview(row) {
+  clearTimeout(previewCloseTimer);
+  if (previewRow === row && !preview.hidden) return;
+  hidePreview();
+  previewRow = row;
+  previewTimer = setTimeout(() => showPreview(previewRow), 300);
+}
+function leavePreview() { clearTimeout(previewTimer); clearTimeout(previewCloseTimer); previewCloseTimer = setTimeout(hidePreview, 180); }
+preview.onpointerenter = () => clearTimeout(previewCloseTimer);
+preview.onpointerleave = leavePreview;
+list.addEventListener('scroll', hidePreview, { passive: true });
+addEventListener('resize', hidePreview);
+addEventListener('blur', hidePreview);
+document.addEventListener('visibilitychange', () => { if (document.hidden) hidePreview(); });
+
 async function refresh() {
   const d = await (await fetch('/api')).json();
   streamers = d.live.sort((a, b) => b.online - a.online || viewers(b) - viewers(a));
@@ -245,13 +334,30 @@ async function refresh() {
 
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
+  const keyboardLogin = list.contains(document.activeElement) ? document.activeElement.dataset.login : null;
   list.replaceChildren(...streamers.filter(s => !q || s.display.toLowerCase().includes(q)).map(s => {
     const li = document.createElement('li');
+    li.dataset.login = s.twitch;
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    li.setAttribute('aria-pressed', tiles.has(s.twitch));
     li.className = (s.online ? 'live' : 'off') + (tiles.has(s.twitch) ? ' on' : '');
     li.innerHTML = `<img src="${s.profileUrl}" loading="lazy"><div class="n"><div>${s.display}</div><div class="g">${s.game}</div></div><span class="v">${s.online ? s.viewersAmount.formatted : ''}</span>`;
-    li.onclick = () => toggle(s);
+    li.onclick = () => { hidePreview(); toggle(s); };
+    li.onpointerenter = e => { if (e.pointerType !== 'touch') queuePreview(li); };
+    li.onpointerleave = leavePreview;
+    li.onfocus = () => queuePreview(li);
+    li.onblur = leavePreview;
+    li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.click(); } };
     return li;
   }));
+  if (previewRow) {
+    const row = [...list.children].find(li => li.dataset.login === previewRow.dataset.login);
+    const s = streamers.find(s => s.twitch === previewRow.dataset.login);
+    if (!row || !s || (!preview.hidden && s.online !== previewOnline)) hidePreview();
+    else { previewRow = row; if (!preview.hidden) { row.setAttribute('aria-describedby', 'preview'); previewInfo(s); positionPreview(); } }
+  }
+  if (keyboardLogin) [...list.children].find(li => li.dataset.login === keyboardLogin)?.focus({ preventScroll: true });
 }
 
 function toggle(s) {
@@ -372,7 +478,7 @@ function placeTotals() {
 new ResizeObserver(placeTotals).observe($('#totals'));   // the digits change the width
 $('#q').oninput = renderList;
 $('#top').onclick = () => { streamers.filter(s => s.online).slice(0, 4).forEach(s => add(s)); renderList(); };
-$('#toggle').onclick = () => { document.body.classList.toggle('collapsed'); save(); };
+$('#toggle').onclick = () => { hidePreview(); document.body.classList.toggle('collapsed'); save(); };
 $('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(t => { sync(t); mark(t); }); save(); };
 onpagehide = save;
 function tick() {
@@ -399,7 +505,7 @@ addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.ta
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
 onresize = layout;
 document.onfullscreenchange = () => tiles.forEach(sync);
-document.onkeydown = e => { if (e.key === 'Escape' && focused) focus(focused); };
+document.onkeydown = e => { if (e.key === 'Escape') { if (previewRow) hidePreview(); else if (focused) focus(focused); } };
 // the cagnotte alone has a 2s public endpoint (CORS open, so no proxy); viewers only come with the list
 const fmt = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const eur = n => fmt.format(n) + ' €';
