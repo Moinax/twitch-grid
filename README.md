@@ -4,7 +4,7 @@
 
 A one-page multi-stream viewer for [ZEvent](https://zevent.fr). Pick streamers from the live list, lay them out in a grid, spotlight one, and watch the cagnotte climb in real time.
 
-![ZEvent grid with the streamer list open, one stream spotlighted and a column of smaller tiles](docs/screenshot.jpg)
+![ZEvent grid with one stream spotlighted, a column of smaller tiles and the live viewers and donation counter](docs/screenshot.jpg)
 
 ## Features
 
