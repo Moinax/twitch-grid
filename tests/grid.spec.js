@@ -1124,7 +1124,7 @@ async function nameGrid(page, name) {
   await expect(page.locator('#grids-dialog')).not.toBeVisible();
 }
 async function openGridManager(page) {
-  if (await page.locator('#grids-open').isVisible()) await page.locator('#grids-open').click();
+  if (await page.locator('#grid-switcher summary').isVisible()) { await page.locator('#grid-switcher summary').click(); await page.locator('#grids-open').click(); }
   else await page.locator('#grids-shortcut').click();
 }
 test('named grids migrate, copy without reloading players, rename, switch and delete safely',async({page})=>{
@@ -1143,9 +1143,20 @@ test('named grids migrate, copy without reloading players, rename, switch and de
   await expect(page.locator('#saved-grids strong img')).toHaveCount(0);
   await page.locator('.saved-grid').filter({hasText:'Soirée <img src=x>'}).locator('.rename-grid').click();
   await nameGrid(page,'Soirée');
-  await openGridManager(page);await page.locator('#grid-new').click();await nameGrid(page,'Travail');
+  await openGridManager(page);await page.locator('#grid-new').click();
+  await expect(page.locator('#grid-name')).toHaveValue('Grille 3');await nameGrid(page,'Travail');
   await expect(page.locator('#grid .tile')).toHaveCount(0);
   await expect(page.locator('#empty')).toBeVisible();
+  await page.locator('#grid-switcher summary').click();
+  await expect(page.locator('#grid-menu-list .open-grid')).toHaveCount(3);
+  await page.locator('#grid-menu-list .open-grid').filter({hasText:'Soirée'}).click();
+  await expect(page.locator('#grid-switcher')).not.toHaveAttribute('open','');
+  await expect(page.locator('#grids-dialog')).not.toBeVisible();
+  await expect(page.locator('#current-grid-name')).toHaveText('Soirée');
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await page.locator('#grid-switcher summary').click();
+  await page.locator('#grid-menu-list .open-grid').filter({hasText:'Travail'}).click();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
   await openGridManager(page);await page.locator('.saved-grid').filter({hasText:'Soirée'}).locator('.open-grid').click();
   await expect(page.locator('#grid .tile')).toHaveCount(2);
   expect(await page.evaluate(()=>({order,focused,chatOpen,chatPosition,volume:tiles.get('one').volume,paused:tiles.get('two').paused})))
@@ -1195,15 +1206,12 @@ test('language and theme changes persist without recreating video players',async
     if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true}));
   });
   await page.goto('/');await page.evaluate(()=>window.settingsPlayer=tiles.get('one').player);
-  await page.locator('#settings-open').click();
   await page.locator('#language-setting').selectOption('en');
   await expect(page.locator('html')).toHaveAttribute('lang','en');
-  await expect(page.locator('#settings-title')).toHaveText('Settings');
   await expect(page.locator('#q')).toHaveAttribute('placeholder','Find a streamer…');
   await expect(page.locator('#grid .bar > b')).toHaveText('Ajouter');
   await expect(page.locator('#current-grid-name')).toHaveText('Default grid');
   await page.locator('#language-setting').selectOption('nl');
-  await expect(page.locator('#settings-title')).toHaveText('Instellingen');
   await expect(page.locator('#current-grid-name')).toHaveText('Standaardraster');
   await page.locator('#theme-setting').selectOption('light');
   await expect(page.locator('html')).toHaveAttribute('data-theme','light');
@@ -1223,14 +1231,31 @@ test('language and theme changes persist without recreating video players',async
 test('workspace controls work collapsed on mobile and dialogs keep focus without changing spotlight',async({page})=>{
   const errors=await setup(page);await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',collapsed:true})));
-  await page.goto('/');await page.locator('#settings-shortcut').click();
-  await expect(page.locator('#settings-dialog')).toBeVisible();
-  const box=await page.locator('#settings-dialog').boundingBox();
+  await page.goto('/');await page.locator('#toggle').click();
+  await expect(page.locator('#theme-setting')).toBeVisible();
+  const box=await page.locator('#preferences').boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
-  await page.keyboard.press('Escape');
+  await page.locator('#toggle').click();
   await expect(page.locator('#grid .big')).toHaveAttribute('data-login','one');
   await page.locator('#grids-shortcut').click();await expect(page.locator('#saved-grids .saved-grid')).toHaveCount(1);
   await page.locator('#grid-new').click();await nameGrid(page,'Mobile');
   await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test('hovering a live channel in the sidebar shows the floating preview', async ({ page }) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.has('collaboration')) return route.fulfill({json:{data:[]}});
+    const logins = params.has('login') ? params.getAll('login') : [params.get('q').toLowerCase()];
+    return route.fulfill({json:{data:logins.map(login => ({broadcaster_login:login,display_name:login,is_live:true,game_name:'Art',thumbnail_url:'',viewer_count:12,title:'Titre'}))}});
+  });
+  await page.addInitScript(() => localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'zerator',display:'ZeratoR'}])));
+  await page.goto('/');
+  await page.locator('#list [data-login="zerator"]').hover();
+  await expect(page.locator('#preview')).toBeVisible();
+  await expect(page.locator('#preview .name')).toHaveText(/zerator/i);
+  await page.mouse.move(900, 700);
+  await expect(page.locator('#preview')).toBeHidden();
   expect(errors).toEqual([]);
 });

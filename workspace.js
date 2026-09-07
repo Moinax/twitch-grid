@@ -1,6 +1,23 @@
 let gridAction = null;
 function renderGridLauncher() {
   document.getElementById('current-grid-name').textContent = gridStore ? gridStore.label() : tr('Grille par défaut');
+  const menu = document.getElementById('grid-menu-list');
+  menu.replaceChildren();
+  for (const item of gridStore?.items || []) {
+    const button = document.createElement('button'); button.type='button'; button.className='open-grid'; button.dataset.gridId=item.id;
+    button.innerHTML='<i class="grid-mark"></i><span><strong></strong><small></small></span>';
+    button.querySelector('strong').textContent=gridStore.label(item);
+    const count=item.layout.order?.length || 0;
+    button.querySelector('small').textContent=item.id===gridStore.activeId?tr('Grille actuelle'):count?tr(count===1?'{count} tuile':'{count} tuiles',{count}):tr('Aucune tuile');
+    button.setAttribute('aria-current',String(item.id===gridStore.activeId));
+    button.onclick=()=>{ document.getElementById('grid-switcher').open=false; switchNamedGrid(item.id); };
+    menu.append(button);
+  }
+}
+function nextGridName() {
+  let n = gridStore.items.length + 1;
+  while (gridStore.items.some(item => gridStore.label(item).toLocaleLowerCase() === tr('Grille {n}',{n}).toLocaleLowerCase())) n++;
+  return tr('Grille {n}',{n});
 }
 function renderSavedGrids() {
   const list = document.getElementById('saved-grids');
@@ -46,7 +63,7 @@ function openGridForm(kind, id = null, participants = [], source = null) {
   document.getElementById('grid-form').dataset.kind=kind;
   const item=id?gridStore.items.find(item=>item.id===id):null;
   const name=document.getElementById('grid-name');
-  name.value=item?gridStore.label(item):kind==='collaboration'?tr('Collaboration · {name}',{name:source.display}):kind==='copy'?gridStore.label():tr('Nouvelle grille');
+  name.value=item?gridStore.label(item):kind==='collaboration'?tr('Collaboration · {name}',{name:source.display}):kind==='copy'?gridStore.label():nextGridName();
   document.getElementById('grids-overview').hidden=true;
   document.getElementById('grid-form').hidden=false;
   document.getElementById('grid-name-label').hidden=kind==='delete'; name.disabled=kind==='delete';
@@ -121,8 +138,9 @@ function refreshPreferences() {
 }
 function initWorkspace() {
   translateTree();renderGridLauncher();
-  for (const id of ['grids-open','grids-shortcut']) document.getElementById(id).onclick=openGrids;
-  for (const id of ['settings-open','settings-shortcut']) document.getElementById(id).onclick=()=>{closeTileMenus();hidePreview();document.getElementById('settings-dialog').showModal();};
+  document.getElementById('grids-shortcut').onclick=openGrids;
+  document.getElementById('grids-open').onclick=()=>{document.getElementById('grid-switcher').open=false;openGrids();};
+  document.getElementById('grid-switcher').ontoggle=e=>{ if (e.target.open) { closeTileMenus(false,e.target); hidePreview(); } };
   document.getElementById('language-setting').value=preferences.language;
   document.getElementById('theme-setting').value=preferences.theme;
   document.getElementById('language-setting').onchange=e=>setPreference('language',e.target.value);

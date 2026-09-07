@@ -132,7 +132,7 @@ function syncChat() {
 }
 function closeTileMenus(returnFocus = false, except = null) {
   let closed = false;
-  for (const menu of document.querySelectorAll('.chat-options[open], .collaboration[open]')) {
+  for (const menu of document.querySelectorAll('.chat-options[open], .collaboration[open], #grid-switcher[open]')) {
     if (menu === except) continue;
     menu.open = false;
     if (returnFocus) menu.querySelector('summary').focus();
@@ -140,7 +140,7 @@ function closeTileMenus(returnFocus = false, except = null) {
   }
   return closed;
 }
-addEventListener('pointerdown', e => closeTileMenus(false, e.target.closest('.chat-options, .collaboration')));
+addEventListener('pointerdown', e => closeTileMenus(false, e.target.closest('.chat-options, .collaboration, #grid-switcher')));
 
 function positionCollaborationMenu(t) {
   const anchor = t.collaboration.querySelector('summary').getBoundingClientRect();
@@ -303,7 +303,15 @@ function viewers(s) { return s.viewersAmount.number; }
 
 // One temporary, muted player; removing its iframe stops playback and network activity.
 const preview = $('#preview'), previewVideo = preview.querySelector('.player');
-let previewRow = null, previewOnline = null, previewTimer, previewCloseTimer, previewLoadTimer;
+let previewRow = null, previewOnline = null, previewPlayer = null, previewNudgedAt = 0, previewTimer, previewCloseTimer, previewLoadTimer;
+// the embed does not always emit its playing event, and like the tiles it can sit in Ready until nudged with a play():
+// poll the playback state every tick, nudge at most every 5s, and fade the overlay out once it plays
+function markPreview() {
+  if (preview.hidden || !previewPlayer) return;
+  const st = previewPlayer.getPlayerState().playback;
+  if (st === 'Playing') { clearTimeout(previewLoadTimer); preview.classList.add('playing'); return; }
+  if (st !== 'Buffering' && Date.now() - previewNudgedAt > 5000) { previewPlayer.play(); previewNudgedAt = Date.now(); }
+}
 function hidePreview() {
   clearTimeout(previewTimer);
   clearTimeout(previewCloseTimer);
@@ -311,6 +319,8 @@ function hidePreview() {
   previewRow?.removeAttribute('aria-describedby');
   previewRow = null;
   preview.hidden = true;
+  preview.classList.remove('playing');
+  previewPlayer = null;
   previewVideo.replaceChildren();
 }
 function positionPreview() {
@@ -332,7 +342,7 @@ function previewInfo(s) {
   }
 }
 function showPreview(row) {
-  const s = streamers.find(s => s.twitch === row.dataset.participant);
+  const s = streamers.find(s => s.twitch === row.dataset.login);
   if (!s || s.online === false || !row.isConnected || document.hidden) { hidePreview(); return; }
   previewRow = row;
   previewOnline = s.online;
@@ -342,21 +352,24 @@ function showPreview(row) {
   status.querySelector('img').src = s.profileUrl;
   message.textContent = tr('Chargement de l’aperçu…');
   status.hidden = false;
+  preview.classList.remove('playing');
   preview.hidden = false;
   positionPreview();
   if (!window.Twitch?.Player) { message.textContent = tr('Aperçu indisponible'); return; }
   const player = new Twitch.Player(previewVideo, { channel: s.twitch, parent: [location.hostname], width: 640, height: 360, autoplay: true, muted: true, controls: false });
+  previewPlayer = player; previewNudgedAt = Date.now();
   const frame = previewVideo.querySelector('iframe');
   frame.tabIndex = -1;
   frame.title = tr('Aperçu de {name}', {name:s.display});
   fit(previewVideo);
   const current = () => previewVideo.firstElementChild === frame;
   player.addEventListener(Twitch.Player.READY, () => { if (current()) { player.setMuted(true); player.setVolume(0); } });
-  player.addEventListener(Twitch.Player.PLAYING, () => { if (current()) { clearTimeout(previewLoadTimer); status.hidden = true; } });
+  player.addEventListener(Twitch.Player.PLAYING, () => { if (current()) markPreview(); });   // the overlay fades out in CSS
   for (const event of ['offline', 'playbackBlocked', 'error']) player.addEventListener(event, () => {
     if (!current()) return;
     if (event === 'offline') { hidePreview(); return; }
     clearTimeout(previewLoadTimer);
+    preview.classList.remove('playing');
     status.hidden = false;
     message.textContent = tr('Aperçu indisponible');
   });
@@ -656,6 +669,7 @@ function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
   tiles.forEach(t => { watchdog(t); paint(t); });
+  markPreview();
   updateAudioOverlay();
 }
 setInterval(tick, 1000);
@@ -766,7 +780,6 @@ function updateAccount() {
   $('#connect').hidden = connected;
   $('#connect').disabled = !accountReady || !library?.clientId;
   $('#disconnect').hidden = !connected;
-  $('#side footer').textContent = connected ? tr('Ta liste de follows se met à jour automatiquement.') : tr('Les favoris sont enregistrés dans ce navigateur.');
 }
 function rebuild() {
   pruneLiveNotifications(library?.user ? follows : favorites);
