@@ -1,12 +1,19 @@
 const { test, expect } = require('@playwright/test');
 const mockPlayer = `window.Twitch = { Player: class {
   static READY = 'ready'; static PLAYING = 'playing';
-  constructor(el, options) { this.options = options; this.muted = true; this.paused = false;
-    el.appendChild(document.createElement('iframe')); }
-  addEventListener(event, callback) { if (event === 'ready') setTimeout(callback, 0); }
+  constructor(el, options) { this.options = options; this.muted = true; this.paused = true; this.volume = 0.5;
+    this.listeners = {}; this.frame = document.createElement('iframe');
+    this.frame.dataset.controls = String(options.controls); el.appendChild(this.frame); }
+  addEventListener(event, callback) { (this.listeners[event] ||= []).push(callback);
+    if (event === 'ready') setTimeout(() => { if (!this.destroyed) callback(); }, 0); }
+  emit(event) { for (const callback of this.listeners[event] || []) callback(); }
   getPlayerState() { return { playback: this.paused ? 'Paused' : 'Playing' }; }
   setMuted(value) { this.muted = value; } getMuted() { return this.muted; }
-  setVolume() {} play() { this.paused = false; } pause() { this.paused = true; }
+  setVolume(value) { this.volume = value; } getVolume() { return this.volume; }
+  setQuality(value) { this.quality = value; } getQuality() { return this.quality || 'auto'; }
+  play() { if (this.paused) { this.paused = false; this.emit('play'); this.emit('playing'); } }
+  pause() { if (!this.paused) { this.paused = true; this.emit('pause'); } }
+  destroy() { this.destroyed = true; this.frame.remove(); this.listeners = {}; }
 }};`;
 async function setup(page, connected = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -68,7 +75,7 @@ async function api(page) {
 }
 test('OAuth callback validates state, loads every follows page, searches and disconnects', async ({ page }) => {
   const errors = await setup(page, true); await api(page);
-  await page.addInitScript(() => sessionStorage.setItem('tg.oauth', JSON.stringify({ state: 'expected', at: Date.now() })));
+  await page.addInitScript(() => { sessionStorage.setItem('tg.oauth', JSON.stringify({ state: 'expected', at: Date.now() })); localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'saved' }])); });
   await page.goto('/#access_token=fake-token&state=expected');
   await expect(page.locator('#account')).toContainText('moinax');
   expect(page.url()).not.toContain('access_token');
@@ -77,12 +84,18 @@ test('OAuth callback validates state, loads every follows page, searches and dis
   await expect(page.locator('[data-login="offline"] .g')).toHaveText('Hors ligne');
   await page.locator('#q').fill('found');
   await expect(page.locator('#list [data-login="found"]')).toBeVisible();
-  await page.locator('#list [data-login="found"] .favorite').click();
+  await expect(page.locator('#list .favorite:visible')).toHaveCount(0);
+  await expect(page.locator('#add-login')).toBeHidden();
+  await expect(page.locator('#source-label')).toHaveText('Follows');
+  await expect(page.locator('#side')).not.toContainText('Favoris');
+  await page.locator('#list [data-login="found"] .channel').click();
   await page.locator('#disconnect').click();
-  await expect(page.locator('#follows-tab')).toBeHidden();
+  await expect(page.locator('#source-label')).toHaveText('Favoris');
   expect(await page.evaluate(() => sessionStorage.getItem('tg.session'))).toBeNull();
   await page.locator('#q').fill('');
   await expect(page.locator('#list li')).toHaveCount(1);
+  await expect(page.locator('#list li')).toHaveAttribute('data-login', 'saved');
+  await expect(page.locator('#list .favorite')).toBeVisible();
   expect(errors).toEqual([]);
 });
 test('OAuth rejects an unexpected state without using the token', async ({ page }) => {
@@ -125,4 +138,51 @@ test('mobile sidebar opens for search and closes when a stream is selected', asy
   await expect(page.locator('body')).toHaveClass(/collapsed/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   expect(errors).toEqual([]);
+});
+test('spotlight shows full controls and preserves the other players when switching', async ({ page }) => {
+  const errors = await setup(page); await page.goto('/');
+  for (const login of ['one', 'two', 'three']) { await favorite(page, login); await page.locator(`#list [data-login="${login}"] .channel`).click(); }
+  await page.evaluate(() => { window.untouchedPlayer = tiles.get('three').player; });
+  await page.locator('#grid [data-login="one"] .bar b').click();
+  await expect(page.locator('#grid .big iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(page.locator('#grid .big .ctl')).toBeHidden();
+  await expect(page.locator('#grid [data-login="two"] iframe')).toHaveAttribute('data-controls', 'false');
+  await page.locator('#grid [data-login="two"] .bar b').click();
+  await expect(page.locator('#grid [data-login="one"] iframe')).toHaveAttribute('data-controls', 'false');
+  await expect(page.locator('#grid [data-login="two"] iframe')).toHaveAttribute('data-controls', 'true');
+  expect(await page.evaluate(() => tiles.get('three').player === window.untouchedPlayer)).toBe(true);
+  await page.locator('#grid .big .min').click();
+  await expect(page.locator('#grid .tile iframe[data-controls="false"]')).toHaveCount(3);
+  await expect(page.locator('#grid [data-login="two"] .ctl')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test('native pause, volume and mute survive the watchdog and returning to the grid', async ({ page }) => {
+  const errors = await setup(page); await page.clock.install(); await page.goto('/');
+  await favorite(page, 'one'); await page.locator('#list .channel').click();
+  await page.locator('#grid .bar b').click();
+  await page.clock.runFor(2500);
+  await page.evaluate(() => {
+    const player = tiles.get('one').player;
+    player.pause(); player.setVolume(0.25); player.setMuted(true); player.setQuality('720p60');
+  });
+  await page.clock.runFor(6000);
+  expect(await page.evaluate(() => {
+    const t = tiles.get('one'); return { paused:t.paused, muted:t.muted, volume:t.volume, playing:!t.player.paused };
+  })).toEqual({ paused:true, muted:true, volume:0.25, playing:false });
+  await page.locator('#grid .big .min').click();
+  await page.clock.runFor(1000);
+  await expect(page.locator('#grid .ctl input')).toHaveValue('0.25');
+  expect(await page.evaluate(() => tiles.get('one').player.paused)).toBe(true);
+  await page.locator('#grid .bar b').click(); await page.clock.runFor(1000);
+  expect(await page.evaluate(() => tiles.get('one').player.getQuality())).toBe('720p60');
+  expect(errors).toEqual([]);
+});
+test('native Play resumes a spotlight restored in a paused state', async ({ page }) => {
+  await setup(page); await page.clock.install();
+  await page.addInitScript(() => localStorage.setItem('tg.layout', JSON.stringify({order:['one','two'],focused:'one',allPaused:true,paused:{one:true}})));
+  await page.goto('/'); await page.clock.runFor(1000);
+  await page.evaluate(() => tiles.get('one').player.play());
+  await page.clock.runFor(6000);
+  expect(await page.evaluate(() => ({ allPaused, one:tiles.get('one').paused, two:tiles.get('two').paused, playing:!tiles.get('one').player.paused })))
+    .toEqual({allPaused:false,one:false,two:true,playing:true});
 });

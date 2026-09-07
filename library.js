@@ -99,8 +99,4 @@ class TwitchLibrary {
     const page = await this.get('search/channels', { query, first: '30' });
     return page.data.map(channel);
   }
-  async lookup(login) {
-    const page = await this.get('users', { login });
-    return page.data[0] ? channel(page.data[0]) : null;
-  }
 }

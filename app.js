@@ -4,8 +4,7 @@ const tiles = new Map();   // twitch login -> { el, player, bar }
 let streamers = [], focused = null, order = [], dragging = null, allPaused = false, restored = false;
 
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
-// with the player's controls hidden, mute can only change through our button: t.muted is the intent, never read back
-// from the iframe (the autoplay policy forces mute on until the first click, and that must not clobber the saved state)
+// Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
 function save() { if (!restored) return; writeStored('tg.layout', { order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), pinned: Object.fromEntries([...tiles].map(([k, t]) => [k, t.pinned])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
 function restore() {
   const st = readStored('tg.layout', {});
@@ -22,6 +21,7 @@ function restore() {
 function fit(p) {
   const f = p.firstElementChild;
   if (!f) return;
+  if (document.fullscreenElement === f) { f.style.transform = 'none'; return; }
   const s = Math.min(p.clientWidth / f.offsetWidth, p.clientHeight / f.offsetHeight);   // offsetWidth ignores the transform
   f.style.transform = `translate(${(p.clientWidth - f.offsetWidth * s) / 2}px, ${(p.clientHeight - f.offsetHeight * s) / 2}px) scale(${s})`;
 }
@@ -36,18 +36,19 @@ const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(
 const onScreen = t => t.visible || !t.muted || document.fullscreenElement === t.el;
 // Firefox refuses an audible (re)start in an iframe that was never clicked, and the player then sits paused for good:
 // start muted, always allowed, and the watchdog gives the sound back once it plays (no restart in that)
-function start(t) { if (!t.muted && t.player.getPlayerState().playback !== 'Playing') t.player.setMuted(true); t.player.play(); t.nudgedAt = Date.now(); }
-function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (allPaused || t.paused || !onScreen(t)) t.player.pause(); else start(t); }, 400); }
+function start(t) { if (!t.ready) return; if (!t.muted && t.player.getPlayerState().playback !== 'Playing') applyMuted(t, true); t.player.play(); t.nudgedAt = Date.now(); }
+function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (!t.ready || !t.el.isConnected) return; if (allPaused || t.paused || !onScreen(t)) t.player.pause(); else start(t); }, 400); }
 // the player also pauses on its own during some reflows: whatever should be playing gets nudged back every second
 function watchdog(t) {
   if (!t.ready) return;
+  if (t.controls) { readNativeControls(t); mark(t); return; }
   // isPaused() is false in the Ready/Idle states the player drops into after a resize, so go by the playback state.
   // A live stream takes seconds to (re)start and a play() during that restarts it: nudge at most every 5s
   const st = t.player.getPlayerState().playback;
   if (!allPaused && !t.paused && onScreen(t) && !t.el.classList.contains('offline') && st !== 'Playing' && st !== 'Buffering' && Date.now() - (t.nudgedAt || 0) > 5000) {
     // a play() the player swallowed (seen after a window resize) leaves it stuck until a click inside it: the second
     // nudge pauses first, which is what that click does, then plays again once the teardown had its second
-    if (t.nudged) { t.player.pause(); setTimeout(() => { if (t.el.isConnected && !allPaused && !t.paused && onScreen(t)) start(t); }, 1000); } else start(t);
+    if (t.nudged) { const current = t.player; t.player.pause(); setTimeout(() => { if (t.player === current && t.el.isConnected && !allPaused && !t.paused && onScreen(t)) start(t); }, 1000); } else start(t);
     t.nudged = true;
   } else if (st === 'Playing') t.nudged = false;
   if (activated && st === 'Playing' && t.player.getMuted() !== t.muted) t.player.setMuted(t.muted);   // keeps the intent applied once sound is allowed
@@ -162,7 +163,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
   pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
   vol.value = volume; pct.value = Math.round(volume * 100) + '%';
-  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; player.setVolume(t.volume); save(); };
+  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; t.player.setVolume(t.volume); save(); };
   // the button cycles muted → loud → pinned (loud, and stays so out of the spotlight) → muted
   snd.onclick = e => { e.stopPropagation(); if (t.muted) setMuted(t, false); else if (!t.pinned) t.pinned = true; else { t.pinned = false; setMuted(t, true); } paint(t); save(); };
   const bar = el.querySelector('.bar');
@@ -176,25 +177,95 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   el.ondrop = e => { e.preventDefault(); move(dragging, s.twitch); };
   close.onclick = e => { e.stopPropagation(); remove(s.twitch); renderList(); };
   grid.append(el);
-  // always born muted: with controls hidden, an unmuted player the autoplay policy blocks stalls on a play overlay
-  // instead of self-muting — so start muted (always allowed) and apply the saved state once ready
-  const player = new Twitch.Player(el.querySelector('.player'), { channel: s.twitch, parent: [location.hostname], width: '100%', height: '100%', muted: true, controls: false });
-  const t = { el, player, bar, visible: true, muted, volume, paused, pinned, ready: false };
+  const t = { el, bar, visible: true, muted, volume, paused, pinned, ready: false, ppIcon };
   tiles.set(s.twitch, t);
+  mountPlayer(t, false);
   ppIcon();
-  player.addEventListener(Twitch.Player.READY, () => { t.ready = true; fit(el.querySelector('.player')); if (activated) player.setMuted(t.muted); player.setVolume(t.volume); sync(t); mark(t); });
-  // the player's own events drive the loader instantly; the 1s loop is the backstop for whatever they miss
-  for (const ev of ['playing', 'play', 'pause', 'ended', 'playbackBlocked', 'offline', 'online', 'error']) player.addEventListener(ev, () => {
-    if (ev === 'offline' || ev === 'online') el.classList.toggle('offline', ev === 'offline');
-    mark(t);
-  });
   io.observe(el);
   ro.observe(el.querySelector('.player'));
   order.push(s.twitch);
   layout();
 }
 
+// Twitch only accepts the controls option when creating an embed. Recreate the changed
+// tile, preserving its settings; all other iframes keep playing.
+function mountPlayer(t, controls) {
+  if (t.player && t.controls === controls) return;
+  readNativeControls(t);
+  if (t.ready && t.controls) t.quality = t.player.getQuality?.();
+  clearTimeout(t.timer);
+  t.player?.destroy();
+  const container = t.el.querySelector('.player');
+  container.replaceChildren();
+  t.ready = false; t.controls = controls; t.hasPlayed = false;
+  t.nativeAudio = null; t.pendingMute = null; t.nudged = false; t.since = 0;
+  t.el.classList.remove('offline', 'partial');
+  t.el.classList.toggle('loading', !allPaused && !t.paused);
+  const player = new Twitch.Player(container, {
+    channel: t.el.dataset.login, parent: [location.hostname], width: '100%', height: '100%',
+    muted: true, autoplay: !allPaused && !t.paused, controls
+  });
+  t.player = player;
+  container.querySelector('iframe').title = 'Stream de ' + t.bar.querySelector('b').textContent;
+  const current = () => t.player === player && t.el.isConnected;
+  player.addEventListener(Twitch.Player.READY, () => {
+    if (!current()) return;
+    t.ready = true;
+    fit(container);
+    player.setVolume(t.volume);
+    t.nativeAudio = { muted: t.muted, volume: t.volume };
+    if (activated) applyMuted(t, t.muted);
+    if (controls && t.quality) player.setQuality(t.quality);
+    sync(t); mark(t);
+  });
+  for (const event of ['playing', 'play', 'pause', 'ended', 'playbackBlocked', 'offline', 'online', 'error']) player.addEventListener(event, () => {
+    if (!current()) return;
+    if (event === 'offline' || event === 'online') t.el.classList.toggle('offline', event === 'offline');
+    if (event === 'playing' && !t.hasPlayed) {
+      t.hasPlayed = true;
+      if (activated) applyMuted(t, t.muted);
+    }
+    if (controls && (t.hasPlayed || (event === 'play' && t.ready))) {
+      if (event === 'pause' && !allPaused && onScreen(t)) t.paused = true;
+      if (event === 'play') {
+        t.paused = false;
+        // A native Play resumes this stream even after the global pause.
+        if (allPaused) {
+          tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
+          allPaused = false; $('#playall').textContent = '⏸\uFE0E';
+        }
+      }
+      t.ppIcon(); save();
+    }
+    mark(t);
+  });
+}
+function applyMuted(t, value) {
+  t.pendingMute = { value, at: Date.now() };
+  t.player.setMuted(value);
+}
+function readNativeControls(t) {
+  if (!t.controls || !t.ready || !t.hasPlayed) return;
+  const audio = { muted: t.player.getMuted(), volume: t.player.getVolume() };
+  let changed = false;
+  if (t.pendingMute) {
+    if (audio.muted === t.pendingMute.value || Date.now() - t.pendingMute.at > 2000) t.pendingMute = null;
+  } else if (t.nativeAudio && audio.muted !== t.nativeAudio.muted) {
+    t.muted = audio.muted;
+    if (t.muted) t.pinned = false;
+    changed = true;
+  }
+  if (t.nativeAudio && audio.volume !== t.nativeAudio.volume && Number.isFinite(audio.volume)) {
+    t.volume = audio.volume; changed = true;
+    t.el.querySelector('.ctl input').value = t.volume;
+    t.el.querySelector('.ctl output').value = Math.round(t.volume * 100) + '%';
+  }
+  t.nativeAudio = audio;
+  if (changed) { paint(t); save(); }
+}
+
 function remove(login) {
+  tiles.get(login).player.destroy();
   clearTimeout(tiles.get(login).timer);
   ro.unobserve(tiles.get(login).el.querySelector('.player'));
   io.unobserve(tiles.get(login).el);
@@ -212,11 +283,12 @@ function move(from, to) {
   layout();
 }
 
-function setMuted(t, m) { t.muted = m; t.player.setMuted(m); paint(t); }
+function setMuted(t, m) { t.muted = m; if (t.ready) applyMuted(t, m); paint(t); }
 function paint(t) { t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }
 // the spotlight brings the sound along; leaving it gives it back unless the button pinned it
 function focus(login) {
   const prev = focused;
+  if (prev) readNativeControls(tiles.get(prev));
   focused = focused === login ? null : login;
   if (prev && prev !== focused && !tiles.get(prev).pinned) setMuted(tiles.get(prev), true);
   if (focused) setMuted(tiles.get(focused), false);
@@ -227,13 +299,10 @@ function layout() {
   const n = tiles.size;
   grid.classList.toggle('focused', !!focused);
   for (const [login, t] of tiles) {
-    const f = t.el.querySelector('iframe'), w = f?.offsetWidth;
     t.el.classList.toggle('big', login === focused);
     t.el.style.order = order.indexOf(login);
-    // a player that grows switches quality, which restarts its media: Firefox refuses that restart audible unless
-    // this very iframe was clicked once, and the tile hangs until it is. Restart muted, allowed anywhere; the
-    // watchdog gives the sound back once it plays, which unmuting a playing media does without a restart
-    if (!t.muted && t.ready && f && f.offsetWidth > w) t.player.setMuted(true);
+    mountPlayer(t, login === focused);
+    fit(t.el.querySelector('.player'));
   }
   if (focused) {
     const wide = innerWidth / innerHeight > 2;   // ultrawide → two side columns
@@ -256,7 +325,7 @@ function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
   tiles.forEach(t => { watchdog(t); paint(t); }); const loud = [...tiles.values()].filter(t => !t.muted);
-  const stuck = loud.some(t => t.since && Date.now() - t.since > 3000);   // a loud tile that should play and has not for 3s: the browser is waiting for a click in it
+  const stuck = loud.some(t => !t.el.classList.contains('offline') && t.since && Date.now() - t.since > 3000);   // a loud tile that should play and has not for 3s: the browser is waiting for a click in it
   $('#hint').hidden = !((!activated && loud.length) || stuck);
   document.body.classList.toggle('needclick', !$('#hint').hidden); }
 setInterval(tick, 1000);
@@ -266,7 +335,7 @@ setInterval(tick, 1000);
 // an unmute pushed after a page click pauses the player and every play() is refused until its own video is clicked.
 // So every click that lands in a player pushes the intents again, and the hint stays while a loud tile is not playing.
 let activated = false;
-function push() { tiles.forEach(t => { if (!t.ready) return; t.player.setMuted(t.muted); if (!t.muted && !t.paused) { t.player.play(); t.nudgedAt = Date.now(); } }); }
+function push() { tiles.forEach(t => { if (!t.ready || (t.controls && t.hasPlayed)) return; applyMuted(t, t.muted); if (!allPaused && !t.muted && !t.paused) { t.player.play(); t.nudgedAt = Date.now(); } }); }
 function activate() { activated = true; push(); }
 addEventListener('pointerdown', () => activated || activate(), { capture: true });
 addEventListener('keydown', () => activated || activate(), { capture: true });
@@ -275,7 +344,7 @@ addEventListener('keydown', () => activated || activate(), { capture: true });
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') activate(); }));
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
 onresize = layout;
-document.onfullscreenchange = () => tiles.forEach(sync);
+document.onfullscreenchange = () => tiles.forEach(t => { fit(t.el.querySelector('.player')); sync(t); });
 document.onkeydown = e => { if (e.key === 'Escape') { if (previewRow) hidePreview(); else if (focused) focus(focused); } };
 // Check the static app files so a script-only deploy also offers a reload.
 const dev = location.hostname === 'localhost';
@@ -293,7 +362,7 @@ setInterval(async () => {
   } catch { /* Keep the players running when a version check fails. */ }
 }, dev ? 3000 : 60000);
 
-let library, follows = [], results = [], source = 'favorites', searchVersion = 0, accountVersion = 0;
+let library, follows = [], results = [], searchVersion = 0, accountVersion = 0;
 let searching = false, refreshInFlight = false, lastFollows = 0, searchTimer;
 const storedFavorites = readStored('tg.favorites', []);
 let favorites = Array.isArray(storedFavorites) ? storedFavorites.filter(s => s && validLogin(s.twitch)).map(channel) : [];
@@ -307,21 +376,20 @@ function updateAccount() {
   $('#connect').hidden = connected || !library?.clientId;
   $('#account').hidden = !connected;
   $('#account span').textContent = library?.user?.login || '';
-  $('#follows-tab').hidden = !connected;
-  $('#favorites-tab').setAttribute('aria-pressed', source === 'favorites');
-  $('#follows-tab').setAttribute('aria-pressed', source === 'follows');
+  $('#source-label').textContent = connected ? 'Follows' : 'Favoris';
+  $('#side footer').textContent = connected ? 'Ta liste de follows se met à jour automatiquement.' : 'Les favoris sont enregistrés dans ce navigateur.';
 }
 function rebuild() {
-  const merged = new Map([...favorites, ...follows, ...results].map(s => [s.twitch, s]));
+  const merged = new Map([...(library?.user ? follows : favorites), ...results].map(s => [s.twitch, s]));
   streamers = [...merged.values()];
   renderList();
   for (const s of streamers) tiles.get(s.twitch)?.bar.querySelector('span').replaceChildren(s.online === false ? 'Hors ligne' : s.viewersAmount.formatted);
 }
 function toggleFavorite(s) {
+  if (library?.user) return;
   if (favorites.some(f => f.twitch === s.twitch)) favorites = favorites.filter(f => f.twitch !== s.twitch);
   else favorites.push(s);
   saveFavorites(); rebuild();
-  if (library?.user) refresh();
 }
 function loginFromQuery(query) {
   const login = query.trim().toLowerCase().replace(/^https?:\/\/(?:www\.)?twitch\.tv\//, '').replace(/^@/, '').replace(/\/$/, '');
@@ -329,7 +397,8 @@ function loginFromQuery(query) {
 }
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
-  const base = source === 'follows' ? follows : favorites;
+  const connected = !!library?.user;
+  const base = connected ? follows : favorites;
   const matches = base.filter(s => !q || s.display.toLowerCase().includes(q) || s.twitch.includes(q));
   const rows = [...new Map([...matches, ...(q ? results : [])].map(s => [s.twitch, s])).values()]
     .sort((a, b) => Number(b.online) - Number(a.online) || viewers(b) - viewers(a) || a.display.localeCompare(b.display));
@@ -349,6 +418,7 @@ function renderList() {
     play.setAttribute('aria-pressed', tiles.has(s.twitch));
     play.onclick = () => { hidePreview(); toggle(s); };
     const star = li.querySelector('.favorite'), saved = favorites.some(f => f.twitch === s.twitch);
+    star.hidden = connected;
     star.textContent = saved ? '★' : '☆';
     star.title = (saved ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + s.display;
     star.setAttribute('aria-label', star.title); star.setAttribute('aria-pressed', saved);
@@ -366,14 +436,15 @@ function renderList() {
   }
   if (keyboardLogin) [...list.children].find(li => li.dataset.login === keyboardLogin)?.querySelector(keyboardFavorite ? '.favorite' : '.channel').focus({ preventScroll: true });
   $('#list-empty').hidden = rows.length > 0;
-  $('#list-empty').textContent = searching ? 'Recherche en cours…' : q ? 'Aucun résultat dans cette liste.' : source === 'follows' ? 'Tu ne suis encore aucune chaîne.' : 'Ajoute un premier favori avec son pseudo ou son lien Twitch.';
-  $('#search-actions').hidden = !q;
+  $('#list-empty').textContent = searching ? 'Recherche en cours…' : q ? 'Aucun résultat dans cette liste.' : connected ? 'Tu ne suis encore aucune chaîne.' : 'Ajoute un premier favori avec son pseudo ou son lien Twitch.';
+  $('#search-actions').hidden = !q || connected;
   const login = loginFromQuery(q);
-  $('#add-login').hidden = !login || favorites.some(s => s.twitch === login);
+  $('#add-login').hidden = connected || !login || favorites.some(s => s.twitch === login);
   $('#add-login').textContent = 'Ajouter ' + login + ' aux favoris';
   $('#twitch-search').href = 'https://www.twitch.tv/search?term=' + encodeURIComponent(q);
   $('#twitch-search').hidden = !!library?.user;
-  $('#top').textContent = base.some(s => s.online) ? 'Lancer jusqu’à 4 favoris en direct'.replace('favoris', source === 'follows' ? 'follows' : 'favoris') : 'Ajouter un streamer';
+  $('#top').textContent = base.some(s => s.online) ? 'Lancer jusqu’à 4 streams en direct' : connected ? 'Rechercher un streamer' : 'Ajouter un streamer';
+  $('#empty p').textContent = connected ? 'Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.' : 'Tes streams Twitch sur un seul écran. Ajoute tes streamers favoris, compose ta grille et choisis le son.';
 }
 async function search() {
   const version = ++searchVersion, query = $('#q').value.trim();
@@ -398,11 +469,11 @@ async function refresh() {
     let nextFollows = follows;
     const reloadFollows = Date.now() - lastFollows > 60000;
     if (reloadFollows) nextFollows = await library.follows();
-    const logins = [...new Set([...favorites, ...nextFollows, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
+    const logins = [...new Set([...nextFollows, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
     const live = await library.live(logins);
     if (version !== accountVersion) return;
     const update = s => channel({ ...s, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
-    follows = nextFollows.map(update); favorites = favorites.map(update);
+    follows = nextFollows.map(update);
     if (reloadFollows) lastFollows = Date.now();
     rebuild(); notice();
   } catch (error) { if (version === accountVersion) handleError(error); }
@@ -410,7 +481,8 @@ async function refresh() {
 }
 function disconnect(clearNotice = true) {
   accountVersion++; searchVersion++; searching = false;
-  library.disconnect(); follows = []; results = []; source = 'favorites'; lastFollows = 0;
+  clearTimeout(searchTimer); $('#q').value = ''; hidePreview();
+  library.disconnect(); follows = []; results = []; lastFollows = 0;
   favorites = favorites.map(s => channel({ twitch: s.twitch, display: s.display, profileUrl: s.profileUrl }));
   updateAccount(); rebuild(); if (clearNotice) notice();
 }
@@ -418,23 +490,17 @@ $('#q').oninput = () => {
   clearTimeout(searchTimer); searchVersion++; results = []; searching = false; rebuild();
   searchTimer = setTimeout(search, 300);
 };
-$('#add-login').onclick = async () => {
+$('#add-login').onclick = () => {
   const login = loginFromQuery($('#q').value);
-  if (!login || favorites.some(s => s.twitch === login)) return;
-  $('#add-login').disabled = true;
-  try {
-    const s = library?.user ? await library.lookup(login) : channel({ twitch: login });
-    if (!s) { notice('Ce pseudo ne correspond à aucune chaîne Twitch.'); return; }
-    if (!favorites.some(f => f.twitch === login)) { favorites.push(s); saveFavorites(); }
-    $('#q').value = ''; source = 'favorites'; notice(); updateAccount(); await search();
-    if (library?.user) refresh();
-  } catch (error) { handleError(error); }
-  finally { $('#add-login').disabled = false; }
+  if (library?.user || !login || favorites.some(s => s.twitch === login)) return;
+  favorites.push(channel({ twitch: login }));
+  notice(); saveFavorites();
+  $('#q').value = '';
+  search();
 };
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !$('#add-login').hidden) $('#add-login').click(); };
-for (const name of ['favorites', 'follows']) $('#' + name + '-tab').onclick = () => { source = name; updateAccount(); rebuild(); };
 $('#top').onclick = () => {
-  const live = (source === 'follows' ? follows : favorites).filter(s => s.online).slice(0, 4);
+  const live = (library?.user ? follows : favorites).filter(s => s.online).slice(0, 4);
   if (live.length) { live.forEach(s => add(s)); renderList(); }
   else { document.body.classList.remove('collapsed'); $('#q').focus(); }
 };
@@ -451,7 +517,6 @@ async function init() {
   library = new TwitchLibrary(config?.twitchClientId || '');
   try { if (library.clientId) await library.resume(); }
   catch (error) { library.disconnect(); notice(error.message); }
-  if (library.user) source = 'follows';
   updateAccount(); rebuild(); await refresh();
 }
 init().catch(handleError);
