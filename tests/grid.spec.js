@@ -20,6 +20,7 @@ async function setup(page, connected = false) {
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
     const params = new URL(route.request().url()).searchParams;
+    if (params.has('collaboration')) return route.fulfill({json:{data:[]}});
     if (params.has('login')) return route.fulfill({json:{data:params.getAll('login').map(login => ({broadcaster_login:login,is_live:false}))}});
     const login = params.get('q').toLowerCase();
     return route.fulfill({json:{data:[{broadcaster_login:login,display_name:login,is_live:false,game_name:'',thumbnail_url:''}]}});
@@ -411,6 +412,82 @@ test('spotlight shows full controls and preserves the other players when switchi
   await expect(page.locator('#grid [data-login="two"] .ctl')).toBeVisible();
   expect(errors).toEqual([]);
 });
+test('tile controls appear on hover or keyboard focus and adjusting volume enables and saves sound', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],paused:{one:true}}));
+  });
+  await page.goto('/');
+  const one=page.locator('#grid [data-login="one"]'),two=page.locator('#grid [data-login="two"]');
+  const volume=one.locator('.ctl input');
+  await page.locator('#q').hover();
+  await expect(one.locator('.ctl')).toBeHidden();
+  await expect(volume).toBeHidden();
+  await one.hover();
+  await expect(one.locator('.ctl button').first()).toBeVisible();
+  await expect(volume).toBeVisible();
+  await expect(one.locator('.ctl output')).toBeVisible();
+  await expect(two.locator('.ctl input')).toBeHidden();
+  await volume.focus();
+  await volume.press('ArrowRight');
+  await expect(volume).toHaveValue('0.55');
+  await expect(one).toHaveClass(/loud/);
+  await expect(one.locator('.bar .snd')).toHaveAttribute('aria-pressed','true');
+  expect(await page.evaluate(() => {
+    const t=tiles.get('one');
+    return {muted:t.muted,playerMuted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.paused,otherMuted:tiles.get('two').muted,focused};
+  })).toEqual({muted:false,playerMuted:false,volume:0.55,paused:true,otherMuted:true,focused:null});
+  await page.locator('#q').focus();
+  await page.locator('#q').hover();
+  await expect(one.locator('.ctl')).toBeHidden();
+  await expect(volume).toBeHidden();
+  await one.locator('.bar .snd').focus();
+  await expect(one.locator('.ctl')).toBeVisible();
+  await page.locator('#q').focus();
+  await expect(one.locator('.ctl')).toBeHidden();
+  await one.hover();
+  await expect(volume).toBeVisible();
+  await page.reload();
+  await expect(one).toHaveClass(/loud/);
+  await expect(volume).toHaveValue('0.55');
+  expect(errors).toEqual([]);
+});
+test('sound buttons toggle pinning, while spotlight audio stays active until focus changes', async ({ page }) => {
+  const errors=await setup(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two']}));
+  });
+  await page.goto('/');
+  const tile=page.locator('#grid [data-login="one"]'),other=page.locator('#grid [data-login="two"]');
+  const header=tile.locator('.bar .snd'),sound=tile.locator('.ctl .snd');
+  const state=()=>page.evaluate(()=>({muted:tiles.get('one').muted,pinned:tiles.get('one').pinned}));
+  await tile.hover();
+  await expect(sound).toHaveAttribute('aria-pressed','false');
+  await sound.click();
+  expect(await state()).toEqual({muted:false,pinned:true});
+  await expect(header).toHaveAttribute('aria-pressed','true');
+  await expect(sound).toHaveAttribute('aria-pressed','true');
+  await header.click();
+  expect(await state()).toEqual({muted:true,pinned:false});
+  await expect(sound).toHaveAttribute('aria-pressed','false');
+  await tile.locator('.bar b').click();
+  expect(await state()).toEqual({muted:false,pinned:false});
+  await header.click();
+  expect(await state()).toEqual({muted:false,pinned:true});
+  await other.locator('.bar b').click();
+  expect(await state()).toEqual({muted:false,pinned:true});
+  await tile.locator('.bar b').click();
+  await header.click();
+  expect(await state()).toEqual({muted:false,pinned:false});
+  await other.locator('.bar b').click();
+  expect(await state()).toEqual({muted:true,pinned:false});
+  await tile.hover();
+  await sound.click();
+  await page.reload();
+  expect(await state()).toEqual({muted:false,pinned:true});
+  await expect(header).toHaveAttribute('aria-pressed','true');
+  expect(errors).toEqual([]);
+});
 test('native pause, volume and mute survive the watchdog and returning to the grid', async ({ page }) => {
   const errors = await setup(page); await page.clock.install(); await page.goto('/');
   await favorite(page, 'one'); await page.locator('#list .channel').click();
@@ -754,4 +831,406 @@ test('audio overlay skips silent and paused layouts; gesture also unlocks player
   await expect(overlay).toBeHidden();
   expect(await page.evaluate(()=>({muted:tiles.get('one').player.getMuted(),paused:tiles.get('one').player.paused}))).toEqual({muted:false,paused:false});
   await expect(page.locator('.audio-help')).toHaveCount(0);
+});
+
+async function selectChatPosition(tile, position) {
+  const options=tile.locator('.chat-options');
+  if (!await options.evaluate(el=>el.open)) await options.locator('summary').click();
+  await options.locator('select').selectOption(position);
+}
+async function mockChat(page) {
+  await page.route('https://www.twitch.tv/embed/*/chat?**',r=>r.fulfill({contentType:'text/html',body:'<body style="margin:0;background:#18181b;color:#efeff1">Chat Twitch</body>'}));
+}
+test('chat uses vertical letterboxing, follows spotlight and preserves players when positioned or expanded',async({page})=>{
+  const errors=await setup(page);await mockChat(page);
+  await page.setViewportSize({width:1440,height:1200});
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one'})));
+  await page.goto('/');
+  const one=page.locator('#grid [data-login="one"]'),two=page.locator('#grid [data-login="two"]');
+  await expect(one.locator('.chat-toggle')).toBeVisible();
+  await expect(two.locator('.chat-toggle')).toBeHidden();
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
+  await page.evaluate(()=>{window.chatPlayers=[...tiles.values()].map(t=>t.player);});
+  const videoBefore=await one.locator('.player iframe').boundingBox();
+  await one.locator('.chat-toggle').click();
+  await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position','bottom');
+  await expect(one.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/one\/chat\?parent=localhost&darkpopout=1/);
+  const video=await one.locator('.player iframe').boundingBox();
+  expect(video.width).toBeCloseTo(videoBefore.width,0);
+  expect(video.height).toBeCloseTo(videoBefore.height,0);
+  const chat=await one.locator('.chat').boundingBox();
+  expect(chat.y).toBeCloseTo(video.y+video.height,0);
+  expect(chat.height).toBeGreaterThanOrEqual(420);
+  await page.evaluate(()=>{window.chatFrame=tiles.get('one').chat.querySelector('iframe');});
+  await expect(one.locator('.chat-options select option')).toHaveText(['Auto','Top','Bottom','Left','Right']);
+  for (const position of ['top','bottom','left','right']) {
+    await selectChatPosition(one,position);
+    await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position',position);
+    const panel=await one.locator('.chat').boundingBox(),player=await one.locator('.player').boundingBox();
+    if (position==='top') expect(panel.y+panel.height).toBeCloseTo(player.y,0);
+    if (position==='bottom') expect(player.y+player.height).toBeCloseTo(panel.y,0);
+    if (position==='left') expect(panel.x+panel.width).toBeCloseTo(player.x,0);
+    if (position==='right') expect(player.x+player.width).toBeCloseTo(panel.x,0);
+    const frame=await one.locator('.chat iframe').boundingBox();
+    expect(frame.height).toBeGreaterThanOrEqual(panel.height-1);
+    expect(await page.evaluate(()=>tiles.get('one').chat.querySelector('iframe')===window.chatFrame)).toBe(true);
+    expect(await page.evaluate(()=>[...tiles.values()].every((t,i)=>t.player===window.chatPlayers[i]))).toBe(true);
+  }
+  expect(await page.evaluate(()=>tiles.get('one').chat.querySelector('iframe')===window.chatFrame)).toBe(true);
+  await selectChatPosition(one,'auto');
+  await page.setViewportSize({width:2200,height:700});
+  await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position','right');
+  await one.locator('.fs').click();
+  await expect(one.locator('.chat')).toBeVisible();
+  expect(await page.evaluate(()=>[...tiles.values()].every((t,i)=>t.player===window.chatPlayers[i]))).toBe(true);
+  expect(await page.evaluate(()=>tiles.get('one').chat.querySelector('iframe')===window.chatFrame)).toBe(true);
+  await one.locator('.fs').click();
+  await two.locator('.bar b').click();
+  await expect(page.locator('.chat iframe')).toHaveCount(1);
+  await expect(two.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/two\/chat/);
+  await two.locator('.min').click();
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
+  await one.locator('.bar b').click();
+  await expect(one.locator('.chat')).toBeVisible();
+  await one.locator('.chat-toggle').click();
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
+  await expect(one.locator('.chat-toggle')).toHaveAttribute('aria-expanded','false');
+  expect(errors).toEqual([]);
+});
+
+test('compact chat menu works with keyboard, outside clicks and a narrow viewport',async({page})=>{
+  const errors=await setup(page);await mockChat(page);
+  await page.setViewportSize({width:390,height:844});
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true})));
+  await page.goto('/');
+  await page.locator('#grid .fs').click();
+  const options=page.locator('.chat-options'),summary=options.locator('summary');
+  await expect(options.locator('select')).toBeHidden();
+  await summary.focus();await page.keyboard.press('Enter');
+  await expect(options.locator('select')).toBeVisible();
+  const menu=await options.locator('.chat-menu').boundingBox();
+  expect(menu.x).toBeGreaterThanOrEqual(0);
+  expect(menu.x+menu.width).toBeLessThanOrEqual(390);
+  await expect(options.locator('a')).toHaveAttribute('href','https://www.twitch.tv/popout/one/chat?popout=&darkpopout=1');
+  await page.keyboard.press('Escape');
+  await expect(options.locator('select')).toBeHidden();
+  await expect(summary).toBeFocused();
+  await expect(page.locator('#grid .tile')).toHaveClass(/expanded/);
+  await summary.click();
+  await page.frameLocator('.chat iframe').locator('body').click();
+  await expect(options.locator('select')).toBeHidden();
+  await summary.click();
+  await page.locator('.chat-toggle').click();
+  await expect(summary).toBeVisible();
+  await expect(page.locator('.chat')).toBeHidden();
+  await selectChatPosition(page.locator('#grid .tile'),'left');
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
+  await page.locator('.chat-toggle').click();
+  await expect(options.locator('select')).toBeHidden();
+  await expect(page.locator('.tile-body')).toHaveAttribute('data-chat-position','left');
+  expect(errors).toEqual([]);
+});
+
+test('chat reserves enough height for messages and Auto avoids a cramped bottom panel',async({page})=>{
+  await setup(page);await mockChat(page);
+  await page.setViewportSize({width:1800,height:1250});
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true})));
+  await page.goto('/');
+  await page.locator('#grid .fs').click();
+  const body=page.locator('#grid .tile-body'),chat=page.locator('#grid .chat');
+  await expect(body).toHaveAttribute('data-chat-position','right');
+  for (const position of ['top','bottom']) {
+    await selectChatPosition(page.locator('#grid .tile'),position);
+    await expect(body).toHaveAttribute('data-chat-position',position);
+    await expect.poll(async()=>Math.round((await chat.boundingBox()).height)).toBe(420);
+  }
+  await page.setViewportSize({width:1800,height:400});
+  const bounds=await body.boundingBox();
+  await expect.poll(async()=>Math.round((await chat.boundingBox()).height)).toBe(Math.round(bounds.height-90));
+  const panel=await chat.boundingBox();
+  expect(panel.y+panel.height).toBeLessThanOrEqual(400);
+  expect((await page.locator('#grid .player').boundingBox()).height).toBeGreaterThanOrEqual(90);
+});
+
+test('side chat expands into pillarboxing up to its maximum without shrinking the video',async({page})=>{
+  await setup(page);await mockChat(page);
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true})));
+  await page.goto('/');
+  await page.locator('#grid .fs').click();
+  const chat=page.locator('#grid .chat'),body=page.locator('#grid .tile-body');
+  await page.evaluate(()=>{window.savedVideo=tiles.get('one').player;window.savedChat=tiles.get('one').chat.querySelector('iframe');});
+  for (const position of ['auto','left','right']) {
+    await selectChatPosition(page.locator('#grid .tile'),position);
+    for (const width of [1800,2200,1600]) {
+      await page.setViewportSize({width,height:800});
+      await expect(body).toHaveAttribute('data-chat-position',position==='auto'?'right':position);
+      const bounds=await body.boundingBox(),videoWidth=bounds.height*16/9;
+      const expected=width===2200?480:width===1600?320:bounds.width-videoWidth;
+      await expect.poll(async()=>Math.round((await chat.boundingBox()).width)).toBe(Math.round(expected));
+      if (width===1800) expect(expected).toBeGreaterThan(320);
+      const video=await page.locator('#grid .player iframe').boundingBox();
+      expect(video.width).toBeCloseTo(Math.min(videoWidth,bounds.width-320),0);
+      expect(await page.evaluate(()=>tiles.get('one').player===window.savedVideo && tiles.get('one').chat.querySelector('iframe')===window.savedChat)).toBe(true);
+    }
+  }
+});
+
+test('chat layout is stored per mode, works with a single mobile tile, and avatars refresh',async({page})=>{
+  const errors=await setup(page,true);await api(page);await mockChat(page);
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'guest',is_live:false,thumbnail_url:'https://example.com/avatar.png'}]}}));
+  await page.route('https://example.com/avatar.png',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="9" fill="purple"/></svg>'}));
+  await page.addInitScript(()=>{
+    sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    if (!localStorage.getItem('tg.layout.connected')) localStorage.setItem('tg.layout.connected',JSON.stringify({order:['live'],chatOpen:true,chatPosition:'below'}));
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['guest'],chatOpen:true,chatPosition:'auto'}));
+  });
+  await page.goto('/');
+  await expect(page.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/live\/chat/);
+  await expect(page.locator('.chat-options select')).toHaveValue('bottom');
+  await selectChatPosition(page.locator('#grid .tile'),'top');
+  await page.reload();
+  await expect(page.locator('.chat-options select')).toHaveValue('top');
+  await page.locator('#disconnect').click();
+  await expect(page.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/guest\/chat/);
+  await expect(page.locator('.chat-options select')).toHaveValue('auto');
+  await expect(page.locator('#grid .stream-avatar')).toHaveAttribute('src','https://example.com/avatar.png');
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#toggle').click();
+  await expect(page.locator('#grid .tile-body')).toHaveAttribute('data-chat-position','bottom');
+  const video=await page.locator('#grid .player iframe').boundingBox(),chat=await page.locator('.chat').boundingBox();
+  expect(chat.y).toBeCloseTo(video.y+video.height,0);
+  expect(chat.x+chat.width).toBeLessThanOrEqual(390);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.layout.connected')).chatPosition)).toBe('top');
+  await page.locator('#grid .close').click();
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+async function collaborationFixture(page, connected) {
+  const users = [
+    {id:'1',login:'live',display_name:'Live'},
+    {id:'2',login:'partner',display_name:'Partner'},
+    {id:'3',login:'third',display_name:'Third <img src=x>'},
+    {id:'4',login:'offline',display_name:'Offline'},
+    {id:'5',login:'sidebar',display_name:'Sidebar'}
+  ];
+  const state = { active:true, fail:false, calls:0 };
+  const members = login => !state.active ? [] : login==='sidebar' ? [users[4],users[1]] : ['live','partner','third'].includes(login) ? users.slice(0,4) : [];
+  const card = u => ({broadcaster_login:u.login,display_name:u.display_name,is_live:u.login!=='offline',game_name:'Art',thumbnail_url:'favicon.svg',viewer_count:42});
+  if (connected) {
+    await api(page);
+    await page.route('https://api.twitch.tv/helix/**',r=>{
+      const url=new URL(r.request().url()),p=url.searchParams;
+      if(url.pathname.endsWith('/channels/followed')) return r.fulfill({json:{data:[users[0],users[4]].map(card)}});
+      if(url.pathname.endsWith('/users')) {
+        const matches=users.filter(u=>p.getAll('login').includes(u.login)||p.getAll('id').includes(u.id));
+        return r.fulfill({json:{data:matches}});
+      }
+      if(url.pathname.endsWith('/shared_chat/session')) {
+        state.calls++;
+        if(state.fail) return r.fulfill({status:503,json:{error:'unavailable'}});
+        const login=users.find(u=>u.id===p.get('broadcaster_id'))?.login;
+        const participants=members(login).map(u=>({broadcaster_id:u.id}));
+        return r.fulfill({json:{data:participants.length?[{participants}]:[]}});
+      }
+      if(url.pathname.endsWith('/streams')) return r.fulfill({json:{data:users.filter(u=>u.login!=='offline'&&(p.getAll('user_id').includes(u.id)||p.getAll('user_login').includes(u.login))).map(u=>({user_id:u.id,user_login:u.login,game_name:'Art',viewer_count:42}))}});
+      return r.fulfill({json:{data:[]}});
+    });
+  } else {
+    await page.route('**/api/search?**',r=>{
+      const p=new URL(r.request().url()).searchParams;
+      if(p.has('collaboration')) {
+        state.calls++;
+        return state.fail?r.fulfill({status:503,json:{error:'unavailable'}}):r.fulfill({json:{data:members(p.get('collaboration')).map(card)}});
+      }
+      return r.fulfill({json:{data:users.filter(u=>p.getAll('login').includes(u.login)).map(card)}});
+    });
+  }
+  return state;
+}
+for (const connected of [false,true]) test(`collaboration icons and participant additions preserve grid and audio in ${connected?'connected':'guest'} mode`,async({page})=>{
+  const errors=await setup(page,connected);
+  await collaborationFixture(page,connected);
+  await page.addInitScript(connected=>{
+    if(connected) sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'live'},{twitch:'sidebar'}]));
+    localStorage.setItem('tg.layout.'+(connected?'connected':'guest'),JSON.stringify({order:['live'],muted:{live:false},volume:{live:0.35},pinned:{live:true}}));
+  },connected);
+  await page.goto('/');
+  await expect(page.locator('#list [data-login="sidebar"] .collaboration-indicator')).toBeVisible();
+  const source=page.locator('#grid [data-login="live"]'),menu=source.locator('.collaboration');
+  await expect(menu.locator('summary')).toBeVisible();
+  await page.locator('#audio-overlay').click();
+  await page.evaluate(()=>window.originalCollaborationPlayer=tiles.get('live').player);
+  await menu.locator('summary').click();
+  await expect(menu.locator('.collaboration-row')).toHaveCount(4);
+  await expect(menu.locator('[data-participant="live"] button')).toBeDisabled();
+  await expect(menu.locator('[data-participant="offline"] small')).toHaveText('Hors ligne');
+  await expect(menu.locator('[data-participant="offline"] button')).toBeDisabled();
+  await expect(menu.locator('[data-participant="third"] .collaboration-name')).toHaveText('Third <img src=x>');
+  await expect(menu.locator('.collaboration-name img')).toHaveCount(0);
+  await menu.locator('[data-participant="partner"] button').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await expect(menu.locator('[data-participant="partner"] small')).toHaveText('Déjà dans la grille');
+  await expect(source).toHaveClass(/big/);
+  await menu.locator('.add-collaboration').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(3);
+  await expect(menu.locator('.add-collaboration')).toBeDisabled();
+  expect(await page.evaluate(()=>({order,focused,chatOpen,samePlayer:tiles.get('live').player===window.originalCollaborationPlayer,
+    muted:[...tiles.values()].map(t=>t.muted),volume:tiles.get('live').volume,pinned:tiles.get('live').pinned})))
+    .toEqual({order:['live','partner','third'],focused:'live',chatOpen:false,samePlayer:true,muted:[false,true,true],volume:0.35,pinned:true});
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.locator('#grid [data-login="partner"] .close').click();
+  await menu.locator('summary').click();
+  await expect(menu.locator('[data-participant="partner"] button')).toBeEnabled();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.layout.'+layoutMode)).order)).toEqual(['live','third']);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.favorites')).map(s=>s.twitch))).toEqual(['live','sidebar']);
+  expect(errors).toEqual([]);
+});
+test('collaboration menu fits mobile and disappears when sessions end or the API fails',async({page})=>{
+  const errors=await setup(page,true);const state=await collaborationFixture(page,true);
+  await page.clock.install();await page.setViewportSize({width:390,height:844});
+  await page.addInitScript(()=>{
+    sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    localStorage.setItem('tg.layout.connected',JSON.stringify({order:['live']}));
+  });
+  await page.goto('/');
+  const menu=page.locator('#grid .collaboration');
+  await expect(menu.locator('summary')).toBeVisible();
+  await menu.locator('summary').click();
+  const bounds=await menu.locator('.collaboration-menu').boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.x+bounds.width).toBeLessThanOrEqual(390);
+  await page.waitForFunction(()=>!refreshInFlight && !collaborationRefreshInFlight);
+  state.active=false;
+  await page.clock.runFor(91000);
+  await expect(menu).toBeHidden();
+  await expect(page.locator('#list .collaboration-indicator')).toHaveCount(0);
+  state.active=true;
+  await page.clock.runFor(91000);
+  await expect(menu).toBeVisible();
+  state.fail=true;
+  await page.clock.runFor(91000);
+  await expect(menu).toBeHidden();
+  await expect(page.locator('#disconnect')).toBeVisible();
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await expect(page.locator('#notice')).toHaveText('');
+  expect(errors).toEqual([]);
+});
+
+async function nameGrid(page, name) {
+  await page.locator('#grid-name').fill(name);
+  await page.locator('#grid-form-submit').click();
+  await expect(page.locator('#grids-dialog')).not.toBeVisible();
+}
+async function openGridManager(page) {
+  if (await page.locator('#grids-open').isVisible()) await page.locator('#grids-open').click();
+  else await page.locator('#grids-shortcut').click();
+}
+test('named grids migrate, copy without reloading players, rename, switch and delete safely',async({page})=>{
+  const errors=await setup(page);await mockChat(page);
+  await page.addInitScript(()=>{
+    if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',chatOpen:true,chatPosition:'left',volume:{one:0.25},paused:{two:true}}));
+  });
+  await page.goto('/');
+  await expect(page.locator('#current-grid-name')).toHaveText('Grille par défaut');
+  await page.evaluate(()=>window.savedPlayers=[...tiles.values()].map(t=>t.player));
+  await openGridManager(page);await page.locator('#grid-save-copy').click();
+  await nameGrid(page,'Soirée <img src=x>');
+  expect(await page.evaluate(()=>[...tiles.values()].every((t,i)=>t.player===window.savedPlayers[i]))).toBe(true);
+  await expect(page.locator('#current-grid-name')).toHaveText('Soirée <img src=x>');
+  await openGridManager(page);
+  await expect(page.locator('#saved-grids strong img')).toHaveCount(0);
+  await page.locator('.saved-grid').filter({hasText:'Soirée <img src=x>'}).locator('.rename-grid').click();
+  await nameGrid(page,'Soirée');
+  await openGridManager(page);await page.locator('#grid-new').click();await nameGrid(page,'Travail');
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  await expect(page.locator('#empty')).toBeVisible();
+  await openGridManager(page);await page.locator('.saved-grid').filter({hasText:'Soirée'}).locator('.open-grid').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  expect(await page.evaluate(()=>({order,focused,chatOpen,chatPosition,volume:tiles.get('one').volume,paused:tiles.get('two').paused})))
+    .toEqual({order:['one','two'],focused:'one',chatOpen:true,chatPosition:'left',volume:0.25,paused:true});
+  await page.reload();await expect(page.locator('#current-grid-name')).toHaveText('Soirée');
+  await openGridManager(page);await page.locator('.saved-grid').filter({hasText:'Soirée'}).locator('.delete-grid').click();
+  await page.locator('#grid-form-cancel').click();await expect(page.locator('.saved-grid')).toHaveCount(3);
+  await page.locator('.saved-grid').filter({hasText:'Soirée'}).locator('.delete-grid').click();await page.locator('#grid-form-submit').click();
+  await expect(page.locator('#current-grid-name')).toHaveText('Grille par défaut');
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await openGridManager(page);await expect(page.locator('.saved-grid')).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+test('grids stay separate between modes and deleting the final grid creates a blank default',async({page})=>{
+  const errors=await setup(page,true);await api(page);
+  await page.addInitScript(()=>{
+    sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    if(!localStorage.getItem('tg.layout.connected'))localStorage.setItem('tg.layout.connected',JSON.stringify({order:['live']}));
+    if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['guest']}));
+  });
+  await page.goto('/');await openGridManager(page);await page.locator('#grid-save-copy').click();await nameGrid(page,'Compte Twitch');
+  await page.locator('#disconnect').click();await expect(page.locator('#current-grid-name')).toHaveText('Grille par défaut');
+  await openGridManager(page);await expect(page.locator('.saved-grid')).toHaveCount(1);
+  await page.locator('.delete-grid').click();await page.locator('#grid-form-submit').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.grids.guest')).items.length)).toBe(1);
+  await page.reload();await expect(page.locator('#current-grid-name')).toHaveText('Compte Twitch');
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+test('a collaboration can open in its own named grid without changing the original',async({page})=>{
+  const errors=await setup(page);await collaborationFixture(page,false);
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['live']})));
+  await page.goto('/');await page.locator('#grid .collaboration summary').click();
+  await page.locator('.create-collaboration-grid').click();await nameGrid(page,'Duo du soir');
+  await expect(page.locator('#grid .tile')).toHaveCount(3);
+  expect(await page.evaluate(()=>({order,focused,chatOpen,grids:gridStore.items.map(i=>i.layout.order)})))
+    .toEqual({order:['live','partner','third'],focused:'live',chatOpen:false,grids:[['live'],['live','partner','third']]});
+  await openGridManager(page);await page.locator('.saved-grid').filter({hasText:'Grille par défaut'}).locator('.open-grid').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+test('language and theme changes persist without recreating video players',async({page})=>{
+  const errors=await setup(page);await mockChat(page);
+  await page.addInitScript(()=>{
+    localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'one',display:'Ajouter'}]));
+    if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true}));
+  });
+  await page.goto('/');await page.evaluate(()=>window.settingsPlayer=tiles.get('one').player);
+  await page.locator('#settings-open').click();
+  await page.locator('#language-setting').selectOption('en');
+  await expect(page.locator('html')).toHaveAttribute('lang','en');
+  await expect(page.locator('#settings-title')).toHaveText('Settings');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder','Find a streamer…');
+  await expect(page.locator('#grid .bar > b')).toHaveText('Ajouter');
+  await expect(page.locator('#current-grid-name')).toHaveText('Default grid');
+  await page.locator('#language-setting').selectOption('nl');
+  await expect(page.locator('#settings-title')).toHaveText('Instellingen');
+  await expect(page.locator('#current-grid-name')).toHaveText('Standaardraster');
+  await page.locator('#theme-setting').selectOption('light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+  await expect(page.locator('.chat iframe')).not.toHaveAttribute('src',/darkpopout/);
+  await page.locator('#theme-setting').selectOption('dark');
+  await page.emulateMedia({colorScheme:'light'});
+  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+  await page.locator('#theme-setting').selectOption('system');
+  await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+  expect(await page.evaluate(()=>tiles.get('one').player===window.settingsPlayer)).toBe(true);
+  await page.keyboard.press('Escape');await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('lang','nl');
+  await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+  await expect(page.locator('#q')).toHaveAttribute('placeholder','Een streamer zoeken…');
+  expect(errors).toEqual([]);
+});
+test('workspace controls work collapsed on mobile and dialogs keep focus without changing spotlight',async({page})=>{
+  const errors=await setup(page);await page.setViewportSize({width:390,height:844});
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',collapsed:true})));
+  await page.goto('/');await page.locator('#settings-shortcut').click();
+  await expect(page.locator('#settings-dialog')).toBeVisible();
+  const box=await page.locator('#settings-dialog').boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#grid .big')).toHaveAttribute('data-login','one');
+  await page.locator('#grids-shortcut').click();await expect(page.locator('#saved-grids .saved-grid')).toHaveCount(1);
+  await page.locator('#grid-new').click();await nameGrid(page,'Mobile');
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

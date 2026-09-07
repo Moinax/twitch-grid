@@ -118,3 +118,45 @@ test('repeated uncached searches from one client are bounded', async () => {
   for(let i=0;i<60;i++) assert.equal((await request('query'+i)).statusCode,200);
   assert.equal((await request('limit')).statusCode,429);
 });
+
+test('collaboration lookup resolves unique participants and live statuses, caches only public data', async () => {
+  global.fetch = async (url, options) => {
+    calls.push({url,options});
+    if (url.endsWith('/oauth2/token')) return json({access_token:'private-token',expires_in:3600});
+    const endpoint = new URL(url);
+    if (endpoint.pathname.endsWith('/shared_chat/session')) {
+      assert.equal(endpoint.searchParams.get('broadcaster_id'),'1');
+      return json({data:[{participants:[{broadcaster_id:'1'},{broadcaster_id:'2'},{broadcaster_id:'2'},{broadcaster_id:'3'}]}]});
+    }
+    if (endpoint.pathname.endsWith('/users')) {
+      if (endpoint.searchParams.has('login')) return json({data:[{id:'1',login:'altair'}]});
+      assert.deepEqual(endpoint.searchParams.getAll('id'),['1','2','3']);
+      return json({data:[{id:'1',login:'altair',display_name:'Altair'},{id:'2',login:'partner',display_name:'Partner',profile_image_url:'https://example.com/avatar.png',email:'private@example.com'},{id:'3',login:'offline',display_name:'Offline'}]});
+    }
+    assert.deepEqual(endpoint.searchParams.getAll('user_id'),['1','2','3']);
+    return json({data:[{user_login:'altair',title:'Art',viewer_count:100},{user_login:'partner',title:'Painting',game_name:'Art',viewer_count:12}]});
+  };
+  const res = await request(new URLSearchParams({collaboration:'Altair'}));
+  assert.equal(res.statusCode,200);
+  assert.equal(res.body.data.length,3);
+  assert.equal(res.body.data[1].display_name,'Partner');
+  assert.equal(res.body.data[1].is_live,true);
+  assert.equal(res.body.data[1].title,'Painting');
+  assert.equal(res.body.data[2].is_live,false);
+  assert.doesNotMatch(JSON.stringify(res),/server-secret|private-token|private@example/);
+  await request(new URLSearchParams({collaboration:'altair'}));
+  assert.equal(calls.length,5);
+});
+test('collaboration lookup returns no participants for unknown channels or absent sessions', async () => {
+  assert.deepEqual((await request(new URLSearchParams({collaboration:'missing'}))).body,{data:[]});
+  global.fetch = async url => json({data:url.includes('/users?')?[{id:'1',login:'altair'}]:[]});
+  assert.deepEqual((await request(new URLSearchParams({collaboration:'altair'}))).body,{data:[]});
+});
+test('collaboration queries reject invalid logins, duplicates and mixed search modes', async () => {
+  for (const params of [new URLSearchParams({collaboration:''}),new URLSearchParams({collaboration:'a/b'}),
+    new URLSearchParams({collaboration:'altair',q:'altair'}),new URLSearchParams({collaboration:'altair',login:'altair'}),
+    new URLSearchParams([['collaboration','altair'],['collaboration','partner']])]) {
+    assert.equal((await request(params)).statusCode,400);
+  }
+  assert.equal(calls.length,0);
+});

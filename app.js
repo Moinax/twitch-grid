@@ -2,25 +2,46 @@ const $ = s => document.querySelector(s);
 const list = $('#list'), grid = $('#grid');
 const tiles = new Map();   // twitch login -> { el, player, bar }
 let streamers = [], focused = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
+let chatOpen = false, chatPosition = 'auto';
+const collaborations = new Map();
+const collaborationIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>';
 
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
 // Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
-function save() { if (!restored) return; writeStored('tg.layout.' + layoutMode, { order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), pinned: Object.fromEntries([...tiles].map(([k, t]) => [k, t.pinned])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
+let gridStore = null;
+function currentLayout() {
+  return { order: [...order], focused, allPaused, chatOpen, chatPosition,
+    channels: order.map(login => { const {twitch,display,profileUrl}=tiles.get(login).channel; return {twitch,display,profileUrl}; }),
+    collapsed: document.body.classList.contains('collapsed'),
+    ...Object.fromEntries(['muted','pinned','volume','paused'].map(key => [key,Object.fromEntries([...tiles].map(([login,t]) => [login,t[key]]))])) };
+}
+function save() {
+  if (!restored) return;
+  const snapshot = currentLayout();
+  writeStored('tg.layout.' + layoutMode, snapshot);
+  if (gridStore && !gridStore.save(snapshot)) notice(tr('Impossible d’enregistrer dans ce navigateur.'));
+  renderGridLauncher();
+}
 function saveCurrentLayout() {
   tiles.forEach(readNativeControls);
   save();
 }
 function restore() {
   if (!layoutMode || restored || !window.Twitch?.Player) return;
-  const st = readStored('tg.layout.' + layoutMode, {});
+  const st = gridStore?.active.layout || readStored('tg.layout.' + layoutMode, {});
+  const savedChannels = Array.isArray(st.channels) ? st.channels : [];
   allPaused = !!st.allPaused;
-  for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel({ twitch: login }); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login]); }
+  chatOpen = st.chatOpen === true;
+  chatPosition = st.chatPosition === 'below' ? 'bottom' : ['auto', 'top', 'bottom', 'left', 'right'].includes(st.chatPosition) ? st.chatPosition : 'auto';
+  for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel(savedChannels.find(x => x?.twitch === login) || { twitch: login }); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login]); }
   focused = tiles.has(st.focused) ? st.focused : null;
   $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
   document.body.classList.toggle('collapsed', st.collapsed ?? innerWidth <= 700);
   layout();
   tick();   // right away, not at the first second: a click that lands before it hits the page instead of the video
   restored = true;
+  syncChat();
+  refreshCollaborations();
   save();
 }
 function switchLayout(mode) {
@@ -33,6 +54,8 @@ function switchLayout(mode) {
   if (legacy && writeStored(key, readStored(key, null) ?? legacy)) {
     try { localStorage.removeItem('tg.layout'); } catch { /* The in-memory layout remains usable. */ }
   }
+  gridStore = new GridStore(mode);
+  renderGridLauncher();
   allPaused = false;
   $('#playall').textContent = '⏸\uFE0E';
   layout();
@@ -44,7 +67,7 @@ function loadPlayer() {
   const script = document.createElement('script');
   script.src = 'https://player.twitch.tv/js/embed/v1.js';
   script.onload = restore;
-  script.onerror = () => { if (!$('#notice').textContent) notice('Le lecteur Twitch est indisponible. La connexion et la recherche restent accessibles.'); };
+  script.onerror = () => { if (!$('#notice').textContent) notice(tr('Le lecteur Twitch est indisponible. La connexion et la recherche restent accessibles.')); };
   document.head.append(script);
 }
 
@@ -57,6 +80,168 @@ function fit(p) {
   f.style.transform = `translate(${(p.clientWidth - f.offsetWidth * s) / 2}px, ${(p.clientHeight - f.offsetHeight * s) / 2}px) scale(${s})`;
 }
 const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)));
+const chatResize = new ResizeObserver(es => es.forEach(e => {
+  const t = tiles.get(e.target.closest('.tile').dataset.login);
+  if (t && !t.chat.hidden) layoutChat(t);
+}));
+
+function layoutChat(t) {
+  const width = t.body.clientWidth, height = t.body.clientHeight, ratio = 16 / 9;
+  if (!width || !height) return;
+  // Widen the side chat into the video's unused horizontal space, up to 480px.
+  const chatWidth = Math.min(480, Math.max(320, width - height * ratio), Math.max(0, width - 160));
+  const minChatHeight = 420;
+  const chatHeight = Math.min(minChatHeight, Math.max(0, height - 90));
+  // Compare the rendered video size after reserving space for each possible chat position.
+  const belowVideo = Math.min(width, (height - chatHeight) * ratio);
+  const rightVideo = Math.min(width - chatWidth, height * ratio);
+  const position = chatPosition === 'auto'
+    ? (height - width / ratio >= minChatHeight || belowVideo + 24 >= rightVideo ? 'bottom' : 'right')
+    : chatPosition;
+  t.body.dataset.chatPosition = position;
+  t.body.style.setProperty('--chat-width', chatWidth + 'px');
+  t.body.style.setProperty('--video-height', Math.min(width / ratio, height - chatHeight) + 'px');
+  fit(t.el.querySelector('.player'));
+}
+function syncChat() {
+  for (const [login, t] of tiles) {
+    const visible = restored && chatOpen && t.controls;
+    t.chat.hidden = !visible;
+    t.chatOptions.hidden = !t.controls;
+    if (!t.controls) t.chatOptions.open = false;
+    t.chatOptions.querySelector('select').value = chatPosition;
+    const button = t.bar.querySelector('.chat-toggle');
+    button.setAttribute('aria-expanded', String(visible));
+    button.title = visible ? tr('Masquer le chat') : tr('Afficher le chat');
+    button.setAttribute('aria-label', button.title);
+    if (!visible) {
+      t.chat.querySelector('iframe')?.remove();
+      delete t.body.dataset.chatPosition;
+      continue;
+    }
+    const chatSrc = `https://www.twitch.tv/embed/${login}/chat?parent=${encodeURIComponent(location.hostname)}` + (document.documentElement.dataset.theme === 'dark' ? '&darkpopout=1' : '');
+    if (!t.chat.querySelector('iframe')) {
+      const frame = document.createElement('iframe');
+      frame.src = chatSrc;
+      frame.title = tr('Chat de {name}', {name:t.channel.display});
+      t.chat.append(frame);
+    }
+    if (t.chat.querySelector('iframe').src !== chatSrc) t.chat.querySelector('iframe').src = chatSrc;
+    layoutChat(t);
+  }
+}
+function closeTileMenus(returnFocus = false, except = null) {
+  let closed = false;
+  for (const menu of document.querySelectorAll('.chat-options[open], .collaboration[open]')) {
+    if (menu === except) continue;
+    menu.open = false;
+    if (returnFocus) menu.querySelector('summary').focus();
+    closed = true;
+  }
+  return closed;
+}
+addEventListener('pointerdown', e => closeTileMenus(false, e.target.closest('.chat-options, .collaboration')));
+
+function positionCollaborationMenu(t) {
+  const anchor = t.collaboration.querySelector('summary').getBoundingClientRect();
+  const menu = t.collaboration.querySelector('.collaboration-menu');
+  const width = Math.min(320, innerWidth - 24);
+  const below = innerHeight - anchor.bottom - 18;
+  const above = below < 180 && anchor.top > below;
+  const height = Math.max(0, Math.min(400, above ? anchor.top - 18 : below));
+  menu.style.width = width + 'px';
+  menu.style.left = Math.max(12, Math.min(anchor.right - width, innerWidth - width - 12)) + 'px';
+  menu.style.maxHeight = height + 'px';
+  menu.style.top = above ? 'auto' : anchor.bottom + 6 + 'px';
+  menu.style.bottom = above ? innerHeight - anchor.top + 6 + 'px' : 'auto';
+}
+function updateCollaborationButtons(t) {
+  if (!t.collaboration) return;
+  for (const row of t.collaboration.querySelectorAll('.collaboration-row')) {
+    const participant = t.participants.find(s => s.twitch === row.dataset.participant);
+    const present = tiles.has(participant.twitch);
+    row.querySelector('small').textContent = present ? tr('Déjà dans la grille') : participant.online ? participant.game || tr('En direct') : tr('Hors ligne');
+    const button = row.querySelector('button');
+    button.disabled = present || !participant.online;
+    button.textContent = present ? tr('Ajouté') : tr('Ajouter');
+  }
+  t.collaboration.querySelector('.create-collaboration-grid').disabled = !t.participants.some(s => s.online);
+  t.collaboration.querySelector('.add-collaboration').disabled = !t.participants.some(s => s.online && !tiles.has(s.twitch));
+}
+function addCollaborators(t, participants) {
+  const missing = participants.filter(s => s.online && !tiles.has(s.twitch));
+  if (!missing.length) return;
+  // Keep the existing single player in the spotlight when its partners are added.
+  if (tiles.size === 1) focused = order[0];
+  for (const participant of missing) add(participant);
+  renderList(); save();
+}
+function renderCollaboration(t, participants) {
+  t.participants = [...new Map(participants.filter(s => validLogin(s.twitch)).map(s => [s.twitch, s])).values()];
+  const available = t.participants.some(s => s.twitch !== t.el.dataset.login);
+  t.collaboration.hidden = !available;
+  if (!available) t.collaboration.open = false;
+  t.collaboration.querySelector('.collaboration-count').textContent = t.participants.length;
+  t.collaboration.querySelector('summary').setAttribute('aria-label', tr('Collaboration : {count} participants', {count:t.participants.length}));
+  t.collaboration.querySelector('.collaboration-heading').textContent = tr('Collaboration : {count} participants', {count:t.participants.length});
+  const rows = t.collaboration.querySelector('.collaboration-list');
+  const focusedLogin = rows.contains(document.activeElement) ? document.activeElement.closest('.collaboration-row')?.dataset.participant : null;
+  rows.replaceChildren(...t.participants.map(s => {
+    const row = document.createElement('div');
+    row.className = 'collaboration-row'; row.dataset.participant = s.twitch;
+    row.innerHTML = '<img alt=""><div><span class="collaboration-name"></span><small></small></div><button type="button"></button>';
+    row.querySelector('img').src = s.profileUrl;
+    row.querySelector('.collaboration-name').textContent = s.display;
+    row.querySelector('button').setAttribute('aria-label', tr('Ajouter {name}', {name:s.display}));
+    row.querySelector('button').onclick = () => addCollaborators(t, [s]);
+    return row;
+  }));
+  updateCollaborationButtons(t);
+  if (focusedLogin) rows.querySelector(`[data-participant="${focusedLogin}"] button:not(:disabled)`)?.focus({ preventScroll: true });
+}
+function setupCollaboration(t) {
+  const menu = document.createElement('details');
+  menu.className = 'collaboration'; menu.hidden = true;
+  menu.innerHTML = '<summary title="Participants à la collaboration" data-i18n-title="Participants à la collaboration">' + collaborationIcon + '<span class="collaboration-count"></span></summary><div class="collaboration-menu"><span class="collaboration-heading"></span><div class="collaboration-list"></div><button type="button" class="add-collaboration" data-i18n="Tout ajouter">Tout ajouter</button><button type="button" class="create-collaboration-grid" data-i18n="Créer une grille pour cette collaboration">Créer une grille pour cette collaboration</button></div>';
+  t.collaboration = menu; t.participants = [];
+  translateTree(menu);
+  t.bar.querySelector('.viewers').before(menu);
+  menu.onclick = e => e.stopPropagation();
+  menu.ondragstart = e => { e.preventDefault(); e.stopPropagation(); };
+  menu.ontoggle = () => { if (menu.open) { closeTileMenus(false, menu); positionCollaborationMenu(t); } };
+  menu.querySelector('.create-collaboration-grid').onclick = () => openGridForm('collaboration', null, t.participants, t.channel);
+  menu.querySelector('.add-collaboration').onclick = () => addCollaborators(t, t.participants);
+}
+let collaborationRefreshInFlight = false;
+async function refreshCollaborations() {
+  if (!restored || !library || collaborationRefreshInFlight || document.hidden) return;
+  const candidates = new Map([...streamers, ...[...tiles.values()].map(t => t.channel)].map(s => [s.twitch, s]));
+  const queue = [...candidates.values()].filter(s => (s.online || (tiles.has(s.twitch) && s.online !== false)) && (!collaborations.has(s.twitch) || Date.now() - collaborations.get(s.twitch).checkedAt >= 60000)).map(s => s.twitch);
+  if (!queue.length) return;
+  collaborationRefreshInFlight = true;
+  const version = accountVersion;
+  try {
+    await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+      while (queue.length && version === accountVersion) {
+        const login = queue.shift();
+        let participants;
+        try { participants = await library.collaboration(login); }
+        catch { participants = []; }
+        if (version !== accountVersion) return;
+        participants = [...new Map(participants.filter(s => validLogin(s.twitch)).map(s => [s.twitch, s])).values()];
+        collaborations.set(login, { checkedAt: Date.now(), participants });
+        const t = tiles.get(login);
+        if (t) renderCollaboration(t, t.channel.online === false ? [] : participants);
+        renderList();
+      }
+    }));
+  } finally {
+    collaborationRefreshInFlight = false;
+    for (const [login, result] of collaborations) if (!candidates.has(login) && Date.now() - result.checkedAt > 300000) collaborations.delete(login);
+    // Channels added during the requests also need their first check.
+    refreshCollaborations();
+  }
+}
 // the player tracks its own viewability and refuses to start under half visible, whatever play() says: below that
 // a tile shows "scroll" instead of a spinner that would never end. ponytail: 0.5 mirrors the player's bar, raise if a
 // half-visible tile still spins
@@ -147,7 +332,7 @@ function previewInfo(s) {
   }
 }
 function showPreview(row) {
-  const s = streamers.find(s => s.twitch === row.dataset.login);
+  const s = streamers.find(s => s.twitch === row.dataset.participant);
   if (!s || s.online === false || !row.isConnected || document.hidden) { hidePreview(); return; }
   previewRow = row;
   previewOnline = s.online;
@@ -155,15 +340,15 @@ function showPreview(row) {
   row.setAttribute('aria-describedby', 'preview');
   const status = preview.querySelector('.status'), message = status.querySelector('span');
   status.querySelector('img').src = s.profileUrl;
-  message.textContent = 'Chargement de l’aperçu…';
+  message.textContent = tr('Chargement de l’aperçu…');
   status.hidden = false;
   preview.hidden = false;
   positionPreview();
-  if (!window.Twitch?.Player) { message.textContent = 'Aperçu indisponible'; return; }
+  if (!window.Twitch?.Player) { message.textContent = tr('Aperçu indisponible'); return; }
   const player = new Twitch.Player(previewVideo, { channel: s.twitch, parent: [location.hostname], width: 640, height: 360, autoplay: true, muted: true, controls: false });
   const frame = previewVideo.querySelector('iframe');
   frame.tabIndex = -1;
-  frame.title = 'Aperçu de ' + s.display;
+  frame.title = tr('Aperçu de {name}', {name:s.display});
   fit(previewVideo);
   const current = () => previewVideo.firstElementChild === frame;
   player.addEventListener(Twitch.Player.READY, () => { if (current()) { player.setMuted(true); player.setVolume(0); } });
@@ -173,9 +358,9 @@ function showPreview(row) {
     if (event === 'offline') { hidePreview(); return; }
     clearTimeout(previewLoadTimer);
     status.hidden = false;
-    message.textContent = 'Aperçu indisponible';
+    message.textContent = tr('Aperçu indisponible');
   });
-  previewLoadTimer = setTimeout(() => { if (current()) message.textContent = 'L’aperçu tarde à démarrer'; }, 12000);
+  previewLoadTimer = setTimeout(() => { if (current()) message.textContent = tr('L’aperçu tarde à démarrer'); }, 12000);
 }
 function queuePreview(row) {
   clearTimeout(previewCloseTimer);
@@ -206,7 +391,9 @@ function toggle(s) {
 
 function updateTileInfo(t, s) {
   t.channel = s;
-  t.bar.querySelector('.viewers').textContent = s.online === false ? 'Hors ligne' : s.viewersAmount.formatted;
+  renderCollaboration(t, s.online === false ? [] : collaborations.get(s.twitch)?.participants || []);
+  t.bar.querySelector('.stream-avatar').src = s.profileUrl;
+  t.bar.querySelector('.viewers').textContent = s.online === false ? tr('Hors ligne') : s.viewersAmount.formatted;
   const info = t.bar.querySelector('.stream-info');
   const game = s.online === false ? '' : s.game, title = s.online === false ? '' : s.title;
   info.hidden = !game && !title;
@@ -220,24 +407,27 @@ function updateTileInfo(t, s) {
 
 function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   if (tiles.has(s.twitch)) return;
-  if (!window.Twitch?.Player) { notice('Le lecteur Twitch est indisponible. Recharge la page pour réessayer.'); return; }
+  if (!window.Twitch?.Player) { notice(tr('Le lecteur Twitch est indisponible. Recharge la page pour réessayer.')); return; }
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" class="close">✕</button></div><div class="player"></div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small>Hors ligne</small><small class="more">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
-  const [snd, min, fs, close] = el.querySelectorAll('button');
+  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" data-i18n-title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Retirer" data-i18n-title="Retirer" class="close">✕</button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause" data-i18n-title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume"><output></output></div>`;
+  const [snd, min, fs, close] = ['.snd', '.min', '.fs', '.close'].map(selector => el.querySelector(selector));
   min.onclick = e => { e.stopPropagation(); focus(s.twitch); };
   fs.onclick = e => { e.stopPropagation(); setExpanded(expanded === s.twitch ? null : s.twitch); };
-  fs.title = 'Agrandir dans la fenêtre';
+  fs.title = tr('Agrandir dans la fenêtre');
   fs.setAttribute('aria-label', fs.title);
   fs.setAttribute('aria-pressed', 'false');
   const pp = el.querySelector('.ctl button'), vol = el.querySelector('.ctl input'), pct = el.querySelector('.ctl output');
   const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
   pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
   vol.value = volume; pct.value = Math.round(volume * 100) + '%';
-  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; t.player.setVolume(t.volume); save(); };
-  // the button cycles muted → loud → pinned (loud, and stays so out of the spotlight) → muted
-  snd.onclick = e => { e.stopPropagation(); if (t.muted) setMuted(t, false); else if (!t.pinned) t.pinned = true; else { t.pinned = false; setMuted(t, true); } paint(t); save(); };
+  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; t.player.setVolume(t.volume); if (!t.controls) t.pinned = true; setMuted(t, false); save(); };
+  // Pinning keeps audio when another stream takes the spotlight.
+  snd.onclick = e => { e.stopPropagation(); t.pinned = !t.pinned; setMuted(t, !t.pinned && !t.controls); save(); };
+  const volumeSound = snd.cloneNode(true);
+  volumeSound.onclick = snd.onclick;
+  vol.before(volumeSound);
   const bar = el.querySelector('.bar');
   bar.onclick = () => expanded === s.twitch ? setExpanded(null) : focus(s.twitch);
   el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
@@ -248,13 +438,26 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   el.ondragleave = () => el.classList.remove('over');
   el.ondrop = e => { e.preventDefault(); move(dragging, s.twitch); };
   close.onclick = e => { e.stopPropagation(); remove(s.twitch); renderList(); };
+  translateTree(el);
   grid.append(el);
-  const t = { el, bar, visible: true, muted, volume, paused, pinned, ready: false, ppIcon };
+  const t = { el, bar, visible: true, muted, volume, paused, pinned, ready: false, ppIcon, body: el.querySelector('.tile-body'), chat: el.querySelector('.chat'), chatOptions: el.querySelector('.chat-options') };
+  t.chat.id = 'chat-' + s.twitch;
+  t.chat.setAttribute('aria-label', tr('Chat de {name}', {name:s.display}));
+  const chatButton = bar.querySelector('.chat-toggle');
+  chatButton.setAttribute('aria-controls', t.chat.id);
+  chatButton.onclick = e => { e.stopPropagation(); chatOpen = !chatOpen; syncChat(); save(); };
+  t.chatOptions.onclick = e => e.stopPropagation();
+  t.chatOptions.ontoggle = () => { if (t.chatOptions.open) closeTileMenus(false, t.chatOptions); };
+  t.chatOptions.ondragstart = e => { e.preventDefault(); e.stopPropagation(); };
+  t.chatOptions.querySelector('select').onchange = e => { chatPosition = e.target.value; syncChat(); save(); };
+  t.chatOptions.querySelector('a').href = `https://www.twitch.tv/popout/${s.twitch}/chat?popout=` + (document.documentElement.dataset.theme === 'dark' ? '&darkpopout=1' : '');
+  setupCollaboration(t);
   updateTileInfo(t, s);
   tiles.set(s.twitch, t);
   ppIcon();
   io.observe(el);
   ro.observe(el.querySelector('.player'));
+  chatResize.observe(t.body);
   order.push(s.twitch);
   layout();
 }
@@ -280,7 +483,7 @@ function mountPlayer(t, controls) {
     muted: true, autoplay: !allPaused && !t.paused, controls
   });
   t.player = player;
-  container.querySelector('iframe').title = 'Stream de ' + t.bar.querySelector('b').textContent;
+  container.querySelector('iframe').title = tr('Stream de {name}', {name:t.channel.display});
   const current = () => t.player === player && t.el.isConnected;
   player.addEventListener(Twitch.Player.READY, () => {
     if (!current()) return;
@@ -347,6 +550,7 @@ function remove(login, updateLayout = true) {
   tiles.get(login).player.destroy();
   clearTimeout(tiles.get(login).timer);
   ro.unobserve(tiles.get(login).el.querySelector('.player'));
+  chatResize.unobserve(tiles.get(login).body);
   io.unobserve(tiles.get(login).el);
   tiles.get(login).el.remove();
   tiles.delete(login);
@@ -368,7 +572,14 @@ function move(from, to) {
 }
 
 function setMuted(t, m) { t.muted = m; if (t.ready) applyMuted(t, m); paint(t); }
-function paint(t) { t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }
+function paint(t) {
+  t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned);
+  for (const button of t.el.querySelectorAll('.snd')) {
+    button.title = t.pinned ? tr('Désépingler le son') : tr('Épingler le son');
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(t.pinned));
+  }
+}
 function setExpanded(login) {
   expanded = login;
   hidePreview();
@@ -379,12 +590,13 @@ function setExpanded(login) {
     t.el.inert = !!expanded && !active;
     t.bar.draggable = tiles.size > 1 && !active;
     const button = t.bar.querySelector('.fs');
-    button.title = active ? 'Revenir à la disposition précédente' : 'Agrandir dans la fenêtre';
+    button.title = active ? tr('Revenir à la disposition précédente') : tr('Agrandir dans la fenêtre');
     button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-pressed', String(active));
     fit(t.el.querySelector('.player'));
     sync(t);
   }
+  syncChat();
 }
 // the spotlight brings the sound along; leaving it gives it back unless the button pinned it
 function focus(login) {
@@ -410,6 +622,8 @@ function layout() {
     t.bar.draggable = n > 1 && login !== expanded;
     mountPlayer(t, n === 1 || login === focused);
     fit(t.el.querySelector('.player'));
+    updateCollaborationButtons(t);
+    if (t.collaboration.open) positionCollaborationMenu(t);
   }
   if (focused) {
     const wide = innerWidth / innerHeight > 2;   // ultrawide → two side columns
@@ -422,8 +636,10 @@ function layout() {
     grid.style.gridTemplateColumns = `repeat(${cols || 1}, 1fr)`;
     grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
   }
+  syncChat();
   save();
   updateAudioOverlay();
+  refreshCollaborations();
 }
 
 $('#toggle').onclick = () => { hidePreview(); document.body.classList.toggle('collapsed'); save(); };
@@ -456,17 +672,18 @@ addEventListener('keydown', e => {
 }, { capture: true });
 // a click on the video lands inside the iframe and never reaches this page: the only trace is the focus leaving for it
 // (Firefox fires blur before it moves activeElement to the iframe, hence the tick)
-addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') activate(); }));
+addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') { closeTileMenus(); activate(); } }));
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
 onresize = layout;
+grid.addEventListener('scroll', () => closeTileMenus(), { passive: true });
 document.onfullscreenchange = () => tiles.forEach(t => { fit(t.el.querySelector('.player')); sync(t); });
-document.onkeydown = e => { if (e.key === 'Escape') { if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); } };
+document.onkeydown = e => { if (e.key === 'Escape') { if (closeTileMenus(true)) { e.preventDefault(); return; } if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); } };
 // Check the static app files so a script-only deploy also offers a reload.
 const dev = location.hostname === 'localhost';
 let versionBody;
 setInterval(async () => {
   try {
-    const parts = await Promise.all(['/index.html', '/app.js', '/library.js', '/config.json'].map(async path => {
+    const parts = await Promise.all(['/index.html', '/app.js', '/library.js', '/preferences.js', '/grids.js', '/workspace.js', '/config.json'].map(async path => {
       const response = await fetch(path, { cache: 'no-store' });
       if (!response.ok) throw new Error();
       return response.text();
@@ -515,9 +732,10 @@ function updateLiveNotifications(channels) {
     if (s.online && lastLiveStatus.get(s.twitch) === false && !liveNotifications.has(s.twitch)) {
       const toast = document.createElement('div');
       toast.className = 'live-notification'; toast.dataset.login = s.twitch;
-      toast.innerHTML = '<button class="watch"><img alt=""><span><b></b><small>Afficher dans la grille</small></span></button><button class="dismiss" aria-label="Fermer la notification">✕</button>';
+      toast.innerHTML = '<button class="watch"><img alt=""><span><b></b><small data-i18n="Afficher dans la grille">Afficher dans la grille</small></span></button><button class="dismiss" aria-label="Fermer la notification" data-i18n-aria-label="Fermer la notification">✕</button>';
+      translateTree(toast);
       toast.querySelector('img').src = s.profileUrl;
-      toast.querySelector('b').textContent = s.display + ' est en direct';
+      toast.querySelector('b').textContent = tr('{name} est en direct', {name:s.display});
       toast.querySelector('.watch').onclick = () => openLiveNotification(s.twitch);
       toast.querySelector('.dismiss').onclick = () => dismissLiveNotification(s.twitch);
       liveNotifications.set(s.twitch, toast);
@@ -532,22 +750,23 @@ let accountReady = false;
 const storedFavorites = readStored('tg.favorites', []);
 let favorites = Array.isArray(storedFavorites) ? storedFavorites.filter(s => s && validLogin(s.twitch)).map(channel) : [];
 favorites = [...new Map(favorites.map(s => [s.twitch, s])).values()];
-function notice(message = '') { $('#notice').textContent = message; }
+function notice(message = '') { $('#notice').textContent = tr(message); }
 function saveFavorites() {
-  if (!writeStored('tg.favorites', favorites.map(({ twitch, display, profileUrl }) => ({ twitch, display, profileUrl })))) notice('Le navigateur ne peut pas enregistrer les favoris. Ils seront perdus à la fermeture de la page.');
+  if (!writeStored('tg.favorites', favorites.map(({ twitch, display, profileUrl }) => ({ twitch, display, profileUrl })))) notice(tr('Le navigateur ne peut pas enregistrer les favoris. Ils seront perdus à la fermeture de la page.'));
 }
 function updateAccount() {
   const connected = !!library?.user;
   $('#connect').hidden = connected;
   $('#connect').disabled = !accountReady || !library?.clientId;
   $('#disconnect').hidden = !connected;
-  $('#side footer').textContent = connected ? 'Ta liste de follows se met à jour automatiquement.' : 'Les favoris sont enregistrés dans ce navigateur.';
+  $('#side footer').textContent = connected ? tr('Ta liste de follows se met à jour automatiquement.') : tr('Les favoris sont enregistrés dans ce navigateur.');
 }
 function rebuild() {
   pruneLiveNotifications(library?.user ? follows : favorites);
   const merged = new Map([...(library?.user ? follows : favorites), ...results].map(s => [s.twitch, s]));
   streamers = [...merged.values()];
   renderList();
+  refreshCollaborations();
   for (const s of streamers) { const t = tiles.get(s.twitch); if (t) updateTileInfo(t, s); }
 }
 function toggleFavorite(s) {
@@ -579,17 +798,27 @@ function renderList() {
     li.innerHTML = '<button class="channel"><img alt="" loading="lazy"><span class="n"><span class="name"></span><div class="g"></div></span><span class="v"></span></button><button class="favorite"></button>';
     li.querySelector('img').src = s.profileUrl;
     li.querySelector('.name').textContent = s.display;
-    li.querySelector('.g').textContent = [s.online === false ? 'Hors ligne' : s.online ? 'En direct' : '', s.game].filter(Boolean).join(' · ') || 'Chaîne Twitch';
+    const participants = s.online === false ? [] : collaborations.get(s.twitch)?.participants || [];
+    if (participants.some(p => p.twitch !== s.twitch)) {
+      const indicator = document.createElement('span');
+      indicator.className = 'collaboration-indicator';
+      indicator.innerHTML = collaborationIcon;
+      indicator.title = tr('Collaboration : {names}', {names:participants.map(p => p.display).join(', ')});
+      indicator.setAttribute('role', 'img');
+      indicator.setAttribute('aria-label', indicator.title);
+      li.querySelector('.name').after(indicator);
+    }
+    li.querySelector('.g').textContent = [s.online === false ? tr('Hors ligne') : s.online ? tr('En direct') : '', s.game].filter(Boolean).join(' · ') || tr('Chaîne Twitch');
     li.querySelector('.v').textContent = s.online ? s.viewersAmount.formatted || 'LIVE' : '';
     const play = li.querySelector('.channel');
     play.disabled = !accountReady;
-    play.setAttribute('aria-label', (tiles.has(s.twitch) ? 'Afficher ou retirer ' : 'Regarder ') + s.display);
+    play.setAttribute('aria-label', tr(tiles.has(s.twitch) ? 'Afficher ou retirer {name}' : 'Regarder {name}', {name:s.display}));
     play.setAttribute('aria-pressed', tiles.has(s.twitch));
     play.onclick = () => { hidePreview(); toggle(s); };
     const star = li.querySelector('.favorite'), saved = favorites.some(f => f.twitch === s.twitch);
     star.hidden = connected;
     star.textContent = saved ? '★' : '☆';
-    star.title = (saved ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + s.display;
+    star.title = tr(saved ? 'Retirer des favoris : {name}' : 'Ajouter aux favoris : {name}', {name:s.display});
     star.setAttribute('aria-label', star.title); star.setAttribute('aria-pressed', saved);
     star.onclick = () => toggleFavorite(s);
     li.onpointerenter = e => { if (e.pointerType !== 'touch') queuePreview(li); };
@@ -605,21 +834,21 @@ function renderList() {
   }
   if (keyboardLogin) [...list.children].find(li => li.dataset.login === keyboardLogin)?.querySelector(keyboardFavorite ? '.favorite' : '.channel').focus({ preventScroll: true });
   $('#list-empty').hidden = rows.length > 0 || (!q && !connected);
-  $('#list-empty').textContent = searching ? 'Recherche en cours…' : q ? 'Aucun résultat dans cette liste.' : connected ? 'Tu ne suis encore aucune chaîne.' : '';
+  $('#list-empty').textContent = searching ? tr('Recherche en cours…') : q ? tr('Aucun résultat dans cette liste.') : connected ? tr('Tu ne suis encore aucune chaîne.') : '';
   $('#search-actions').hidden = !searchError || connected;
   $('#search-state').hidden = !q;
-  $('#search-state').textContent = !q ? '' : q.length < 2 ? 'Saisis au moins 2 caractères.' : searching ? 'Recherche sur Twitch…' : searchError || (rows.length ? rows.length + (rows.length === 1 ? ' chaîne trouvée' : ' chaînes trouvées') : 'Aucune chaîne trouvée.');
+  $('#search-state').textContent = !q ? '' : q.length < 2 ? tr('Saisis au moins 2 caractères.') : searching ? tr('Recherche sur Twitch…') : searchError || (rows.length ? tr(rows.length === 1 ? '{count} chaîne trouvée' : '{count} chaînes trouvées', {count:rows.length}) : tr('Aucune chaîne trouvée.'));
   const login = loginFromQuery(q);
   $('#add-login').hidden = connected || !searchError || !login || favorites.some(s => s.twitch === login);
-  $('#add-login').textContent = 'Ajouter ' + login + ' sans vérifier';
+  $('#add-login').textContent = tr('Ajouter {name} sans vérifier', {name:login});
   renderEmpty();
 }
 function renderEmpty() {
   const connected = !!library?.user;
   $('#top').hidden = connected || (accountReady && !library?.clientId);
   $('#top').disabled = !accountReady;
-  $('#guest').textContent = connected ? 'Rechercher un streamer' : 'Continuer sans compte';
-  $('#empty p').textContent = connected ? 'Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.' : 'Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.';
+  $('#guest').textContent = connected ? tr('Rechercher un streamer') : tr('Continuer sans compte');
+  $('#empty p').textContent = connected ? tr('Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.') : tr('Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.');
 }
 function findStreamer() {
   document.body.classList.remove('collapsed');
@@ -639,7 +868,7 @@ async function search() {
   } catch (error) {
     if (version !== searchVersion || error.name === 'AbortError') return;
     if (error.status === 401) handleError(error);
-    else searchError = error.status ? error.message : 'La recherche Twitch est indisponible pour le moment. Tu peux ajouter un pseudo directement.';
+    else searchError = error.status ? error.message : tr('La recherche Twitch est indisponible pour le moment. Tu peux ajouter un pseudo directement.');
   } finally { if (version === searchVersion) { searching = false; rebuild(); } }
 }
 
@@ -658,14 +887,15 @@ async function refresh() {
     const logins = [...new Set([...nextChannels, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
     const live = await library.live(logins);
     if (version !== accountVersion) return;
-    const update = s => channel({ ...s, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', title: live.get(s.twitch)?.title || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
+    const update = s => channel({ ...s, profileUrl: library.profiles.get(s.twitch)?.profileUrl || s.profileUrl, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', title: live.get(s.twitch)?.title || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
     if (connected) follows = nextChannels.map(update);
     else favorites = favorites.map(s => logins.includes(s.twitch) ? update(s) : s);
     results = results.map(s => logins.includes(s.twitch) ? update(s) : s);
     if (reloadFollows) lastFollows = Date.now();
-    rebuild(); if (connected || $('#notice').textContent === statusUnavailable) notice();
+    rebuild(); if (connected || $('#notice').textContent === tr(statusUnavailable)) notice();
     for (const [login, t] of tiles) if (logins.includes(login)) updateTileInfo(t, update(t.channel));
     updateLiveNotifications(connected ? follows : favorites);
+    refreshCollaborations();
   } catch (error) {
     if (version === accountVersion) {
       if (connected) handleError(error);
@@ -715,13 +945,14 @@ async function init() {
     const response = await fetch('/config.json', { cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error();
     config = await response.json();
-  } catch { notice('La connexion Twitch est indisponible. Les favoris restent accessibles.'); }
+  } catch { notice(tr('La connexion Twitch est indisponible. Les favoris restent accessibles.')); }
   library = new TwitchLibrary(config?.twitchClientId || '');
   try { if (library.clientId) await library.resume(); }
   catch (error) { library.disconnect(); notice(error.message); }
   accountReady = true;
   updateAccount(); rebuild(); switchLayout(library.user ? 'connected' : 'guest'); await refresh();
 }
+initWorkspace();
 init().catch(handleError);
 setInterval(() => { if (!document.hidden) refresh(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

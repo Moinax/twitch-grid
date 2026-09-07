@@ -1,5 +1,5 @@
 /* Browser-side Twitch access. Guest searches go through our server; no secret reaches this file. */
-const numberFormat = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
+let numberFormat = new Intl.NumberFormat(preferences.language, { notation: 'compact', maximumFractionDigits: 1 });
 const validLogin = value => typeof value === 'string' && /^[a-z0-9_]{1,25}$/.test(value);
 function readStored(key, fallback, storage = localStorage) {
   try { return JSON.parse(storage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -25,10 +25,10 @@ class TwitchLibrary {
     const response = await fetch('https://id.twitch.tv/oauth2/validate', {
       headers: { Authorization: `OAuth ${token}` }, signal: AbortSignal.timeout(12000)
     });
-    if (!response.ok) throw new Error(response.status === 401 ? 'La session Twitch a expiré. Reconnecte-toi.' : 'Impossible de vérifier la connexion Twitch.');
+    if (!response.ok) throw new Error(response.status === 401 ? tr('La session Twitch a expiré. Reconnecte-toi.') : tr('Impossible de vérifier la connexion Twitch.'));
     const user = await response.json();
     if (user.client_id !== this.clientId || !user.user_id || !user.scopes?.includes('user:read:follows')) {
-      throw new Error('La connexion Twitch ne permet pas de lire les follows. Reconnecte-toi.');
+      throw new Error(tr('La connexion Twitch ne permet pas de lire les follows. Reconnecte-toi.'));
     }
     if (generation !== this.generation) return null;
     this.token = token; this.user = user;
@@ -37,7 +37,7 @@ class TwitchLibrary {
   }
   async connect() {
     const state = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
-    if (!writeStored('tg.oauth', { state, at: Date.now() }, sessionStorage)) throw new Error('Autorise le stockage de session dans ton navigateur pour connecter Twitch.');
+    if (!writeStored('tg.oauth', { state, at: Date.now() }, sessionStorage)) throw new Error(tr('Autorise le stockage de session dans ton navigateur pour connecter Twitch.'));
     const params = new URLSearchParams({ client_id: this.clientId, response_type: 'token',
       redirect_uri: location.origin, scope: 'user:read:follows', state });
     location.assign('https://id.twitch.tv/oauth2/authorize?' + params);
@@ -50,9 +50,9 @@ class TwitchLibrary {
       history.replaceState(null, '', location.pathname);
       const pending = readStored('tg.oauth', null, sessionStorage);
       sessionStorage.removeItem('tg.oauth');
-      if (params.get('error') === 'redirect_mismatch') throw new Error('La connexion Twitch n’est pas configurée pour cette adresse. L’adresse de retour doit être ajoutée dans les réglages de l’application Twitch.');
-      if (!pending || params.get('state') !== pending.state || Date.now() - pending.at > 600000) throw new Error('Cette connexion Twitch n’est plus valide. Recommence depuis le bouton de connexion.');
-      if (params.has('error')) throw new Error('Connexion Twitch annulée. Tu peux utiliser les favoris.');
+      if (params.get('error') === 'redirect_mismatch') throw new Error(tr('La connexion Twitch n’est pas configurée pour cette adresse. L’adresse de retour doit être ajoutée dans les réglages de l’application Twitch.'));
+      if (!pending || params.get('state') !== pending.state || Date.now() - pending.at > 600000) throw new Error(tr('Cette connexion Twitch n’est plus valide. Recommence depuis le bouton de connexion.'));
+      if (params.has('error')) throw new Error(tr('Connexion Twitch annulée. Tu peux utiliser les favoris.'));
       await this.validate(params.get('access_token'));
     } else {
       const token = readStored('tg.session', '', sessionStorage);
@@ -69,7 +69,7 @@ class TwitchLibrary {
       headers: { Authorization: `Bearer ${this.token}`, 'Client-Id': this.clientId }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000)
     });
     if (!response.ok) {
-      const error = new Error(response.status === 401 ? 'La session Twitch a expiré. Reconnecte-toi.' : response.status === 429 ? 'Twitch reçoit trop de requêtes. Réessaie dans une minute.' : 'Twitch est indisponible pour le moment. Réessaie dans un instant.');
+      const error = new Error(response.status === 401 ? tr('La session Twitch a expiré. Reconnecte-toi.') : response.status === 429 ? tr('Twitch reçoit trop de requêtes. Réessaie dans une minute.') : tr('Twitch est indisponible pour le moment. Réessaie dans un instant.'));
       error.status = response.status; throw error;
     }
     return response.json();
@@ -96,6 +96,7 @@ class TwitchLibrary {
         for (const stream of page.data) result.set(stream.user_login.toLowerCase(), stream);
       } else {
         const page = await this.guest(batch.map(login => ['login', login]));
+        for (const data of page.data) { const s = channel(data); this.profiles.set(s.twitch, s); }
         for (const stream of page.data) if (stream.is_live) result.set(stream.broadcaster_login, stream);
       }
     }
@@ -109,12 +110,38 @@ class TwitchLibrary {
     const page = await this.guest({ q: query }, signal);
     return page.data.map(channel);
   }
+  async collaboration(login) {
+    if (!this.user) {
+      const page = await this.guest({ collaboration: login });
+      return page.data.map(channel);
+    }
+    const users = await this.get('users', { login });
+    if (!users.data.length) return [];
+    const sessions = await this.get('shared_chat/session', { broadcaster_id: users.data[0].id });
+    if (!sessions.data.length) return [];
+    const ids = [...new Set(sessions.data[0].participants.map(p => p.broadcaster_id))];
+    const result = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      const [profiles, streams] = await Promise.all([
+        this.get('users', batch.map(id => ['id', id])),
+        this.get('streams', [['first', '100'], ...batch.map(id => ['user_id', id])])
+      ]);
+      const live = new Map(streams.data.map(s => [s.user_login, s]));
+      for (const user of profiles.data) {
+        const stream = live.get(user.login);
+        result.push(channel({ ...user, online: !!stream, game_name: stream?.game_name,
+          title: stream?.title, viewer_count: stream?.viewer_count }));
+      }
+    }
+    return result;
+  }
   async guest(params, signal) {
     const response = await fetch('/api/search?' + new URLSearchParams(params), {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000)
     });
     if (!response.ok) {
-      const error = new Error(response.status === 429 ? 'Trop de recherches. Réessaie dans une minute.' : 'La recherche Twitch est indisponible pour le moment. Tu peux ajouter un pseudo directement.');
+      const error = new Error(response.status === 429 ? tr('Trop de recherches. Réessaie dans une minute.') : tr('La recherche Twitch est indisponible pour le moment. Tu peux ajouter un pseudo directement.'));
       // A server credential error must never disconnect a visitor's Twitch session.
       error.status = response.status === 401 ? 502 : response.status;
       throw error;

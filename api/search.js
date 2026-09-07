@@ -71,6 +71,24 @@ async function lookup(logins) {
   ]);
   return { data: users.map(user => userChannel(user, live.get(user.login))) };
 }
+async function collaboration(login) {
+  const [broadcaster] = await helix('users', { login });
+  if (!broadcaster) return { data: [] };
+  const [session] = await helix('shared_chat/session', { broadcaster_id: broadcaster.id });
+  if (!session) return { data: [] };
+  const ids = [...new Set(session.participants.map(p => p.broadcaster_id))];
+  const data = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const batch = ids.slice(i, i + 100);
+    const [users, live] = await Promise.all([
+      helix('users', batch.map(id => ['id', id])),
+      helix('streams', [['first', '100'], ...batch.map(id => ['user_id', id])])
+    ]);
+    const streamsByLogin = new Map(live.map(s => [s.user_login, s]));
+    data.push(...users.map(user => userChannel(user, streamsByLogin.get(user.login))));
+  }
+  return { data };
+}
 module.exports = async function search(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -79,13 +97,17 @@ module.exports = async function search(req, res) {
   const query = params.get('q')?.trim();
   const logins = params.getAll('login').map(login => login.toLowerCase());
   const exact = params.has('login');
-  const invalid = exact
+  const collaborative = params.has('collaboration');
+  const collaborationLogin = params.get('collaboration')?.toLowerCase();
+  const invalid = collaborative
+    ? exact || params.has('q') || params.getAll('collaboration').length !== 1 || !/^[a-z0-9_]{1,25}$/.test(collaborationLogin)
+    : exact
     ? params.has('q') || logins.length > 100 || logins.some(login => !/^[a-z0-9_]{1,25}$/.test(login))
     : !query || query.length < 2 || query.length > 100 || /[\x00-\x1f]/.test(query);
   if (invalid) return res.status(400).json({ error: 'INVALID_QUERY' });
   if (!process.env.TWITCH_SEARCH_CLIENT_ID || !process.env.TWITCH_SEARCH_CLIENT_SECRET) return res.status(503).json({ error: 'SEARCH_UNAVAILABLE' });
   const names = [...new Set(logins)].sort();
-  const key = exact ? 'logins:' + names.join(',') : 'query:' + query.toLowerCase(), now = Date.now();
+  const key = collaborative ? 'collaboration:' + collaborationLogin : exact ? 'logins:' + names.join(',') : 'query:' + query.toLowerCase(), now = Date.now();
   const respond = data => {
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=60');
     res.setHeader('Vercel-CDN-Cache-Control', 'max-age=60');
@@ -103,7 +125,7 @@ module.exports = async function search(req, res) {
     return res.status(429).json({ error: 'SEARCH_BUSY' });
   }
   try {
-    if (!pending.has(key)) pending.set(key, (exact ? lookup(names) : channels(query)).finally(() => pending.delete(key)));
+    if (!pending.has(key)) pending.set(key, (collaborative ? collaboration(collaborationLogin) : exact ? lookup(names) : channels(query)).finally(() => pending.delete(key)));
     const data = await pending.get(key);
     if (cache.size >= 200) cache.delete(cache.keys().next().value);
     cache.set(key, { data, expiresAt: Date.now() + ttl });

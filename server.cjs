@@ -4,6 +4,7 @@ const path = require('node:path');
 const search = require('./api/search.js');
 const port = Number(process.argv[2] || 8765);
 const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'],
+  '/preferences.js': ['preferences.js', 'text/javascript'], '/grids.js': ['grids.js', 'text/javascript'], '/workspace.js': ['workspace.js', 'text/javascript'],
   '/app.js': ['app.js', 'text/javascript'], '/library.js': ['library.js', 'text/javascript'],
   '/config.json': ['config.json', 'application/json'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
   '/assets/share-card.png': ['assets/share-card.png', 'image/png'] };
