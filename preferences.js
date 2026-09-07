@@ -109,7 +109,7 @@ function applyPreferences() {
   document.documentElement.lang = preferences.language;
   document.documentElement.dataset.theme = preferences.theme === 'system' ? systemTheme.matches ? 'dark' : 'light' : preferences.theme;
   document.documentElement.style.colorScheme = document.documentElement.dataset.theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', document.documentElement.dataset.theme === 'dark' ? '#0e0e10' : '#f4f4f7');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', document.documentElement.dataset.theme === 'dark' ? '#181818' : '#f4f4f7');
 }
 applyPreferences();
 systemTheme.addEventListener('change', () => { if (preferences.theme === 'system') { applyPreferences(); dispatchEvent(new Event('preferenceschange')); } });
