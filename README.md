@@ -34,7 +34,7 @@ Crée une application dans la [console Twitch](https://dev.twitch.tv/console/app
 
 - Nom : `Moinax Stream Grid`, ou un autre nom unique, sans le mot « Twitch ».
 - Catégorie : Website Integration.
-- Type de client : Confidential, pour le flux OAuth implicite. Le site utilise uniquement le Client ID public, jamais le secret client.
+- L’application actuelle de connexion est de type Public. Le site utilise son Client ID ; aucun secret n’est nécessaire pour la connexion des visiteurs.
 - Redirection OAuth : `https://twitch.moinax.com`, sans slash final, comme dans la console de cette application.
 - Pour tester la connexion localement, ajoute aussi `http://localhost:8765`.
 
