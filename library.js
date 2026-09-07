@@ -39,7 +39,7 @@ class TwitchLibrary {
     const state = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
     if (!writeStored('tg.oauth', { state, at: Date.now() }, sessionStorage)) throw new Error('Autorise le stockage de session dans ton navigateur pour connecter Twitch.');
     const params = new URLSearchParams({ client_id: this.clientId, response_type: 'token',
-      redirect_uri: location.origin + '/', scope: 'user:read:follows', state });
+      redirect_uri: location.origin, scope: 'user:read:follows', state });
     location.assign('https://id.twitch.tv/oauth2/authorize?' + params);
   }
   async resume() {
