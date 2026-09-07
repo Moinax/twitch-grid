@@ -364,11 +364,13 @@ setInterval(async () => {
 
 let library, follows = [], results = [], searchVersion = 0, accountVersion = 0;
 let searching = false, refreshInFlight = false, lastFollows = 0, searchTimer;
+let accountReady = false, guestMode = readStored('tg.guest', false) === true;
 const storedFavorites = readStored('tg.favorites', []);
 let favorites = Array.isArray(storedFavorites) ? storedFavorites.filter(s => s && validLogin(s.twitch)).map(channel) : [];
 favorites = [...new Map(favorites.map(s => [s.twitch, s])).values()];
 function notice(message = '') { $('#notice').textContent = message; }
 function saveFavorites() {
+  chooseGuestMode();
   if (!writeStored('tg.favorites', favorites.map(({ twitch, display, profileUrl }) => ({ twitch, display, profileUrl })))) notice('Le navigateur ne peut pas enregistrer les favoris. Ils seront perdus à la fermeture de la page.');
 }
 function updateAccount() {
@@ -443,8 +445,25 @@ function renderList() {
   $('#add-login').textContent = 'Ajouter ' + login + ' aux favoris';
   $('#twitch-search').href = 'https://www.twitch.tv/search?term=' + encodeURIComponent(q);
   $('#twitch-search').hidden = !!library?.user;
-  $('#top').textContent = base.some(s => s.online) ? 'Lancer jusqu’à 4 streams en direct' : connected ? 'Rechercher un streamer' : 'Ajouter un streamer';
-  $('#empty p').textContent = connected ? 'Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.' : 'Tes streams Twitch sur un seul écran. Ajoute tes streamers favoris, compose ta grille et choisis le son.';
+  renderEmpty();
+}
+function offerConnection() { return !library?.user && !guestMode && (!accountReady || !!library?.clientId); }
+function renderEmpty() {
+  const connected = !!library?.user, welcome = offerConnection();
+  const live = (connected ? follows : favorites).some(s => s.online);
+  $('#top').disabled = welcome && !accountReady;
+  $('#top').textContent = welcome ? 'Connecter Twitch' : live ? 'Lancer jusqu’à 4 streams en direct' : connected ? 'Rechercher un streamer' : 'Ajouter un streamer';
+  $('#guest').hidden = !welcome;
+  $('#empty p').textContent = welcome ? 'Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.' : connected ? 'Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.' : 'Ajoute tes streamers favoris, compose ta grille et choisis le son. Ta liste reste dans ce navigateur.';
+}
+function chooseGuestMode() {
+  guestMode = true;
+  writeStored('tg.guest', true);
+}
+function findStreamer() {
+  document.body.classList.remove('collapsed');
+  $('#q').focus();
+  save();
 }
 async function search() {
   const version = ++searchVersion, query = $('#q').value.trim();
@@ -480,6 +499,7 @@ async function refresh() {
   finally { refreshInFlight = false; }
 }
 function disconnect(clearNotice = true) {
+  if (clearNotice) chooseGuestMode();
   accountVersion++; searchVersion++; searching = false;
   clearTimeout(searchTimer); $('#q').value = ''; hidePreview();
   library.disconnect(); follows = []; results = []; lastFollows = 0;
@@ -500,11 +520,13 @@ $('#add-login').onclick = () => {
 };
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !$('#add-login').hidden) $('#add-login').click(); };
 $('#top').onclick = () => {
+  if (offerConnection()) { library.connect().catch(handleError); return; }
   const live = (library?.user ? follows : favorites).filter(s => s.online).slice(0, 4);
   if (live.length) { live.forEach(s => add(s)); renderList(); }
-  else { document.body.classList.remove('collapsed'); $('#q').focus(); }
+  else findStreamer();
 };
 $('#connect').onclick = () => library.connect().catch(handleError);
+$('#guest').onclick = () => { chooseGuestMode(); renderEmpty(); findStreamer(); };
 $('#disconnect').onclick = () => disconnect();
 async function init() {
   rebuild(); restored = true; restore();
@@ -517,6 +539,8 @@ async function init() {
   library = new TwitchLibrary(config?.twitchClientId || '');
   try { if (library.clientId) await library.resume(); }
   catch (error) { library.disconnect(); notice(error.message); }
+  if (library.user) { guestMode = false; writeStored('tg.guest', false); }
+  accountReady = true;
   updateAccount(); rebuild(); await refresh();
 }
 init().catch(handleError);

@@ -186,3 +186,39 @@ test('native Play resumes a spotlight restored in a paused state', async ({ page
   expect(await page.evaluate(() => ({ allPaused, one:tiles.get('one').paused, two:tiles.get('two').paused, playing:!tiles.get('one').player.paused })))
     .toEqual({allPaused:false,one:false,two:true,playing:true});
 });
+test('empty page offers Twitch first and remembers the choice to continue without an account', async ({ page }) => {
+  const errors = await setup(page, true);
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/');
+  await expect(page.locator('#top')).toHaveText('Connecter Twitch');
+  await expect(page.locator('#top')).toBeEnabled();
+  await expect(page.locator('#guest')).toBeVisible();
+  await page.locator('#guest').click();
+  await expect(page.locator('#top')).toHaveText('Ajouter un streamer');
+  await expect(page.locator('#guest')).toBeHidden();
+  await expect(page.locator('#q')).toBeFocused();
+  await page.reload();
+  await expect(page.locator('#top')).toHaveText('Ajouter un streamer');
+  await expect(page.locator('#guest')).toBeHidden();
+  const icon = page.getByRole('button', {name:'Connecter Twitch', exact:true});
+  await expect(icon).toBeVisible();
+  const bounds = await icon.boundingBox();
+  expect(bounds.width).toBeLessThanOrEqual(32);
+  expect(bounds.height).toBeLessThanOrEqual(32);
+  expect(await icon.innerText()).toBe('');
+  await page.route('https://id.twitch.tv/oauth2/authorize?**', route => route.fulfill({body:'Twitch authorization'}));
+  await icon.click();
+  await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
+  const url = new URL(page.url());
+  expect(url.searchParams.get('client_id')).toBe('test-client');
+  expect(url.searchParams.get('scope')).toBe('user:read:follows');
+  expect(errors).toEqual([]);
+});
+test('primary welcome action starts Twitch authorization', async ({ page }) => {
+  await setup(page, true);
+  await page.route('https://id.twitch.tv/oauth2/authorize?**', route => route.fulfill({body:'Twitch authorization'}));
+  await page.goto('/');
+  await page.locator('#top').click();
+  await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
+  expect(new URL(page.url()).searchParams.get('scope')).toBe('user:read:follows');
+});

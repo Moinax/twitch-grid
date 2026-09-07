@@ -6,6 +6,8 @@ Site : https://twitch.moinax.com
 
 ## Ta liste de streamers
 
+La page vide propose d’abord « Connecter Twitch ». Le choix « Continuer sans compte » ouvre les favoris et reste mémorisé dans ce navigateur. Une petite icône Twitch dans la sidebar permet de se connecter plus tard.
+
 Sans connexion, ajoute des favoris par pseudo ou lien Twitch. Ils restent dans ce navigateur, avec la disposition de la grille et les réglages audio. Le lien « Rechercher sur Twitch » permet de retrouver un pseudo. Le site ne peut pas vérifier les chaînes ni connaître leur statut en direct sans connexion.
 
 Avec « Connecter Twitch », retrouve tes follows et cherche des streamers directement dans la sidebar. Les chaînes en direct passent en premier. Les statuts se rafraîchissent toutes les 30 secondes et les follows environ toutes les minutes, tant que la page est visible. La connexion remplace les favoris par les follows. Il n’y a plus d’onglet ni de bouton de favoris dans ce mode. Les favoris locaux réapparaissent à la déconnexion.
