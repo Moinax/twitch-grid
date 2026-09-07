@@ -1,0 +1,7 @@
+{
+  "name": "twitch-grid",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "test": "playwright test", "check": "node --check app.js && node --check library.js" },
+  "devDependencies": { "@playwright/test": "^1.58.2" }
+}

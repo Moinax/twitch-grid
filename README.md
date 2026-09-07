@@ -1,35 +1,56 @@
-<img src="favicon.svg" width="72" align="right" alt="">
+# Twitch grid
 
-# ZEvent grid
+Plusieurs streams Twitch sur un seul écran, avec une grille réorganisable, un stream en avant et des réglages audio par tuile.
 
-A one-page multi-stream viewer for [ZEvent](https://zevent.fr). Pick streamers from the live list, lay them out in a grid, spotlight one, and watch the cagnotte climb in real time.
+Site : https://twitch.moinax.com
 
-![ZEvent grid with one stream spotlighted, a column of smaller tiles and the live viewers and donation counter](docs/screenshot.jpg)
+## Ta liste de streamers
 
-## Features
+Sans connexion, ajoute des favoris par pseudo ou lien Twitch. Ils restent dans ce navigateur, avec la disposition de la grille et les réglages audio. Le lien « Rechercher sur Twitch » permet de retrouver un pseudo. Le site ne peut pas vérifier les chaînes ni connaître leur statut en direct sans connexion.
 
-- **Live streamer list** from zevent.fr, sorted by viewers, filterable, refreshed every 15 seconds.
-- **Grid you own**: drag tiles to reorder, spotlight one stream next to a column of the others, native fullscreen on any tile.
-- **Sound that stays put**: per-stream mute, volume and play/pause, a global play/pause, and every setting survives a reload.
-- **Nothing plays off-screen**: tiles that scroll out of view pause, with a short delay so a relayout never cuts a stream.
-- **A counter that never stalls**: viewers and donations update live, and the amount is animated to follow the real donation rate instead of jumping every poll.
-- **No dependencies**: one HTML file and a stdlib Python server that proxies `zevent.fr/api` (the upstream sends no CORS header).
+Avec « Connecter Twitch », retrouve tes follows et cherche des streamers directement dans la sidebar. Les chaînes en direct passent en premier. Les statuts se rafraîchissent toutes les 30 secondes et les follows environ toutes les minutes, tant que la page est visible. L’étoile ajoute ou retire un favori local sans modifier tes follows Twitch.
 
-## Run
+Le compte connecté est celui de chaque visiteur. Les follows ne sont pas publiés pour les autres utilisateurs. La session Twitch reste dans l’onglet et disparaît à sa fermeture. Si elle expire, reconnecte-toi. Les favoris restent disponibles.
 
-```bash
-python3 server.py        # http://localhost:8765
-python3 server.py 9000   # another port
+## Lancer en local
+
+```sh
+python3 server.py
 ```
 
-Open the URL in a browser, tick streamers on the left, done. The Twitch player only loads from a real hostname, so keep `localhost` rather than `file://`.
+Ouvre http://localhost:8765. Le lecteur Twitch nécessite un serveur HTTP avec un nom d’hôte, il ne fonctionne pas avec une URL `file://`.
 
-## Notes
+## Configurer Twitch
 
-- Browsers refuse audible playback until you click the page once. Tiles start muted, a hint says so, and the first click applies the saved sound state.
-- Every stream is a Twitch embed with its controls hidden, so the buttons on each tile are the only controls. Fifteen embeds at once is heavy: a laptop will not enjoy it.
-- The page reloads itself when `index.html` changes on disk, which is handy while editing and harmless otherwise.
+Crée une application dans la [console Twitch](https://dev.twitch.tv/console/apps) :
 
-## License
+- Nom : `twitch-grid`, ou un autre nom disponible.
+- Catégorie : Website Integration.
+- Type de client : Public.
+- Redirection OAuth : `https://twitch.moinax.com/`, avec le slash final.
+- Pour tester la connexion localement, ajoute aussi `http://localhost:8765/`.
+
+Renseigne l’identifiant client public dans `config.json`, dans la propriété `twitchClientId`. Aucun secret client n’est utilisé. Si l’identifiant est vide, les favoris fonctionnent et le bouton de connexion est masqué.
+
+La connexion utilise le [flux implicite OAuth de Twitch](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#implicit-grant-flow), avec la seule permission `user:read:follows`. L’application vérifie l’état OAuth avant d’accepter un jeton, puis valide la session au démarrage et toutes les heures. Elle appelle l’API Twitch depuis le navigateur.
+
+## Déployer
+
+Le site est statique, sans dépendance à installer pour le servir. Vercel doit servir la racine du projet avec le preset « Other », sans commande de build. Associe le domaine `twitch.moinax.com` au projet Vercel et configure son DNS suivant les indications de Vercel.
+
+## Vérifier
+
+```sh
+npm ci
+npx playwright install chromium
+npm run check
+npm test
+```
+
+Les tests navigateur couvrent les favoris, la restauration de la grille, la connexion OAuth, la pagination des follows, leur actualisation et les sessions expirées. Ils simulent l’API et le lecteur Twitch ; la lecture réelle et l’autorisation du compte se vérifient sur le site.
+
+## Origine et licence
+
+Adapté de [ZEvent grid](https://github.com/Moinax/zevent-grid), avec son historique Git. Les données et compteurs de l’événement ont été retirés.
 
 [MIT](LICENSE)
