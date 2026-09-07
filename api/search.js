@@ -50,21 +50,42 @@ async function channels(query) {
     broadcaster_login: s.broadcaster_login, display_name: s.display_name,
     thumbnail_url: s.thumbnail_url, is_live: s.is_live, game_name: s.game_name
   }]));
-  // Search Channels omits channels inactive for six months. Keep an exact username usable.
-  for (const user of exact) if (!results.has(user.login)) results.set(user.login, {
-    broadcaster_login: user.login, display_name: user.display_name,
-    thumbnail_url: user.profile_image_url, is_live: null, game_name: ''
-  });
+  // Search Channels omits channels inactive for six months. Check their streams separately.
+  const missing = exact.filter(user => !results.has(user.login));
+  const live = missing.length ? await streams(missing.map(user => user.login)) : new Map();
+  for (const user of missing) results.set(user.login, userChannel(user, live.get(user.login)));
   return { data: [...results.values()] };
+}
+async function streams(logins) {
+  const data = await helix('streams', [['first', '100'], ...logins.map(login => ['user_login', login])]);
+  return new Map(data.map(stream => [stream.user_login.toLowerCase(), stream]));
+}
+function userChannel(user, stream) {
+  return { broadcaster_login: user.login, display_name: user.display_name,
+    thumbnail_url: user.profile_image_url, is_live: !!stream,
+    game_name: stream?.game_name || '', viewer_count: stream?.viewer_count || 0 };
+}
+async function lookup(logins) {
+  const [users, live] = await Promise.all([
+    helix('users', logins.map(login => ['login', login])), streams(logins)
+  ]);
+  return { data: users.map(user => userChannel(user, live.get(user.login))) };
 }
 module.exports = async function search(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' }); }
-  const query = new URL(req.url, 'https://twitch.moinax.com').searchParams.get('q')?.trim();
-  if (!query || query.length < 2 || query.length > 100 || /[\x00-\x1f]/.test(query)) return res.status(400).json({ error: 'INVALID_QUERY' });
+  const params = new URL(req.url, 'https://twitch.moinax.com').searchParams;
+  const query = params.get('q')?.trim();
+  const logins = params.getAll('login').map(login => login.toLowerCase());
+  const exact = params.has('login');
+  const invalid = exact
+    ? params.has('q') || logins.length > 100 || logins.some(login => !/^[a-z0-9_]{1,25}$/.test(login))
+    : !query || query.length < 2 || query.length > 100 || /[\x00-\x1f]/.test(query);
+  if (invalid) return res.status(400).json({ error: 'INVALID_QUERY' });
   if (!process.env.TWITCH_SEARCH_CLIENT_ID || !process.env.TWITCH_SEARCH_CLIENT_SECRET) return res.status(503).json({ error: 'SEARCH_UNAVAILABLE' });
-  const key = query.toLowerCase(), now = Date.now();
+  const names = [...new Set(logins)].sort();
+  const key = exact ? 'logins:' + names.join(',') : 'query:' + query.toLowerCase(), now = Date.now();
   const respond = data => {
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=60');
     res.setHeader('Vercel-CDN-Cache-Control', 'max-age=60');
@@ -82,7 +103,7 @@ module.exports = async function search(req, res) {
     return res.status(429).json({ error: 'SEARCH_BUSY' });
   }
   try {
-    if (!pending.has(key)) pending.set(key, channels(query).finally(() => pending.delete(key)));
+    if (!pending.has(key)) pending.set(key, (exact ? lookup(names) : channels(query)).finally(() => pending.delete(key)));
     const data = await pending.get(key);
     if (cache.size >= 200) cache.delete(cache.keys().next().value);
     cache.set(key, { data, expiresAt: Date.now() + ttl });

@@ -19,7 +19,9 @@ async function setup(page, connected = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
-    const login = new URL(route.request().url()).searchParams.get('q').toLowerCase();
+    const params = new URL(route.request().url()).searchParams;
+    if (params.has('login')) return route.fulfill({json:{data:params.getAll('login').map(login => ({broadcaster_login:login,is_live:false}))}});
+    const login = params.get('q').toLowerCase();
     return route.fulfill({json:{data:[{broadcaster_login:login,display_name:login,is_live:false,game_name:'',thumbnail_url:''}]}});
   });
   await page.route('**/config.json', r => r.fulfill({ json: { twitchClientId: connected ? 'test-client' : '' } }));
@@ -35,7 +37,7 @@ async function favorite(page, login) {
 }
 test('favorites survive reload; grid, focus, sound and removal remain usable', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
-  await expect(page.locator('#list-empty')).toContainText('premier favori');
+  await expect(page.locator('#list-empty')).toBeHidden();
   await favorite(page, 'https://www.twitch.tv/ZeratoR/');
   await favorite(page, 'mistermv');
   await page.locator('[data-login="zerator"] .channel').click();
@@ -60,7 +62,7 @@ test('favorites survive reload; grid, focus, sound and removal remain usable', a
 });
 test('malformed storage and HTML in channel names do not break the app', async ({ page }) => {
   const errors = await setup(page);
-  await page.addInitScript(() => { localStorage.setItem('tg.layout', '{broken'); localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'safe', display: '<img src=x onerror=alert(1)>' }, { twitch: '<script>' }])); });
+  await page.addInitScript(() => { localStorage.setItem('tg.layout.guest', '{broken'); localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'safe', display: '<img src=x onerror=alert(1)>' }, { twitch: '<script>' }])); });
   await page.goto('/');
   await expect(page.locator('#list .name')).toHaveText('<img src=x onerror=alert(1)>');
   await page.locator('#list .channel').click();
@@ -82,7 +84,13 @@ test('OAuth callback validates state, loads every follows page, searches and dis
   const errors = await setup(page, true); await api(page);
   await page.addInitScript(() => { sessionStorage.setItem('tg.oauth', JSON.stringify({ state: 'expected', at: Date.now() })); localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'saved' }])); });
   await page.goto('/#access_token=fake-token&state=expected');
-  await expect(page.locator('#account')).toContainText('moinax');
+  await expect(page.locator('#disconnect')).toBeVisible();
+  await expect(page.locator('#connect')).toBeHidden();
+  await expect(page.locator('#ctl #disconnect')).toBeVisible();
+  expect(await page.locator('#disconnect').innerText()).toBe('');
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(page.locator('#top')).toBeHidden();
+  await expect(page.locator('#guest')).toHaveText('Rechercher un streamer');
   expect(page.url()).not.toContain('access_token');
   await expect(page.locator('#list li')).toHaveCount(2);
   await expect(page.locator('#list li').first()).toHaveAttribute('data-login', 'live');
@@ -91,17 +99,130 @@ test('OAuth callback validates state, loads every follows page, searches and dis
   await expect(page.locator('#list [data-login="found"]')).toBeVisible();
   await expect(page.locator('#list .favorite:visible')).toHaveCount(0);
   await expect(page.locator('#add-login')).toBeHidden();
-  await expect(page.locator('#source-label')).toHaveText('Follows');
   await expect(page.locator('#side')).not.toContainText('Favoris');
   await page.locator('#list [data-login="found"] .channel').click();
+  await page.locator('#clear-search').click();
+  await page.locator('#list [data-login="live"] .channel').click();
+  await page.locator('#grid [data-login="found"] .bar b').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await page.evaluate(() => { window.openPlayers = [...tiles.values()].map(t => t.player); });
+  await page.locator('#toggle').click();
+  await expect(page.locator('#disconnect')).toBeVisible();
   await page.locator('#disconnect').click();
-  await expect(page.locator('#source-label')).toHaveText('Favoris');
+  await expect(page.locator('#connect')).toBeVisible();
+  await expect(page.locator('#disconnect')).toBeHidden();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.connected')).order)).toEqual(['found', 'live']);
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  await expect(page.locator('#empty')).toBeVisible();
+  expect(await page.evaluate(() => window.openPlayers.every(player => player.destroyed))).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual([]);
   expect(await page.evaluate(() => sessionStorage.getItem('tg.session'))).toBeNull();
   await page.locator('#q').fill('');
   await expect(page.locator('#list li')).toHaveCount(1);
   await expect(page.locator('#list li')).toHaveAttribute('data-login', 'saved');
   await expect(page.locator('#list .favorite')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  await expect(page.locator('#empty')).toBeVisible();
   expect(errors).toEqual([]);
+});
+test('disconnect before the player script loads restores guest tiles without changing the connected layout', async ({ page }) => {
+  await setup(page, true); await api(page);
+  await page.addInitScript(() => {
+    sessionStorage.setItem('tg.session', JSON.stringify('valid'));
+    localStorage.setItem('tg.layout.connected', JSON.stringify({order:['one','two'],focused:'one'}));
+    localStorage.setItem('tg.layout.guest', JSON.stringify({order:['saved']}));
+  });
+  let pendingPlayer;
+  await page.route('https://player.twitch.tv/js/embed/v1.js', r => { pendingPlayer = r; });
+  await page.goto('/', {waitUntil:'domcontentloaded'});
+  await page.locator('#disconnect').click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.connected')).order)).toEqual(['one','two']);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual(['saved']);
+  await pendingPlayer.fulfill({contentType:'text/javascript',body:mockPlayer});
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await expect(page.locator('#grid .tile')).toHaveAttribute('data-login','saved');
+});
+test('guest and connected layouts restore their own tiles and settings across mode changes and reloads', async ({ page }) => {
+  const errors = await setup(page, true); await api(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest', JSON.stringify({
+      order:['guesttwo','guestone'], focused:'guestone', allPaused:true, collapsed:false,
+      muted:{guestone:false,guesttwo:true}, volume:{guestone:0.25,guesttwo:0.75},
+      pinned:{guestone:true}, paused:{guesttwo:true}
+    }));
+  });
+  await page.route('https://id.twitch.tv/oauth2/authorize?**', r => r.fulfill({body:'Twitch authorization'}));
+  const connect = async () => {
+    await page.locator('#connect').click();
+    await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
+    const state = new URL(page.url()).searchParams.get('state');
+    await page.goto('/#access_token=fake-token&state='+state);
+    await expect(page.locator('#disconnect')).toBeVisible();
+  };
+  await page.goto('/');
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  const guest = await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')));
+  await connect();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  await expect(page.locator('#empty')).toBeVisible();
+  await page.locator('#list [data-login="live"] .channel').click();
+  await page.locator('#list [data-login="offline"] .channel').click();
+  await page.locator('#grid [data-login="live"] .bar b').click();
+  await page.locator('#playall').click();
+  await page.locator('#toggle').click();
+  const connected = await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.connected')));
+  expect(connected.order).toEqual(['live','offline']);
+  expect(connected.focused).toBe('live');
+  expect(connected.allPaused).toBe(true);
+  expect(connected.collapsed).toBe(true);
+  await page.locator('#disconnect').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await expect(page.locator('#grid .big')).toHaveAttribute('data-login','guestone');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')))).toEqual(guest);
+  await page.reload();
+  await expect(page.locator('#grid .big')).toHaveAttribute('data-login','guestone');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')))).toEqual(guest);
+  await connect();
+  await expect(page.locator('#grid .big')).toHaveAttribute('data-login','live');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.connected')))).toEqual(connected);
+  await page.reload();
+  await expect(page.locator('#grid .big')).toHaveAttribute('data-login','live');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.connected')))).toEqual(connected);
+  expect(errors).toEqual([]);
+});
+test('layout restoration waits for Twitch session validation before choosing a mode', async ({ page }) => {
+  await setup(page, true); await api(page);
+  await page.addInitScript(() => {
+    sessionStorage.setItem('tg.session', JSON.stringify('valid'));
+    localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'guest'}]));
+    localStorage.setItem('tg.layout.guest', JSON.stringify({order:['guest']}));
+    localStorage.setItem('tg.layout.connected', JSON.stringify({order:['live']}));
+  });
+  let validation;
+  await page.route('https://id.twitch.tv/oauth2/validate', r => { validation = r; });
+  await page.goto('/', {waitUntil:'domcontentloaded'});
+  await page.waitForFunction(() => !!window.Twitch?.Player);
+  await expect(page.locator('#list .channel')).toBeDisabled();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  await validation.fulfill({json:{client_id:'test-client',user_id:'42',login:'moinax',scopes:['user:read:follows']}});
+  await expect(page.locator('#grid .tile')).toHaveAttribute('data-login','live');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual(['guest']);
+});
+test('legacy layout migrates once into the active mode', async ({ page }) => {
+  await setup(page, true); await api(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tg.layout.connected')) {
+      sessionStorage.setItem('tg.session', JSON.stringify('valid'));
+      localStorage.setItem('tg.layout', JSON.stringify({order:['legacy']}));
+    }
+  });
+  await page.goto('/');
+  await expect(page.locator('#grid .tile')).toHaveAttribute('data-login','legacy');
+  expect(await page.evaluate(() => localStorage.getItem('tg.layout'))).toBeNull();
+  await page.locator('#disconnect').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.connected')).order)).toEqual(['legacy']);
 });
 test('OAuth rejects an unexpected state without using the token', async ({ page }) => {
   await setup(page, true);
@@ -111,6 +232,50 @@ test('OAuth rejects an unexpected state without using the token', async ({ page 
   await expect(page.locator('#notice')).toContainText('n’est plus valide');
   expect(page.url()).not.toContain('access_token');
   expect(validations).toBe(0);
+});
+test('Twitch redirect mismatch keeps favorites and the connection button usable', async ({ page }) => {
+  await setup(page, true);
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'altair'}]));
+    localStorage.setItem('tg.guest', 'true');
+    sessionStorage.setItem('tg.oauth', JSON.stringify({state:'expected',at:Date.now()}));
+  });
+  await page.route('https://id.twitch.tv/oauth2/authorize?**', r => r.fulfill({body:'Twitch authorization'}));
+  await page.goto('/?error=redirect_mismatch&state=expected');
+  await expect(page.locator('#notice')).toContainText('pas configurée pour cette adresse');
+  expect(page.url()).not.toContain('error=');
+  await expect(page.locator('#list [data-login="altair"]')).toBeVisible();
+  await expect(page.locator('#connect')).toBeEnabled();
+  await page.locator('#connect').click();
+  await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
+  expect(new URL(page.url()).searchParams.get('redirect_uri')).toBe('http://localhost:8767');
+});
+test('a slow Twitch player script does not block account setup or overwrite the saved layout', async ({ page }) => {
+  const errors = await setup(page, true);
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'altair'}]));
+    localStorage.setItem('tg.layout.guest', JSON.stringify({order:['altair'],paused:{altair:true}}));
+  });
+  let pendingPlayer;
+  await page.route('https://player.twitch.tv/js/embed/v1.js', r => { pendingPlayer = r; });
+  await page.goto('/', {waitUntil:'domcontentloaded'});
+  await expect(page.locator('#top')).toBeEnabled();
+  await expect(page.locator('#connect')).toBeVisible();
+  await expect(page.locator('#list [data-login="altair"]')).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual(['altair']);
+  await pendingPlayer.fulfill({contentType:'text/javascript',body:mockPlayer});
+  await expect(page.locator('#grid [data-login="altair"] iframe')).toBeVisible();
+  expect(await page.evaluate(() => tiles.get('altair').paused)).toBe(true);
+  expect(errors).toEqual([]);
+});
+test('Twitch login still opens when the player script fails', async ({ page }) => {
+  await setup(page, true);
+  await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.abort());
+  await page.route('https://id.twitch.tv/oauth2/authorize?**', r => r.fulfill({body:'Twitch authorization'}));
+  await page.goto('/');
+  await expect(page.locator('#notice')).toContainText('lecteur Twitch est indisponible');
+  await page.locator('#top').click();
+  await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
 });
 test('expired sessions fall back to saved favorites', async ({ page }) => {
   await setup(page, true);
@@ -131,18 +296,103 @@ test('follows and live status refresh after a minute', async ({ page }) => {
   await expect(page.locator('#list li')).toHaveCount(1);
   await expect(page.locator('#list li')).toHaveAttribute('data-login', 'newfollow');
 });
+test('saved favorites load their status without login and refresh after a stream ends', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.favorites', JSON.stringify([
+    { twitch: 'altair', display: 'Altair' }, { twitch: 'live', display: 'Live' }
+  ])));
+  let online = true;
+  const batches = [];
+  await page.route('**/api/search?login=**', route => {
+    const logins = new URL(route.request().url()).searchParams.getAll('login');
+    batches.push(logins);
+    return route.fulfill({ json: { data: logins.map(login => ({ broadcaster_login: login,
+      is_live: login === 'live' && online, game_name: login === 'live' && online ? 'Art' : '', viewer_count: 42 })) } });
+  });
+  await page.clock.install(); await page.goto('/');
+  await expect(page.locator('[data-login="altair"] .g')).toHaveText('Hors ligne');
+  await expect(page.locator('[data-login="altair"]')).toHaveClass(/off/);
+  await expect(page.locator('[data-login="live"] .g')).toHaveText('En direct · Art');
+  expect(batches).toEqual([['altair', 'live']]);
+  online = false;
+  await page.clock.fastForward(31000);
+  await expect(page.locator('[data-login="live"] .g')).toHaveText('Hors ligne');
+  await page.reload();
+  await expect(page.locator('[data-login="altair"] .g')).toHaveText('Hors ligne');
+  expect(errors).toEqual([]);
+});
+test('failed favorite status checks stay unknown and recover on the next refresh', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'altair' }])));
+  await page.route('**/api/search?login=**', route => route.fulfill({ status: 503, json: { error: 'TWITCH_UNAVAILABLE' } }));
+  await page.clock.install(); await page.goto('/');
+  await expect(page.locator('#notice')).toContainText('Impossible d’actualiser');
+  await expect(page.locator('[data-login="altair"]')).not.toHaveClass(/off/);
+  await page.route('**/api/search?login=**', route => route.fulfill({ json: { data: [{ broadcaster_login: 'altair', is_live: false }] } }));
+  await page.clock.fastForward(31000);
+  await expect(page.locator('[data-login="altair"] .g')).toHaveText('Hors ligne');
+  await expect(page.locator('#notice')).toBeEmpty();
+});
 test('mobile sidebar opens for search and closes when a stream is selected', async ({ page }) => {
   const errors = await setup(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await expect(page.locator('body')).toHaveClass(/collapsed/);
-  await page.locator('#top').click();
+  await page.locator('#guest').click();
   await expect(page.locator('#q')).toBeFocused();
   await favorite(page, 'zerator');
   await page.locator('#list .channel').click();
   await expect(page.locator('body')).toHaveClass(/collapsed/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   expect(errors).toEqual([]);
+});
+test('one tile has native controls without spotlight and switches back after adding or removing a second', async ({ page }) => {
+  const errors = await setup(page); await page.clock.install(); await page.goto('/');
+  await favorite(page, 'one'); await favorite(page, 'two');
+  await page.locator('#list [data-login="one"] .channel').click();
+  const one = page.locator('#grid [data-login="one"]');
+  await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(one.locator('.ctl')).toBeHidden();
+  await expect(one.locator('.min')).toBeHidden();
+  await expect(one.locator('.close')).toBeVisible();
+  await expect(one.locator('.fs')).toBeVisible();
+  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
+  expect(await one.locator('.player').evaluate(el => getComputedStyle(el, '::after').content)).toBe('none');
+  await page.clock.runFor(2500);
+  await page.evaluate(() => { window.singlePlayer = tiles.get('one').player; });
+  await one.locator('.bar b').click();
+  expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer && focused === null)).toBe(true);
+  const bounds = await one.boundingBox(), gridBounds = await page.locator('#grid').boundingBox();
+  expect(bounds.width).toBeCloseTo(gridBounds.width, 0);
+  await page.evaluate(() => { const p = tiles.get('one').player; p.pause(); p.setVolume(0.25); p.setMuted(true); p.setQuality('720p60'); });
+  await page.locator('#list [data-login="two"] .channel').click();
+  await expect(page.locator('#grid iframe[data-controls="false"]')).toHaveCount(2);
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => ({ paused:tiles.get('one').paused, volume:tiles.get('one').volume, muted:tiles.get('one').muted })))
+    .toEqual({paused:true,volume:0.25,muted:true});
+  await page.locator('#grid [data-login="two"] .close').click();
+  await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => ({ paused:tiles.get('one').player.paused, quality:tiles.get('one').player.getQuality() })))
+    .toEqual({paused:true,quality:'720p60'});
+  await page.reload();
+  await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
+  await one.locator('.close').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test('removing the second tile clears a saved spotlight without recreating the remaining full player', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one'})));
+  await page.goto('/');
+  await expect(page.locator('#grid')).toHaveClass(/focused/);
+  await page.evaluate(() => { window.singlePlayer = tiles.get('one').player; });
+  await page.locator('#grid [data-login="two"] .close').click();
+  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
+  await expect(page.locator('#grid .min')).toBeHidden();
+  expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer)).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).focused)).toBeNull();
 });
 test('spotlight shows full controls and preserves the other players when switching', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
@@ -164,7 +414,8 @@ test('spotlight shows full controls and preserves the other players when switchi
 test('native pause, volume and mute survive the watchdog and returning to the grid', async ({ page }) => {
   const errors = await setup(page); await page.clock.install(); await page.goto('/');
   await favorite(page, 'one'); await page.locator('#list .channel').click();
-  await page.locator('#grid .bar b').click();
+  await favorite(page, 'two'); await page.locator('#list [data-login="two"] .channel').click();
+  await page.locator('#grid [data-login="one"] .bar b').click();
   await page.clock.runFor(2500);
   await page.evaluate(() => {
     const player = tiles.get('one').player;
@@ -176,36 +427,37 @@ test('native pause, volume and mute survive the watchdog and returning to the gr
   })).toEqual({ paused:true, muted:true, volume:0.25, playing:false });
   await page.locator('#grid .big .min').click();
   await page.clock.runFor(1000);
-  await expect(page.locator('#grid .ctl input')).toHaveValue('0.25');
+  await expect(page.locator('#grid [data-login="one"] .ctl input')).toHaveValue('0.25');
   expect(await page.evaluate(() => tiles.get('one').player.paused)).toBe(true);
-  await page.locator('#grid .bar b').click(); await page.clock.runFor(1000);
+  await page.locator('#grid [data-login="one"] .bar b').click(); await page.clock.runFor(1000);
   expect(await page.evaluate(() => tiles.get('one').player.getQuality())).toBe('720p60');
   expect(errors).toEqual([]);
 });
 test('native Play resumes a spotlight restored in a paused state', async ({ page }) => {
   await setup(page); await page.clock.install();
-  await page.addInitScript(() => localStorage.setItem('tg.layout', JSON.stringify({order:['one','two'],focused:'one',allPaused:true,paused:{one:true}})));
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one',allPaused:true,paused:{one:true}})));
   await page.goto('/'); await page.clock.runFor(1000);
   await page.evaluate(() => tiles.get('one').player.play());
   await page.clock.runFor(6000);
   expect(await page.evaluate(() => ({ allPaused, one:tiles.get('one').paused, two:tiles.get('two').paused, playing:!tiles.get('one').player.paused })))
     .toEqual({allPaused:false,one:false,two:true,playing:true});
 });
-test('empty page offers Twitch first and remembers the choice to continue without an account', async ({ page }) => {
+test('continue without an account only focuses search and leaves the welcome unchanged', async ({ page }) => {
   const errors = await setup(page, true);
   await page.setViewportSize({width:390,height:844});
   await page.goto('/');
-  await expect(page.locator('#top')).toHaveText('Connecter Twitch');
   await expect(page.locator('#top')).toBeEnabled();
-  await expect(page.locator('#guest')).toBeVisible();
+  const welcome = await page.locator('#empty').innerText();
   await page.locator('#guest').click();
-  await expect(page.locator('#top')).toHaveText('Ajouter un streamer');
-  await expect(page.locator('#guest')).toBeHidden();
   await expect(page.locator('#q')).toBeFocused();
+  await expect(page.locator('#top')).toHaveText('Connecter Twitch');
+  await expect(page.locator('#guest')).toBeVisible();
+  expect(await page.locator('#empty').innerText()).toBe(welcome);
+  expect(await page.evaluate(() => localStorage.getItem('tg.guest'))).toBeNull();
   await page.reload();
-  await expect(page.locator('#top')).toHaveText('Ajouter un streamer');
-  await expect(page.locator('#guest')).toBeHidden();
-  const icon = page.getByRole('button', {name:'Connecter Twitch', exact:true});
+  await expect(page.locator('#top')).toHaveText('Connecter Twitch');
+  await expect(page.locator('#guest')).toBeVisible();
+  const icon = page.locator('#connect');
   await expect(icon).toBeVisible();
   const bounds = await icon.boundingBox();
   expect(bounds.width).toBeLessThanOrEqual(32);
@@ -218,6 +470,30 @@ test('empty page offers Twitch first and remembers the choice to continue withou
   expect(url.searchParams.get('client_id')).toBe('test-client');
   expect(url.searchParams.get('scope')).toBe('user:read:follows');
   expect(errors).toEqual([]);
+});
+test('only open tiles hide the welcome, regardless of favorites or an old guest preference', async ({ page }) => {
+  await setup(page, true);
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.guest', 'true');
+  });
+  await page.goto('/');
+  await expect(page.locator('#empty')).toBeVisible();
+  await favorite(page, 'one');
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(page.locator('#top')).toHaveText('Connecter Twitch');
+  await page.reload();
+  await expect(page.locator('#empty')).toBeVisible();
+  await page.locator('#list [data-login="one"] .channel').click();
+  await expect(page.locator('#empty')).toBeHidden();
+  await page.locator('#list [data-login="one"] .favorite').click();
+  await expect(page.locator('#empty')).toBeHidden();
+  await page.reload();
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await expect(page.locator('#empty')).toBeHidden();
+  await page.locator('#grid .close').click();
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(page.locator('#top')).toBeEnabled();
+  await expect(page.locator('#guest')).toBeVisible();
 });
 test('primary welcome action starts Twitch authorization', async ({ page }) => {
   await setup(page, true);
@@ -244,7 +520,6 @@ test('guest search renders API results and saves a favorite without authenticati
   await expect(page.locator('#list [data-login="altair"] .favorite')).toHaveAttribute('aria-pressed','true');
   await page.locator('#q').fill(''); await page.reload();
   await expect(page.locator('#list .name')).toHaveText('Altair');
-  await expect(page.locator('#source-label')).toHaveText('Favoris');
   expect(await page.evaluate(()=>sessionStorage.getItem('tg.session'))).toBeNull(); expect(errors).toEqual([]);
 });
 test('guest search handles empty results and an unavailable API with direct-add fallback', async ({page}) => {

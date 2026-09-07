@@ -23,7 +23,8 @@ afterEach(() => {
 });
 async function request(q='altair', method='GET', ip='127.0.0.1') {
   const res = {headers:{},setHeader(key,value){this.headers[key]=value;},status(value){this.statusCode=value;return this;},json(value){this.body=value;return this;}};
-  await handler({method,url:'/api/search?q='+encodeURIComponent(q),headers:{'x-forwarded-for':ip}},res);
+  const params = q instanceof URLSearchParams ? q.toString() : 'q='+encodeURIComponent(q);
+  await handler({method,url:'/api/search?'+params,headers:{'x-forwarded-for':ip}},res);
   return res;
 }
 test('guest search returns channel cards, never credentials or unrelated Twitch fields', async () => {
@@ -42,7 +43,44 @@ test('cached searches and concurrent requests share work and reuse the app token
 });
 test('exact usernames remain searchable when Twitch omits inactive channels', async () => {
   global.fetch = async url => url.endsWith('/oauth2/token') ? json({access_token:'private-token',expires_in:3600}) : url.includes('/users?') ? json({data:[{login:'altair',display_name:'Altair',profile_image_url:'https://example.com/a.png'}]}) : json({data:[]});
-  const res = await request(); assert.equal(res.body.data[0].broadcaster_login,'altair'); assert.equal(res.body.data[0].is_live,null);
+  const res = await request(); assert.equal(res.body.data[0].broadcaster_login,'altair'); assert.equal(res.body.data[0].is_live,false);
+});
+test('exact username fallback checks live streams instead of assuming offline', async () => {
+  global.fetch = async url => {
+    if (url.endsWith('/oauth2/token')) return json({access_token:'private-token',expires_in:3600});
+    if (url.includes('/users?')) return json({data:[{login:'altair',display_name:'Altair'}]});
+    if (url.includes('/streams?')) return json({data:[{user_login:'altair',game_name:'Art',viewer_count:42}]});
+    return json({data:[]});
+  };
+  const res = await request();
+  assert.equal(res.body.data[0].is_live,true);
+  assert.equal(res.body.data[0].viewer_count,42);
+});
+test('favorite lookup batches usernames and returns verified public statuses', async () => {
+  global.fetch = async url => {
+    calls.push({url});
+    if (url.endsWith('/oauth2/token')) return json({access_token:'private-token',expires_in:3600});
+    if (url.includes('/users?')) return json({data:[{login:'altair',display_name:'Altair',email:'private@example.com'}, {login:'live',display_name:'Live'}]});
+    return json({data:[{user_login:'live',game_name:'Art',viewer_count:42,private_field:'omit-me'}]});
+  };
+  const res = await request(new URLSearchParams([['login','live'],['login','Altair']]));
+  assert.equal(res.statusCode,200);
+  assert.equal(res.body.data[0].is_live,false);
+  assert.equal(res.body.data[1].is_live,true);
+  assert.equal(res.body.data[1].viewer_count,42);
+  assert.doesNotMatch(JSON.stringify(res),/server-secret|private-token|private@example|omit-me/);
+  const streams = new URL(calls.find(c => c.url.includes('/streams?')).url);
+  assert.deepEqual(streams.searchParams.getAll('user_login'),['altair','live']);
+  assert.equal(streams.searchParams.get('first'),'100');
+  await request(new URLSearchParams([['login','altair'],['login','live'],['login','live']]));
+  assert.equal(calls.length,3);
+});
+test('favorite lookup rejects empty, invalid, oversized and mixed queries', async () => {
+  for (const query of [new URLSearchParams({login:''}),new URLSearchParams({login:'a/b'}),
+    new URLSearchParams({login:'altair',q:'altair'}),new URLSearchParams(Array.from({length:101},(_,i)=>['login','user'+i]))]) {
+    assert.equal((await request(query)).statusCode,400);
+  }
+  assert.equal(calls.length,0);
 });
 test('invalid queries and unsupported methods do not call Twitch', async () => {
   for (const query of ['', 'a', 'x'.repeat(101), 'test\nname']) assert.equal((await request(query)).statusCode,400);

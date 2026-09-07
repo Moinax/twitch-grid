@@ -27,9 +27,13 @@
   body { --sb: 300px; }
   body.collapsed { --sb: 34px; }
   #side { width: var(--sb); flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
-  body.collapsed #side header { padding: 4px; }
+  body.collapsed #side header { padding: 4px; flex: 1; min-height: 0; display: flex; border-bottom: 0; }
   body.collapsed #side header > :not(.row), body.collapsed .row > :not(#ctl), body.collapsed #list { display: none; }
-  body.collapsed #ctl { flex-direction: column; }
+  body.collapsed #side header .row { flex: 1; align-items: stretch; }
+  body.collapsed #ctl { flex-direction: column; flex: 1; }
+  body.collapsed #toggle { order: -1; }
+  body.collapsed #connect, body.collapsed #disconnect { order: 1; }
+  body.collapsed #ctl a { order: 2; margin-top: auto; }
   .row { display: flex; align-items: center; gap: 8px; }
   .row img { display: block; border-radius: 4px; }
   .row b { flex: 1; }
@@ -38,10 +42,15 @@
   #ctl { display: flex; gap: 4px; }
   #ctl button, #ctl a { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; border-radius: 4px; background: #2a2a30; color: var(--fg); cursor: pointer; font-size: 13px; }
   #ctl button:hover, #ctl a:hover { background: #3a3a42; }
+  #ctl button:disabled { opacity: .5; cursor: default; }
   #ctl a svg { fill: currentColor; }
   #side header { padding: 10px 12px; border-bottom: 1px solid var(--line); }
   #side header b { font-size: 15px; }
-  #q { width: 100%; margin-top: 8px; padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+  .search-field { position: relative; margin-top: 8px; }
+  #q { width: 100%; padding: 6px 34px 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; }
+  #q::-webkit-search-cancel-button { -webkit-appearance: none; }
+  #clear-search { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--dim); cursor: pointer; }
+  #clear-search:hover { background: var(--line); color: var(--fg); }
   #list { flex: 1; overflow-y: auto; list-style: none; }
   #list li { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; border-left: 3px solid transparent; }
   #list li:hover { background: #222226; }
@@ -90,9 +99,9 @@
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
   /* a frame around bar + video reads as one card even when the player letterboxes; an overlay, the iframe would hide an outline */
   .tile::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid var(--line); pointer-events: none; transition: border-color .15s; }
-  .tile:where(:not(.big):not(:fullscreen)):hover::after { border-color: var(--accent); }
-  .tile:where(:not(.big):not(:fullscreen)):hover .bar { background: #2b2140; }
-  .tile:where(:not(.big):not(:fullscreen)):hover .bar b { color: #fff; }
+  .tile:where(:not(.full-player):not(:fullscreen)):hover::after { border-color: var(--accent); }
+  .tile:where(:not(.full-player):not(:fullscreen)):hover .bar { background: #2b2140; }
+  .tile:where(:not(.full-player):not(:fullscreen)):hover .bar b { color: #fff; }
   body.dragging iframe { pointer-events: none; }
   .tile.over { outline: 2px solid var(--accent); outline-offset: -2px; }
   .tile .bar { height: var(--bar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); cursor: grab; user-select: none; transition: background .15s; }
@@ -103,13 +112,15 @@
   .tile .bar span { color: var(--dim); font-variant-numeric: tabular-nums; }
   .tile .bar button { border: 0; background: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 0 4px; }
   .tile .bar button:hover { color: var(--fg); }
-  .tile.big .close, .tile:not(.big) .min, .tile:not(.big) .fs { display: none; }   /* small tiles: sound and remove; the spotlight: sound, back to the grid, fullscreen */
+  .tile.big .close, .tile:not(.big) .min, .tile:not(.full-player) .fs { display: none; }   /* A single player keeps remove and fullscreen, without a back-to-grid action. */
+  #grid.single .bar { cursor: default; }
+  #grid.single .bar::before { display: none; }
   .tile .bar svg { display: block; }
   .tile:not(:fullscreen) .fs .exit, .tile:fullscreen .fs .enter { display: none; }
   #hint, #update { position: fixed; bottom: 24px; left: calc(50% + var(--sb) / 2); transform: translateX(-50%);   /* centred on the grid, not the window */ z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
   .tile .ctl { position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 15px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 11px; opacity: .7; }
-  .tile.big .ctl { display: none; }
-  .tile.big .load { display: none; }
+  .tile.full-player .ctl { display: none; }
+  .tile.full-player .load { display: none; }
   .tile .ctl:hover { opacity: 1; }
   .tile .ctl button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
   .tile .ctl input { width: 90px; margin: 0; accent-color: var(--fg); cursor: pointer; }
@@ -133,27 +144,23 @@
   .tile.partial:not(.offline) .load .more { display: block; position: sticky; top: 16px; bottom: 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   /* a click on the video lands inside the iframe: on thumbnails a transparent layer catches it for the spotlight instead */
-  .tile:not(.big) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
+  .tile:not(.full-player) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
   body.needclick .tile.loud .player::after { display: none; }   /* while a click in the video is what unlocks the sound, let it through */
   /* players render at two fixed sizes and are scaled to the tile with a transform: the Twitch player restarts its
      stream whenever its box grows (quality switch), and a transform is not a resize. ponytail: 720p on the spotlight
      whatever the screen; bump the big size if a 4K spotlight ever matters */
   .tile .player iframe { position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; display: block; }
-  .tile.big .player iframe, .tile:fullscreen .player iframe { width: 1280px; height: 720px; }
+  .tile.full-player .player iframe, .tile:fullscreen .player iframe { width: 1280px; height: 720px; }
   .tile .player iframe:fullscreen { transform: none !important; width: 100vw; height: 100vh; }
   #grid { --cols: 1; --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar)); }
   #grid.focused { grid-template-columns: 1fr repeat(var(--cols), calc(var(--side) / var(--cols))); grid-auto-rows: var(--tile-h); }
   #grid.focused .tile.big { grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; height: 100vh; align-self: start; }
   button, input, a { -webkit-tap-highlight-color: transparent; }
   button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #bf94ff; outline-offset: 2px; }
-  .action, #disconnect { border: 1px solid var(--line); border-radius: 5px; background: #29232f; color: var(--fg); padding: 7px 9px; cursor: pointer; font: inherit; }
+  .action { border: 1px solid var(--line); border-radius: 5px; background: #29232f; color: var(--fg); padding: 7px 9px; cursor: pointer; font: inherit; }
   #ctl #connect { color: #bf94ff; }
   #connect svg { fill: currentColor; }
-  #account { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 6px; }
-  #account[hidden], [hidden] { display: none !important; }
-  #account span { overflow: hidden; text-overflow: ellipsis; }
-  #disconnect { font-size: 11px; }
-  #source-label { margin-top: 14px; font-size: 12px; font-weight: 600; color: var(--dim); }
+  [hidden] { display: none !important; }
   #notice, #list-empty, footer { font-size: 12px; color: var(--dim); line-height: 1.5; }
   #notice:empty { display: none; }
   #notice { margin-top: 10px; }
@@ -175,6 +182,7 @@
   #list { padding: 0; }
   #list li { padding: 0 8px; cursor: default; gap: 4px; }
   #list .channel { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 9px 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+  #list .channel:disabled { cursor: wait; opacity: .6; }
   #list .favorite { flex: none; border: 0; background: none; color: var(--dim); padding: 6px; cursor: pointer; font-size: 20px; }
   #list .favorite[aria-pressed="true"] { color: #bf94ff; }
   #empty small { max-width: 400px; line-height: 1.6; letter-spacing: 0; text-transform: none; }
@@ -198,10 +206,11 @@
 <body>
 <aside id="side">
   <header>
-    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>Twitch grid</b><div id="ctl"><button id="connect" title="Connecter Twitch" aria-label="Connecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6V1.714h14.571Z"/></svg></button><a href="https://github.com/Moinax/twitch-grid" target="_blank" rel="noopener" title="Mettre une étoile sur GitHub"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a><button id="playall" title="Play/pause tous les streams">⏸&#xFE0E;</button><button id="toggle" title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
-    <div id="account" hidden><span></span><button id="disconnect" title="Déconnecter Twitch">Déconnexion</button></div>
-    <h2 id="source-label">Favoris</h2>
-    <input id="q" type="search" aria-label="Rechercher un streamer" placeholder="Rechercher un streamer…" autocomplete="off" maxlength="100">
+    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>Twitch grid</b><div id="ctl"><button id="connect" title="Connecter Twitch" aria-label="Connecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6V1.714h14.571Z"/></svg></button><button id="disconnect" title="Déconnecter Twitch" aria-label="Déconnecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button><a href="https://github.com/Moinax/twitch-grid" target="_blank" rel="noopener" title="Mettre une étoile sur GitHub"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a><button id="playall" title="Play/pause tous les streams">⏸&#xFE0E;</button><button id="toggle" title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
+    <div class="search-field">
+      <input id="q" type="search" aria-label="Rechercher un streamer" placeholder="Rechercher un streamer…" autocomplete="off" maxlength="100">
+      <button id="clear-search" type="button" aria-label="Effacer la recherche" title="Effacer la recherche" hidden><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    </div>
     <div id="search-actions" hidden>
       <button id="add-login" class="action"></button>
     </div>
@@ -221,7 +230,7 @@
   <div id="empty">
     <img src="favicon.svg" alt="">
     <h1>Twitch grid</h1>
-    <p>Tes streams Twitch sur un seul écran. Ajoute tes streamers favoris, compose ta grille et choisis le son.</p>
+    <p>Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.</p>
     <button id="top" disabled>Connecter Twitch</button>
     <button id="guest">Continuer sans compte</button>
     <small>Glisse les tuiles pour les ranger. Clique une vidéo pour la mettre en avant.</small>
@@ -230,7 +239,6 @@
   <div id="hint" hidden>Clique sur la vidéo pour activer le son</div>
   <div id="update" hidden onclick="location.reload()">Nouvelle version, clique pour recharger</div>
 </div>
-<script src="https://player.twitch.tv/js/embed/v1.js"></script>
 <script src="library.js"></script>
 <script src="app.js"></script>
 </body>

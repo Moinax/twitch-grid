@@ -50,6 +50,7 @@ class TwitchLibrary {
       history.replaceState(null, '', location.pathname);
       const pending = readStored('tg.oauth', null, sessionStorage);
       sessionStorage.removeItem('tg.oauth');
+      if (params.get('error') === 'redirect_mismatch') throw new Error('La connexion Twitch n’est pas configurée pour cette adresse. L’adresse de retour doit être ajoutée dans les réglages de l’application Twitch.');
       if (!pending || params.get('state') !== pending.state || Date.now() - pending.at > 600000) throw new Error('Cette connexion Twitch n’est plus valide. Recommence depuis le bouton de connexion.');
       if (params.has('error')) throw new Error('Connexion Twitch annulée. Tu peux utiliser les favoris.');
       await this.validate(params.get('access_token'));
@@ -89,9 +90,14 @@ class TwitchLibrary {
   async live(logins) {
     const result = new Map();
     for (let i = 0; i < logins.length; i += 100) {
-      const params = [['first', '100'], ...logins.slice(i, i + 100).map(login => ['user_login', login])];
-      const page = await this.get('streams', params);
-      for (const stream of page.data) result.set(stream.user_login.toLowerCase(), stream);
+      const batch = logins.slice(i, i + 100);
+      if (this.user) {
+        const page = await this.get('streams', [['first', '100'], ...batch.map(login => ['user_login', login])]);
+        for (const stream of page.data) result.set(stream.user_login.toLowerCase(), stream);
+      } else {
+        const page = await this.guest(batch.map(login => ['login', login]));
+        for (const stream of page.data) if (stream.is_live) result.set(stream.broadcaster_login, stream);
+      }
     }
     return result;
   }
@@ -100,7 +106,11 @@ class TwitchLibrary {
       const page = await this.get('search/channels', { query, first: '30' }, signal);
       return page.data.map(channel);
     }
-    const response = await fetch('/api/search?' + new URLSearchParams({ q: query }), {
+    const page = await this.guest({ q: query }, signal);
+    return page.data.map(channel);
+  }
+  async guest(params, signal) {
+    const response = await fetch('/api/search?' + new URLSearchParams(params), {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000)
     });
     if (!response.ok) {
@@ -109,7 +119,6 @@ class TwitchLibrary {
       error.status = response.status === 401 ? 502 : response.status;
       throw error;
     }
-    const page = await response.json();
-    return page.data.map(channel);
+    return response.json();
   }
 }

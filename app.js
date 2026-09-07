@@ -1,20 +1,51 @@
 const $ = s => document.querySelector(s);
 const list = $('#list'), grid = $('#grid');
 const tiles = new Map();   // twitch login -> { el, player, bar }
-let streamers = [], focused = null, order = [], dragging = null, allPaused = false, restored = false;
+let streamers = [], focused = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
 
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
 // Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
-function save() { if (!restored) return; writeStored('tg.layout', { order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), pinned: Object.fromEntries([...tiles].map(([k, t]) => [k, t.pinned])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
+function save() { if (!restored) return; writeStored('tg.layout.' + layoutMode, { order, focused, allPaused, collapsed: document.body.classList.contains('collapsed'), muted: Object.fromEntries([...tiles].map(([k, t]) => [k, t.muted])), pinned: Object.fromEntries([...tiles].map(([k, t]) => [k, t.pinned])), volume: Object.fromEntries([...tiles].map(([k, t]) => [k, t.volume])), paused: Object.fromEntries([...tiles].map(([k, t]) => [k, t.paused])) }); }
+function saveCurrentLayout() {
+  tiles.forEach(readNativeControls);
+  save();
+}
 function restore() {
-  const st = readStored('tg.layout', {});
+  if (!layoutMode || restored || !window.Twitch?.Player) return;
+  const st = readStored('tg.layout.' + layoutMode, {});
+  allPaused = !!st.allPaused;
   for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel({ twitch: login }); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login]); }
   focused = tiles.has(st.focused) ? st.focused : null;
-  allPaused = !!st.allPaused;
   $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
   document.body.classList.toggle('collapsed', st.collapsed ?? innerWidth <= 700);
   layout();
   tick();   // right away, not at the first second: a click that lands before it hits the page instead of the video
+  restored = true;
+  save();
+}
+function switchLayout(mode) {
+  if (layoutMode === mode) { restore(); return; }
+  saveCurrentLayout();
+  restored = false;
+  clearTiles();
+  layoutMode = mode;
+  const key = 'tg.layout.' + mode, legacy = readStored('tg.layout', null);
+  if (legacy && writeStored(key, readStored(key, null) ?? legacy)) {
+    try { localStorage.removeItem('tg.layout'); } catch { /* The in-memory layout remains usable. */ }
+  }
+  allPaused = false;
+  $('#playall').textContent = '⏸\uFE0E';
+  layout();
+  restore();
+  tick();
+}
+
+function loadPlayer() {
+  const script = document.createElement('script');
+  script.src = 'https://player.twitch.tv/js/embed/v1.js';
+  script.onload = restore;
+  script.onerror = () => { if (!$('#notice').textContent) notice('Le lecteur Twitch est indisponible. La connexion et la recherche restent accessibles.'); };
+  document.head.append(script);
 }
 
 // a tile plays only while it is in the viewport and the global toggle is not paused
@@ -179,7 +210,6 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   grid.append(el);
   const t = { el, bar, visible: true, muted, volume, paused, pinned, ready: false, ppIcon };
   tiles.set(s.twitch, t);
-  mountPlayer(t, false);
   ppIcon();
   io.observe(el);
   ro.observe(el.querySelector('.player'));
@@ -198,6 +228,7 @@ function mountPlayer(t, controls) {
   const container = t.el.querySelector('.player');
   container.replaceChildren();
   t.ready = false; t.controls = controls; t.hasPlayed = false;
+  t.el.classList.toggle('full-player', controls);
   t.nativeAudio = null; t.pendingMute = null; t.nudged = false; t.since = 0;
   t.el.classList.remove('offline', 'partial');
   t.el.classList.toggle('loading', !allPaused && !t.paused);
@@ -264,7 +295,7 @@ function readNativeControls(t) {
   if (changed) { paint(t); save(); }
 }
 
-function remove(login) {
+function remove(login, updateLayout = true) {
   tiles.get(login).player.destroy();
   clearTimeout(tiles.get(login).timer);
   ro.unobserve(tiles.get(login).el.querySelector('.player'));
@@ -273,7 +304,12 @@ function remove(login) {
   tiles.delete(login);
   order.splice(order.indexOf(login), 1);
   if (focused === login) focused = null;
-  layout();
+  if (updateLayout) layout();
+}
+
+function clearTiles() {
+  for (const login of [...tiles.keys()]) remove(login, false);
+  focused = null;
 }
 
 function move(from, to) {
@@ -287,6 +323,7 @@ function setMuted(t, m) { t.muted = m; if (t.ready) applyMuted(t, m); paint(t); 
 function paint(t) { t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }
 // the spotlight brings the sound along; leaving it gives it back unless the button pinned it
 function focus(login) {
+  if (tiles.size < 2) return;
   const prev = focused;
   if (prev) readNativeControls(tiles.get(prev));
   focused = focused === login ? null : login;
@@ -297,11 +334,14 @@ function focus(login) {
 
 function layout() {
   const n = tiles.size;
+  if (n < 2) focused = null;
+  grid.classList.toggle('single', n === 1);
   grid.classList.toggle('focused', !!focused);
   for (const [login, t] of tiles) {
     t.el.classList.toggle('big', login === focused);
     t.el.style.order = order.indexOf(login);
-    mountPlayer(t, login === focused);
+    t.bar.draggable = n > 1;
+    mountPlayer(t, n === 1 || login === focused);
     fit(t.el.querySelector('.player'));
   }
   if (focused) {
@@ -320,7 +360,7 @@ function layout() {
 
 $('#toggle').onclick = () => { hidePreview(); document.body.classList.toggle('collapsed'); save(); };
 $('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(t => { sync(t); mark(t); }); save(); };
-onpagehide = save;
+onpagehide = saveCurrentLayout;
 function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
@@ -365,21 +405,20 @@ setInterval(async () => {
 let library, follows = [], results = [], searchVersion = 0, accountVersion = 0;
 let searching = false, refreshInFlight = false, lastFollows = 0, searchTimer, searchController;
 let searchError = '';
-let accountReady = false, guestMode = readStored('tg.guest', false) === true;
+const statusUnavailable = 'Impossible d’actualiser le statut des favoris. Nouvelle tentative dans 30 secondes.';
+let accountReady = false;
 const storedFavorites = readStored('tg.favorites', []);
 let favorites = Array.isArray(storedFavorites) ? storedFavorites.filter(s => s && validLogin(s.twitch)).map(channel) : [];
 favorites = [...new Map(favorites.map(s => [s.twitch, s])).values()];
 function notice(message = '') { $('#notice').textContent = message; }
 function saveFavorites() {
-  chooseGuestMode();
   if (!writeStored('tg.favorites', favorites.map(({ twitch, display, profileUrl }) => ({ twitch, display, profileUrl })))) notice('Le navigateur ne peut pas enregistrer les favoris. Ils seront perdus à la fermeture de la page.');
 }
 function updateAccount() {
   const connected = !!library?.user;
-  $('#connect').hidden = connected || !library?.clientId;
-  $('#account').hidden = !connected;
-  $('#account span').textContent = library?.user?.login || '';
-  $('#source-label').textContent = connected ? 'Follows' : 'Favoris';
+  $('#connect').hidden = connected;
+  $('#connect').disabled = !accountReady || !library?.clientId;
+  $('#disconnect').hidden = !connected;
   $('#side footer').textContent = connected ? 'Ta liste de follows se met à jour automatiquement.' : 'Les favoris sont enregistrés dans ce navigateur.';
 }
 function rebuild() {
@@ -392,7 +431,7 @@ function toggleFavorite(s) {
   if (library?.user) return;
   if (favorites.some(f => f.twitch === s.twitch)) favorites = favorites.filter(f => f.twitch !== s.twitch);
   else favorites.push(s);
-  saveFavorites(); rebuild();
+  saveFavorites(); rebuild(); refresh();
 }
 function loginFromQuery(query) {
   const login = query.trim().toLowerCase().replace(/^https?:\/\/(?:www\.)?twitch\.tv\//, '').replace(/^@/, '').replace(/\/$/, '');
@@ -400,6 +439,7 @@ function loginFromQuery(query) {
 }
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
+  $('#clear-search').hidden = !$('#q').value;
   const connected = !!library?.user;
   const base = connected ? follows : favorites;
   const matches = base.filter(s => !q || s.display.toLowerCase().includes(q) || s.twitch.includes(q));
@@ -419,6 +459,7 @@ function renderList() {
     li.querySelector('.g').textContent = [s.online === false ? 'Hors ligne' : s.online ? 'En direct' : '', s.game].filter(Boolean).join(' · ') || 'Chaîne Twitch';
     li.querySelector('.v').textContent = s.online ? s.viewersAmount.formatted || 'LIVE' : '';
     const play = li.querySelector('.channel');
+    play.disabled = !accountReady;
     play.setAttribute('aria-label', (tiles.has(s.twitch) ? 'Afficher ou retirer ' : 'Regarder ') + s.display);
     play.setAttribute('aria-pressed', tiles.has(s.twitch));
     play.onclick = () => { hidePreview(); toggle(s); };
@@ -440,8 +481,8 @@ function renderList() {
     else { previewRow = row; if (!preview.hidden) { row.setAttribute('aria-describedby', 'preview'); previewInfo(s); positionPreview(); } }
   }
   if (keyboardLogin) [...list.children].find(li => li.dataset.login === keyboardLogin)?.querySelector(keyboardFavorite ? '.favorite' : '.channel').focus({ preventScroll: true });
-  $('#list-empty').hidden = rows.length > 0;
-  $('#list-empty').textContent = searching ? 'Recherche en cours…' : q ? 'Aucun résultat dans cette liste.' : connected ? 'Tu ne suis encore aucune chaîne.' : 'Ajoute un premier favori avec son pseudo ou son lien Twitch.';
+  $('#list-empty').hidden = rows.length > 0 || (!q && !connected);
+  $('#list-empty').textContent = searching ? 'Recherche en cours…' : q ? 'Aucun résultat dans cette liste.' : connected ? 'Tu ne suis encore aucune chaîne.' : '';
   $('#search-actions').hidden = !searchError || connected;
   $('#search-state').hidden = !q;
   $('#search-state').textContent = !q ? '' : q.length < 2 ? 'Saisis au moins 2 caractères.' : searching ? 'Recherche sur Twitch…' : searchError || (rows.length ? rows.length + (rows.length === 1 ? ' chaîne trouvée' : ' chaînes trouvées') : 'Aucune chaîne trouvée.');
@@ -450,18 +491,12 @@ function renderList() {
   $('#add-login').textContent = 'Ajouter ' + login + ' sans vérifier';
   renderEmpty();
 }
-function offerConnection() { return !library?.user && !guestMode && (!accountReady || !!library?.clientId); }
 function renderEmpty() {
-  const connected = !!library?.user, welcome = offerConnection();
-  const live = (connected ? follows : favorites).some(s => s.online);
-  $('#top').disabled = welcome && !accountReady;
-  $('#top').textContent = welcome ? 'Connecter Twitch' : live ? 'Lancer jusqu’à 4 streams en direct' : connected ? 'Rechercher un streamer' : 'Ajouter un streamer';
-  $('#guest').hidden = !welcome;
-  $('#empty p').textContent = welcome ? 'Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.' : connected ? 'Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.' : 'Ajoute tes streamers favoris, compose ta grille et choisis le son. Ta liste reste dans ce navigateur.';
-}
-function chooseGuestMode() {
-  guestMode = true;
-  writeStored('tg.guest', true);
+  const connected = !!library?.user;
+  $('#top').hidden = connected || (accountReady && !library?.clientId);
+  $('#top').disabled = !accountReady;
+  $('#guest').textContent = connected ? 'Rechercher un streamer' : 'Continuer sans compte';
+  $('#empty p').textContent = connected ? 'Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.' : 'Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.';
 }
 function findStreamer() {
   document.body.classList.remove('collapsed');
@@ -490,34 +525,48 @@ function handleError(error) {
   notice(error.message);
 }
 async function refresh() {
-  if (!library?.user || refreshInFlight) return;
+  if (!library || refreshInFlight) return;
   refreshInFlight = true;
-  const version = accountVersion;
+  const version = accountVersion, connected = !!library.user;
   try {
-    let nextFollows = follows;
-    const reloadFollows = Date.now() - lastFollows > 60000;
-    if (reloadFollows) nextFollows = await library.follows();
-    const logins = [...new Set([...nextFollows, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
+    let nextChannels = connected ? follows : favorites;
+    const reloadFollows = connected && Date.now() - lastFollows > 60000;
+    if (reloadFollows) nextChannels = await library.follows();
+    const logins = [...new Set([...nextChannels, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
     const live = await library.live(logins);
     if (version !== accountVersion) return;
     const update = s => channel({ ...s, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
-    follows = nextFollows.map(update);
+    if (connected) follows = nextChannels.map(update);
+    else favorites = favorites.map(s => logins.includes(s.twitch) ? update(s) : s);
+    results = results.map(s => logins.includes(s.twitch) ? update(s) : s);
     if (reloadFollows) lastFollows = Date.now();
-    rebuild(); notice();
-  } catch (error) { if (version === accountVersion) handleError(error); }
-  finally { refreshInFlight = false; }
+    rebuild(); if (connected || $('#notice').textContent === statusUnavailable) notice();
+  } catch (error) {
+    if (version === accountVersion) {
+      if (connected) handleError(error);
+      else notice(statusUnavailable);
+    }
+  } finally {
+    refreshInFlight = false;
+    if (version !== accountVersion) refresh();
+  }
 }
 function disconnect(clearNotice = true) {
-  if (clearNotice) chooseGuestMode();
   accountVersion++; searchVersion++; searching = false;
   clearTimeout(searchTimer); searchController?.abort(); searchError = ''; $('#q').value = ''; hidePreview();
   library.disconnect(); follows = []; results = []; lastFollows = 0;
   favorites = favorites.map(s => channel({ twitch: s.twitch, display: s.display, profileUrl: s.profileUrl }));
-  updateAccount(); rebuild(); if (clearNotice) notice();
+  updateAccount(); rebuild(); switchLayout('guest'); if (clearNotice) notice(); refresh();
 }
 $('#q').oninput = () => {
   clearTimeout(searchTimer); searchController?.abort(); searchVersion++; results = []; searchError = ''; searching = $('#q').value.trim().length >= 2; rebuild();
   searchTimer = setTimeout(search, 300);
+};
+$('#clear-search').onclick = () => {
+  $('#q').value = '';
+  clearTimeout(searchTimer);
+  search();
+  $('#q').focus();
 };
 $('#add-login').onclick = () => {
   const login = loginFromQuery($('#q').value);
@@ -526,31 +575,25 @@ $('#add-login').onclick = () => {
   notice(); saveFavorites();
   $('#q').value = '';
   search();
+  refresh();
 };
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !$('#add-login').hidden) $('#add-login').click(); };
-$('#top').onclick = () => {
-  if (offerConnection()) { library.connect().catch(handleError); return; }
-  const live = (library?.user ? follows : favorites).filter(s => s.online).slice(0, 4);
-  if (live.length) { live.forEach(s => add(s)); renderList(); }
-  else findStreamer();
-};
-$('#connect').onclick = () => library.connect().catch(handleError);
-$('#guest').onclick = () => { chooseGuestMode(); renderEmpty(); findStreamer(); };
+$('#top').onclick = $('#connect').onclick = () => { saveCurrentLayout(); library.connect().catch(handleError); };
+$('#guest').onclick = findStreamer;
 $('#disconnect').onclick = () => disconnect();
 async function init() {
-  rebuild(); restored = true; restore();
+  rebuild(); loadPlayer();
   let config;
   try {
-    const response = await fetch('/config.json', { cache: 'no-store' });
+    const response = await fetch('/config.json', { cache: 'no-store', signal: AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error();
     config = await response.json();
   } catch { notice('La connexion Twitch est indisponible. Les favoris restent accessibles.'); }
   library = new TwitchLibrary(config?.twitchClientId || '');
   try { if (library.clientId) await library.resume(); }
   catch (error) { library.disconnect(); notice(error.message); }
-  if (library.user) { guestMode = false; writeStored('tg.guest', false); }
   accountReady = true;
-  updateAccount(); rebuild(); await refresh();
+  updateAccount(); rebuild(); switchLayout(library.user ? 'connected' : 'guest'); await refresh();
 }
 init().catch(handleError);
 setInterval(() => { if (!document.hidden) refresh(); }, 30000);
