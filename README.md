@@ -24,9 +24,9 @@ Ouvre http://localhost:8765. Le lecteur Twitch nécessite un serveur HTTP avec u
 
 Crée une application dans la [console Twitch](https://dev.twitch.tv/console/apps) :
 
-- Nom : `twitch-grid`, ou un autre nom disponible.
+- Nom : `Moinax Stream Grid`, ou un autre nom unique, sans le mot « Twitch ».
 - Catégorie : Website Integration.
-- Type de client : Public.
+- Type de client : Confidential, pour le flux OAuth implicite. Le site utilise uniquement le Client ID public, jamais le secret client.
 - Redirection OAuth : `https://twitch.moinax.com/`, avec le slash final.
 - Pour tester la connexion localement, ajoute aussi `http://localhost:8765/`.
 
