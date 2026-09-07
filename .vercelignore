@@ -5,6 +5,8 @@ tests
 test-results
 playwright-report
 playwright.config.js
-server.py
+server.cjs
 __pycache__
 README.md
+
+.env*

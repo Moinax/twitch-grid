@@ -1,1 +1,23 @@
-{"cleanUrls": true, "headers": [{"source": "/(.*)", "headers": [{"key": "Referrer-Policy", "value": "strict-origin-when-cross-origin"}, {"key": "X-Content-Type-Options", "value": "nosniff"}]}]}
+{
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/search.js": {
+      "maxDuration": 30
+    }
+  }
+}

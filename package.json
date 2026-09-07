@@ -2,6 +2,13 @@
   "name": "twitch-grid",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "test": "playwright test", "check": "node --check app.js && node --check library.js" },
-  "devDependencies": { "@playwright/test": "^1.58.2" }
+  "scripts": {
+    "test": "playwright test",
+    "check": "node --check app.js && node --check library.js && node --check api/search.js && node --check server.cjs",
+    "dev": "node --env-file-if-exists=.env.local server.cjs",
+    "test:server": "node --test tests/search.test.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
 }

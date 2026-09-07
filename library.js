@@ -1,4 +1,4 @@
-/* Public Twitch API access. No client secret is used or stored by this app. */
+/* Browser-side Twitch access. Guest searches go through our server; no secret reaches this file. */
 const numberFormat = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
 const validLogin = value => typeof value === 'string' && /^[a-z0-9_]{1,25}$/.test(value);
 function readStored(key, fallback, storage = localStorage) {
@@ -63,9 +63,9 @@ class TwitchLibrary {
     sessionStorage.removeItem('tg.session');
     sessionStorage.removeItem('tg.oauth');
   }
-  async get(endpoint, params) {
+  async get(endpoint, params, signal) {
     const response = await fetch(`https://api.twitch.tv/helix/${endpoint}?${new URLSearchParams(params)}`, {
-      headers: { Authorization: `Bearer ${this.token}`, 'Client-Id': this.clientId }, signal: AbortSignal.timeout(12000)
+      headers: { Authorization: `Bearer ${this.token}`, 'Client-Id': this.clientId }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000)
     });
     if (!response.ok) {
       const error = new Error(response.status === 401 ? 'La session Twitch a expiré. Reconnecte-toi.' : response.status === 429 ? 'Twitch reçoit trop de requêtes. Réessaie dans une minute.' : 'Twitch est indisponible pour le moment. Réessaie dans un instant.');
@@ -95,8 +95,21 @@ class TwitchLibrary {
     }
     return result;
   }
-  async search(query) {
-    const page = await this.get('search/channels', { query, first: '30' });
+  async search(query, signal) {
+    if (this.user) {
+      const page = await this.get('search/channels', { query, first: '30' }, signal);
+      return page.data.map(channel);
+    }
+    const response = await fetch('/api/search?' + new URLSearchParams({ q: query }), {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000)
+    });
+    if (!response.ok) {
+      const error = new Error(response.status === 429 ? 'Trop de recherches. Réessaie dans une minute.' : 'La recherche Twitch est indisponible pour le moment. Tu peux ajouter un pseudo directement.');
+      // A server credential error must never disconnect a visitor's Twitch session.
+      error.status = response.status === 401 ? 502 : response.status;
+      throw error;
+    }
+    const page = await response.json();
     return page.data.map(channel);
   }
 }

@@ -161,7 +161,17 @@
   footer { padding: 12px; border-top: 1px solid var(--line); font-size: 11px; }
   body.collapsed footer, body.collapsed #list-empty { display: none; }
   #search-actions { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-  #search-actions a { color: #bf94ff; font-size: 12px; }
+  #search-state { margin-top: 8px; color: var(--dim); font-size: 11px; line-height: 1.5; }
+  #list.search-results li { margin: 5px 8px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 8px; }
+  #list.search-results li:hover { border-color: #9147ff80; background: #25202e; }
+  #list.search-results li.on { border-color: var(--accent); }
+  #list.search-results li.off { opacity: 1; }
+  #list.search-results img { width: 36px; height: 36px; }
+  #list.search-results .name { display: block; font-weight: 600; }
+  #list.search-results .g { margin-top: 3px; }
+  #list.search-results .v { font-size: 10px; color: #ff7775; }
+  #list.search-results .favorite { padding: 8px; }
+  #list[aria-busy="true"] { opacity: .65; }
   #list { padding: 0; }
   #list li { padding: 0 8px; cursor: default; gap: 4px; }
   #list .channel { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 9px 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
@@ -194,8 +204,8 @@
     <input id="q" type="search" aria-label="Rechercher un streamer" placeholder="Rechercher un streamer…" autocomplete="off" maxlength="100">
     <div id="search-actions" hidden>
       <button id="add-login" class="action"></button>
-      <a id="twitch-search" target="_blank" rel="noopener">Rechercher sur Twitch ↗</a>
     </div>
+    <p id="search-state" role="status" aria-live="polite" hidden></p>
     <p id="notice" role="status" aria-live="polite"></p>
   </header>
   <ul id="list" aria-label="Streamers"></ul>

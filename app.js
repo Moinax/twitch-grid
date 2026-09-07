@@ -363,7 +363,8 @@ setInterval(async () => {
 }, dev ? 3000 : 60000);
 
 let library, follows = [], results = [], searchVersion = 0, accountVersion = 0;
-let searching = false, refreshInFlight = false, lastFollows = 0, searchTimer;
+let searching = false, refreshInFlight = false, lastFollows = 0, searchTimer, searchController;
+let searchError = '';
 let accountReady = false, guestMode = readStored('tg.guest', false) === true;
 const storedFavorites = readStored('tg.favorites', []);
 let favorites = Array.isArray(storedFavorites) ? storedFavorites.filter(s => s && validLogin(s.twitch)).map(channel) : [];
@@ -403,7 +404,9 @@ function renderList() {
   const base = connected ? follows : favorites;
   const matches = base.filter(s => !q || s.display.toLowerCase().includes(q) || s.twitch.includes(q));
   const rows = [...new Map([...matches, ...(q ? results : [])].map(s => [s.twitch, s])).values()]
-    .sort((a, b) => Number(b.online) - Number(a.online) || viewers(b) - viewers(a) || a.display.localeCompare(b.display));
+    .sort((a, b) => Number(b.twitch === loginFromQuery(q)) - Number(a.twitch === loginFromQuery(q)) || Number(b.online) - Number(a.online) || viewers(b) - viewers(a) || a.display.localeCompare(b.display));
+  list.classList.toggle('search-results', q.length >= 2);
+  list.setAttribute('aria-busy', searching);
   const active = document.activeElement;
   const keyboardLogin = list.contains(active) ? active.closest('li')?.dataset.login : null;
   const keyboardFavorite = active?.classList.contains('favorite');
@@ -413,8 +416,8 @@ function renderList() {
     li.innerHTML = '<button class="channel"><img alt="" loading="lazy"><span class="n"><span class="name"></span><div class="g"></div></span><span class="v"></span></button><button class="favorite"></button>';
     li.querySelector('img').src = s.profileUrl;
     li.querySelector('.name').textContent = s.display;
-    li.querySelector('.g').textContent = s.game || (s.online === false ? 'Hors ligne' : s.online ? 'En direct' : 'Chaîne Twitch');
-    li.querySelector('.v').textContent = s.online ? s.viewersAmount.formatted : '';
+    li.querySelector('.g').textContent = [s.online === false ? 'Hors ligne' : s.online ? 'En direct' : '', s.game].filter(Boolean).join(' · ') || 'Chaîne Twitch';
+    li.querySelector('.v').textContent = s.online ? s.viewersAmount.formatted || 'LIVE' : '';
     const play = li.querySelector('.channel');
     play.setAttribute('aria-label', (tiles.has(s.twitch) ? 'Afficher ou retirer ' : 'Regarder ') + s.display);
     play.setAttribute('aria-pressed', tiles.has(s.twitch));
@@ -439,12 +442,12 @@ function renderList() {
   if (keyboardLogin) [...list.children].find(li => li.dataset.login === keyboardLogin)?.querySelector(keyboardFavorite ? '.favorite' : '.channel').focus({ preventScroll: true });
   $('#list-empty').hidden = rows.length > 0;
   $('#list-empty').textContent = searching ? 'Recherche en cours…' : q ? 'Aucun résultat dans cette liste.' : connected ? 'Tu ne suis encore aucune chaîne.' : 'Ajoute un premier favori avec son pseudo ou son lien Twitch.';
-  $('#search-actions').hidden = !q || connected;
+  $('#search-actions').hidden = !searchError || connected;
+  $('#search-state').hidden = !q;
+  $('#search-state').textContent = !q ? '' : q.length < 2 ? 'Saisis au moins 2 caractères.' : searching ? 'Recherche sur Twitch…' : searchError || (rows.length ? rows.length + (rows.length === 1 ? ' chaîne trouvée' : ' chaînes trouvées') : 'Aucune chaîne trouvée.');
   const login = loginFromQuery(q);
-  $('#add-login').hidden = connected || !login || favorites.some(s => s.twitch === login);
-  $('#add-login').textContent = 'Ajouter ' + login + ' aux favoris';
-  $('#twitch-search').href = 'https://www.twitch.tv/search?term=' + encodeURIComponent(q);
-  $('#twitch-search').hidden = !!library?.user;
+  $('#add-login').hidden = connected || !searchError || !login || favorites.some(s => s.twitch === login);
+  $('#add-login').textContent = 'Ajouter ' + login + ' sans vérifier';
   renderEmpty();
 }
 function offerConnection() { return !library?.user && !guestMode && (!accountReady || !!library?.clientId); }
@@ -466,16 +469,22 @@ function findStreamer() {
   save();
 }
 async function search() {
+  searchController?.abort();
   const version = ++searchVersion, query = $('#q').value.trim();
-  results = []; searching = !!query && !!library?.user; rebuild();
+  results = []; searchError = ''; searching = query.length >= 2; rebuild();
   if (!searching) return;
+  searchController = new AbortController();
   try {
-    const found = await library.search(query);
+    const found = await (library || new TwitchLibrary('')).search(loginFromQuery(query) || query, searchController.signal);
     if (version !== searchVersion) return;
-    results = found; notice();
-  } catch (error) { if (version === searchVersion) handleError(error); }
-  finally { if (version === searchVersion) { searching = false; rebuild(); } }
+    results = found;
+  } catch (error) {
+    if (version !== searchVersion || error.name === 'AbortError') return;
+    if (error.status === 401) handleError(error);
+    else searchError = error.status ? error.message : 'La recherche Twitch est indisponible pour le moment. Tu peux ajouter un pseudo directement.';
+  } finally { if (version === searchVersion) { searching = false; rebuild(); } }
 }
+
 function handleError(error) {
   if (error.status === 401) disconnect(false);
   notice(error.message);
@@ -501,13 +510,13 @@ async function refresh() {
 function disconnect(clearNotice = true) {
   if (clearNotice) chooseGuestMode();
   accountVersion++; searchVersion++; searching = false;
-  clearTimeout(searchTimer); $('#q').value = ''; hidePreview();
+  clearTimeout(searchTimer); searchController?.abort(); searchError = ''; $('#q').value = ''; hidePreview();
   library.disconnect(); follows = []; results = []; lastFollows = 0;
   favorites = favorites.map(s => channel({ twitch: s.twitch, display: s.display, profileUrl: s.profileUrl }));
   updateAccount(); rebuild(); if (clearNotice) notice();
 }
 $('#q').oninput = () => {
-  clearTimeout(searchTimer); searchVersion++; results = []; searching = false; rebuild();
+  clearTimeout(searchTimer); searchController?.abort(); searchVersion++; results = []; searchError = ''; searching = $('#q').value.trim().length >= 2; rebuild();
   searchTimer = setTimeout(search, 300);
 };
 $('#add-login').onclick = () => {

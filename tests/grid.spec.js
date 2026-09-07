@@ -18,6 +18,10 @@ const mockPlayer = `window.Twitch = { Player: class {
 async function setup(page, connected = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
+  await page.route('**/api/search?**', route => {
+    const login = new URL(route.request().url()).searchParams.get('q').toLowerCase();
+    return route.fulfill({json:{data:[{broadcaster_login:login,display_name:login,is_live:false,game_name:'',thumbnail_url:''}]}});
+  });
   await page.route('**/config.json', r => r.fulfill({ json: { twitchClientId: connected ? 'test-client' : '' } }));
   await page.route('**/_vercel/**', r => r.fulfill({ body: '' }));
   await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '' }));
@@ -25,8 +29,9 @@ async function setup(page, connected = false) {
 }
 async function favorite(page, login) {
   await page.locator('#q').fill(login);
-  await page.locator('#add-login').click();
-  await expect(page.locator('#q')).toHaveValue('');
+  const normalized = login.toLowerCase().replace(/^https?:\/\/(?:www\.)?twitch\.tv\//, '').replace(/\/$/, '');
+  await page.locator(`#list [data-login="${normalized}"] .favorite`).click();
+  await page.locator('#q').fill('');
 }
 test('favorites survive reload; grid, focus, sound and removal remain usable', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
@@ -221,4 +226,49 @@ test('primary welcome action starts Twitch authorization', async ({ page }) => {
   await page.locator('#top').click();
   await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
   expect(new URL(page.url()).searchParams.get('scope')).toBe('user:read:follows');
+});
+test('guest search renders API results and saves a favorite without authentication', async ({page}) => {
+  const errors=await setup(page,true); await page.goto('/'); await page.locator('#guest').click();
+  await page.route('**/api/search?**', route=>route.fulfill({json:{data:[
+    {broadcaster_login:'altair',display_name:'Altair',thumbnail_url:'https://example.com/altair.png',is_live:true,game_name:'Art'},
+    {broadcaster_login:'altair_other',display_name:'Altair Other',thumbnail_url:'',is_live:false,game_name:'Music'}
+  ]}}));
+  await page.route('https://example.com/altair.png', route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg"/>'}));
+  await page.locator('#q').fill('altair');
+  await expect(page.locator('#list li')).toHaveCount(2);
+  await expect(page.locator('#list [data-login="altair"] .g')).toHaveText('En direct · Art');
+  await expect(page.locator('#list [data-login="altair"] img')).toHaveAttribute('src','https://example.com/altair.png');
+  await expect(page.getByText('Rechercher sur Twitch ↗')).toHaveCount(0);
+  await expect(page.locator('#search-state')).toHaveText('2 chaînes trouvées');
+  await page.locator('#list [data-login="altair"] .favorite').click();
+  await expect(page.locator('#list [data-login="altair"] .favorite')).toHaveAttribute('aria-pressed','true');
+  await page.locator('#q').fill(''); await page.reload();
+  await expect(page.locator('#list .name')).toHaveText('Altair');
+  await expect(page.locator('#source-label')).toHaveText('Favoris');
+  expect(await page.evaluate(()=>sessionStorage.getItem('tg.session'))).toBeNull(); expect(errors).toEqual([]);
+});
+test('guest search handles empty results and an unavailable API with direct-add fallback', async ({page}) => {
+  await setup(page); await page.goto('/');
+  await page.route('**/api/search?**', route=>route.fulfill({json:{data:[]}}));
+  await page.locator('#q').fill('noresults');
+  await expect(page.locator('#search-state')).toHaveText('Aucune chaîne trouvée.');
+  await expect(page.locator('#add-login')).toBeHidden();
+  await page.route('**/api/search?**', route=>route.fulfill({status:503,json:{error:'SEARCH_UNAVAILABLE'}}));
+  await page.locator('#q').fill('altair');
+  await expect(page.locator('#search-state')).toContainText('indisponible');
+  await page.locator('#add-login').click(); await expect(page.locator('#list .name')).toHaveText('altair');
+});
+test('a slow previous search never replaces the latest results', async ({page}) => {
+  await setup(page); await page.goto('/');
+  let release; const held=new Promise(resolve=>release=resolve);
+  await page.route('**/api/search?**',async route=>{
+    const query=new URL(route.request().url()).searchParams.get('q');
+    if(query==='slow') await held;
+    await route.fulfill({json:{data:[{broadcaster_login:query,display_name:query,is_live:false}]}}).catch(()=>{});
+  });
+  await page.locator('#q').fill('slow'); await page.waitForRequest('**/api/search?q=slow');
+  await page.locator('#q').fill('latest');
+  await expect(page.locator('#list .name')).toHaveText('latest');
+  release(); await page.waitForTimeout(50);
+  await expect(page.locator('#list .name')).toHaveText('latest');
 });
