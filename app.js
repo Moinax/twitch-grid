@@ -632,8 +632,15 @@ function layout() {
     grid.style.gridTemplateColumns = '';
     grid.style.gridTemplateRows = `repeat(${Math.max(Math.ceil((n - 1) / (wide ? 2 : 1)), 1)}, var(--tile-h))`;
   } else {
-    const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols) || 1;
-    grid.style.gridTemplateColumns = `repeat(${cols || 1}, 1fr)`;
+    // the column count whose cells hold the widest 16:9 video: two streams stack on a tall grid, sit side by side on a wide one
+    const w = grid.clientWidth || innerWidth, h = grid.clientHeight || innerHeight, bar = parseFloat(getComputedStyle(grid).getPropertyValue('--bar')) || 34;
+    let cols = 1, best = 0;
+    for (let c = 1; c <= n; c++) {
+      const video = Math.min(w / c, (h / Math.ceil(n / c) - bar) * 16 / 9);
+      if (video > best) { best = video; cols = c; }
+    }
+    const rows = Math.ceil(n / cols) || 1;
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
   }
   syncChat();
@@ -674,7 +681,7 @@ addEventListener('keydown', e => {
 // (Firefox fires blur before it moves activeElement to the iframe, hence the tick)
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') { closeTileMenus(); activate(); } }));
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
-onresize = layout;
+new ResizeObserver(() => { if (restored) layout(); }).observe(grid);   // window resizes and sidebar toggles both change the grid box
 grid.addEventListener('scroll', () => closeTileMenus(), { passive: true });
 document.onfullscreenchange = () => tiles.forEach(t => { fit(t.el.querySelector('.player')); sync(t); });
 document.onkeydown = e => { if (e.key === 'Escape') { if (closeTileMenus(true)) { e.preventDefault(); return; } if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); } };
