@@ -73,6 +73,7 @@ function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (!t.re
 function watchdog(t) {
   if (!t.ready) return;
   if (t.controls) { readNativeControls(t); mark(t); return; }
+  if (t.playbackBlocked) { mark(t); return; }
   // isPaused() is false in the Ready/Idle states the player drops into after a resize, so go by the playback state.
   // A live stream takes seconds to (re)start and a play() during that restarts it: nudge at most every 5s
   const st = t.player.getPlayerState().playback;
@@ -92,7 +93,25 @@ function mark(t) {
   const want = !allPaused && !t.paused && onScreen(t), playing = st.playback === 'Playing';
   t.el.classList.toggle('loading', want && !playing);
   t.el.classList.toggle('partial', !allPaused && !t.paused && !t.visible && !playing);   // on screen but not enough for the player to start
-  t.since = want && !playing ? t.since || Date.now() : 0;
+  updateAudioOverlay();
+}
+
+let audioOverlayFocus = null;
+function updateAudioOverlay() {
+  const overlay = $('#audio-overlay');
+  const needed = !activated && !allPaused && [...tiles.values()].some(t =>
+    !t.paused && !t.muted && t.volume > 0 && t.channel.online !== false &&
+    !t.el.classList.contains('offline') && !t.playbackError);
+  if (needed === !overlay.hidden) return;
+  overlay.hidden = !needed;
+  if (needed) {
+    hidePreview();
+    audioOverlayFocus = document.activeElement;
+    overlay.focus({ preventScroll: true });
+  } else if (overlay.contains(document.activeElement)) {
+    if (audioOverlayFocus?.isConnected) audioOverlayFocus.focus({ preventScroll: true });
+    else document.activeElement.blur();
+  }
 }
 
 function viewers(s) { return s.viewersAmount.number; }
@@ -252,7 +271,8 @@ function mountPlayer(t, controls) {
   container.replaceChildren();
   t.ready = false; t.controls = controls; t.hasPlayed = false;
   t.el.classList.toggle('full-player', controls);
-  t.nativeAudio = null; t.pendingMute = null; t.nudged = false; t.since = 0;
+  t.nativeAudio = null; t.pendingMute = null; t.nudged = false;
+  t.playbackBlocked = false; t.playbackError = false;
   t.el.classList.remove('offline', 'partial');
   t.el.classList.toggle('loading', !allPaused && !t.paused);
   const player = new Twitch.Player(container, {
@@ -267,7 +287,7 @@ function mountPlayer(t, controls) {
     t.ready = true;
     fit(container);
     player.setVolume(t.volume);
-    t.nativeAudio = { muted: t.muted, volume: t.volume };
+    t.nativeAudio = { muted: player.getMuted(), volume: t.volume };
     if (activated) applyMuted(t, t.muted);
     if (controls && t.quality) player.setQuality(t.quality);
     sync(t); mark(t);
@@ -275,12 +295,16 @@ function mountPlayer(t, controls) {
   for (const event of ['playing', 'play', 'pause', 'ended', 'playbackBlocked', 'offline', 'online', 'error']) player.addEventListener(event, () => {
     if (!current()) return;
     if (event === 'offline' || event === 'online') t.el.classList.toggle('offline', event === 'offline');
+    if (event === 'playbackBlocked') t.playbackBlocked = true;
+    if (event === 'playing' || event === 'offline' || event === 'error') t.playbackBlocked = false;
+    if (event === 'error') t.playbackError = true;
+    if (event === 'playing' || event === 'online') t.playbackError = false;
     if (event === 'playing' && !t.hasPlayed) {
       t.hasPlayed = true;
       if (activated) applyMuted(t, t.muted);
     }
     if (controls && (t.hasPlayed || (event === 'play' && t.ready))) {
-      if (event === 'pause' && !allPaused && onScreen(t)) t.paused = true;
+      if (event === 'pause' && !allPaused && onScreen(t) && !t.playbackBlocked) t.paused = true;
       if (event === 'play') {
         t.paused = false;
         // A native Play resumes this stream even after the global pause.
@@ -399,6 +423,7 @@ function layout() {
     grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
   }
   save();
+  updateAudioOverlay();
 }
 
 $('#toggle').onclick = () => { hidePreview(); document.body.classList.toggle('collapsed'); save(); };
@@ -407,21 +432,28 @@ onpagehide = saveCurrentLayout;
 function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
-  tiles.forEach(t => { watchdog(t); paint(t); }); const loud = [...tiles.values()].filter(t => !t.muted);
-  const stuck = loud.some(t => !t.el.classList.contains('offline') && t.since && Date.now() - t.since > 3000);   // a loud tile that should play and has not for 3s: the browser is waiting for a click in it
-  $('#hint').hidden = !((!activated && loud.length) || stuck);
-  document.body.classList.toggle('needclick', !$('#hint').hidden); }
+  tiles.forEach(t => { watchdog(t); paint(t); });
+  updateAudioOverlay();
+}
 setInterval(tick, 1000);
 // audible playback is refused until the user clicks the page, and an unmute attempted before that can leave the media
 // paused with no way back: players stay muted until the first click, which then pushes every intent and re-plays
 // Firefox grants audible playback only to the iframe that received the click, never from a click on the page around it:
 // an unmute pushed after a page click pauses the player and every play() is refused until its own video is clicked.
-// So every click that lands in a player pushes the intents again, and the hint stays while a loud tile is not playing.
+// The first gesture restores the requested audio for every player, including players still loading.
 let activated = false;
-function push() { tiles.forEach(t => { if (!t.ready || (t.controls && t.hasPlayed)) return; applyMuted(t, t.muted); if (!allPaused && !t.muted && !t.paused) { t.player.play(); t.nudgedAt = Date.now(); } }); }
-function activate() { activated = true; push(); }
-addEventListener('pointerdown', () => activated || activate(), { capture: true });
-addEventListener('keydown', () => activated || activate(), { capture: true });
+function push() { tiles.forEach(t => { if (!t.ready || allPaused || t.paused || (t.controls && t.hasPlayed && !t.playbackBlocked && (t.muted || !t.player.getMuted()))) return; applyMuted(t, t.muted); if (!allPaused && !t.muted && !t.paused) { t.player.play(); t.nudgedAt = Date.now(); } }); }
+function activate() { activated = true; updateAudioOverlay(); push(); }
+addEventListener('pointerdown', () => {
+  if ($('#audio-overlay').hidden && !activated) activate();
+}, { capture: true });
+addEventListener('click', e => {
+  if (!$('#audio-overlay').hidden) { e.preventDefault(); e.stopImmediatePropagation(); activate(); }
+}, { capture: true });
+addEventListener('keydown', e => {
+  if (!$('#audio-overlay').hidden) { e.preventDefault(); e.stopImmediatePropagation(); activate(); }
+  else if (!activated) activate();
+}, { capture: true });
 // a click on the video lands inside the iframe and never reaches this page: the only trace is the focus leaving for it
 // (Firefox fires blur before it moves activeElement to the iframe, hence the tick)
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') activate(); }));
@@ -448,6 +480,53 @@ setInterval(async () => {
 let library, follows = [], results = [], searchVersion = 0, accountVersion = 0;
 let searching = false, refreshInFlight = false, lastFollows = 0, searchTimer, searchController;
 let searchError = '';
+const lastLiveStatus = new Map(), liveNotifications = new Map();
+function dismissLiveNotification(login) {
+  liveNotifications.get(login)?.remove();
+  liveNotifications.delete(login);
+}
+function pruneLiveNotifications(channels) {
+  const logins = new Set(channels.map(s => s.twitch));
+  for (const login of lastLiveStatus.keys()) if (!logins.has(login)) lastLiveStatus.delete(login);
+  for (const login of liveNotifications.keys()) if (!logins.has(login)) dismissLiveNotification(login);
+}
+function openLiveNotification(login) {
+  const s = (library.user ? follows : favorites).find(s => s.twitch === login);
+  if (!s || s.online !== true) { dismissLiveNotification(login); return; }
+  if (!tiles.has(login)) add(s);
+  const t = tiles.get(login);
+  if (!t) return;
+  if (expanded) setExpanded(null);
+  if (tiles.size > 1 && focused !== login) focus(login);
+  if (allPaused) {
+    tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
+    allPaused = false; $('#playall').textContent = '⏸\uFE0E';
+  }
+  t.paused = false; t.ppIcon(); setMuted(t, false); sync(t); mark(t);
+  if (innerWidth <= 700) document.body.classList.add('collapsed');
+  grid.scrollTop = 0;
+  dismissLiveNotification(login);
+  renderList(); save();
+  t.bar.querySelector('.fs').focus({ preventScroll: true });
+}
+function updateLiveNotifications(channels) {
+  pruneLiveNotifications(channels);
+  for (const s of channels) {
+    if (s.online && lastLiveStatus.get(s.twitch) === false && !liveNotifications.has(s.twitch)) {
+      const toast = document.createElement('div');
+      toast.className = 'live-notification'; toast.dataset.login = s.twitch;
+      toast.innerHTML = '<button class="watch"><img alt=""><span><b></b><small>Afficher dans la grille</small></span></button><button class="dismiss" aria-label="Fermer la notification">✕</button>';
+      toast.querySelector('img').src = s.profileUrl;
+      toast.querySelector('b').textContent = s.display + ' est en direct';
+      toast.querySelector('.watch').onclick = () => openLiveNotification(s.twitch);
+      toast.querySelector('.dismiss').onclick = () => dismissLiveNotification(s.twitch);
+      liveNotifications.set(s.twitch, toast);
+      $('#live-notifications').prepend(toast);
+    }
+    if (!s.online) dismissLiveNotification(s.twitch);
+    lastLiveStatus.set(s.twitch, s.online);
+  }
+}
 const statusUnavailable = 'Impossible d’actualiser le statut des favoris. Nouvelle tentative dans 30 secondes.';
 let accountReady = false;
 const storedFavorites = readStored('tg.favorites', []);
@@ -465,6 +544,7 @@ function updateAccount() {
   $('#side footer').textContent = connected ? 'Ta liste de follows se met à jour automatiquement.' : 'Les favoris sont enregistrés dans ce navigateur.';
 }
 function rebuild() {
+  pruneLiveNotifications(library?.user ? follows : favorites);
   const merged = new Map([...(library?.user ? follows : favorites), ...results].map(s => [s.twitch, s]));
   streamers = [...merged.values()];
   renderList();
@@ -585,6 +665,7 @@ async function refresh() {
     if (reloadFollows) lastFollows = Date.now();
     rebuild(); if (connected || $('#notice').textContent === statusUnavailable) notice();
     for (const [login, t] of tiles) if (logins.includes(login)) updateTileInfo(t, update(t.channel));
+    updateLiveNotifications(connected ? follows : favorites);
   } catch (error) {
     if (version === accountVersion) {
       if (connected) handleError(error);
@@ -596,6 +677,8 @@ async function refresh() {
   }
 }
 function disconnect(clearNotice = true) {
+  lastLiveStatus.clear();
+  for (const login of liveNotifications.keys()) dismissLiveNotification(login);
   accountVersion++; searchVersion++; searching = false;
   clearTimeout(searchTimer); searchController?.abort(); searchError = ''; $('#q').value = ''; hidePreview();
   library.disconnect(); follows = []; results = []; lastFollows = 0;

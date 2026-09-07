@@ -141,7 +141,7 @@
   #grid.single .bar::before { display: none; }
   .tile .bar svg { display: block; }
   .tile:not(.expanded) .fs .exit, .tile.expanded .fs .enter { display: none; }
-  #hint, #update { position: fixed; bottom: 24px; left: calc(50% + var(--sb) / 2); transform: translateX(-50%);   /* centred on the grid, not the window */ z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
+  #update { position: fixed; bottom: 24px; left: calc(50% + var(--sb) / 2); transform: translateX(-50%);   /* centred on the grid, not the window */ z-index: 5; padding: 8px 16px; border-radius: 20px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; pointer-events: none; }
   .tile .ctl { position: absolute; right: 10px; bottom: 10px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 15px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 11px; opacity: .7; }
   .tile.full-player .ctl { display: none; }
   .tile.full-player .load { display: none; }
@@ -151,7 +151,23 @@
   .tile:not(.loud) .ctl input, .tile:not(.loud) .ctl output { display: none; }
   .tile.loud .snd .off, .tile:not(.loud) .snd .on { display: none; }
   #update { pointer-events: auto; cursor: pointer; }
-  #hint:not([hidden]) ~ #update { bottom: 70px; }   /* both at once: the update sits above the sound hint */
+  #audio-overlay { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; background: #0e0e100d; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); text-align: center; cursor: pointer; }
+  #audio-overlay > svg { width: 64px; height: 64px; padding: 16px; box-sizing: content-box; border: 1px solid #b68aff55; border-radius: 24px; background: #9147ff33; color: #d6baff; }
+  #audio-overlay h2 { font-size: clamp(24px, 4vw, 32px); text-shadow: 0 2px 12px #000c; }
+  #audio-overlay p { max-width: 350px; color: #fff; text-shadow: 0 1px 6px #000, 0 2px 16px #000c; font-size: 15px; line-height: 1.6; }
+  #audio-overlay button { padding: 12px 22px; border: 1px solid #ffffff33; border-radius: 999px; background: var(--accent); color: white; font: inherit; font-weight: 700; cursor: pointer; }
+  #audio-overlay button:hover { background: #a66aff; }
+  #live-notifications { position: fixed; right: 16px; bottom: 16px; z-index: 30; width: 340px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 160px); overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  #update:not([hidden]) ~ #live-notifications { bottom: 80px; }
+  .live-notification { display: flex; align-items: center; flex: none; border: 1px solid #9147ff88; border-radius: 12px; background: #21182ee6; backdrop-filter: blur(12px); box-shadow: 0 6px 24px #0006; }
+  .live-notification button { border: 0; background: none; color: var(--fg); cursor: pointer; font: inherit; border-radius: 10px; }
+  .live-notification button:hover { background: #9147ff33; }
+  .live-notification .watch { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 12px; text-align: left; }
+  .live-notification img { width: 32px; height: 32px; border-radius: 50%; flex: none; }
+  .live-notification .watch span { min-width: 0; }
+  .live-notification b { display: block; overflow-wrap: anywhere; }
+  .live-notification small { display: block; margin-top: 3px; color: #d6baff; font-size: 11px; }
+  .live-notification .dismiss { flex: none; padding: 8px; margin-right: 6px; color: var(--dim); }
   .tile.pin .snd svg { stroke-width: 3.5; }   /* bold: pinned, the sound survives leaving the spotlight */
   .tile .player { flex: 1; min-height: 0; position: relative; }
   /* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
@@ -169,7 +185,6 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   /* a click on the video lands inside the iframe: on thumbnails a transparent layer catches it for the spotlight instead */
   .tile:not(.full-player) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
-  body.needclick .tile.loud .player::after { display: none; }   /* while a click in the video is what unlocks the sound, let it through */
   /* players render at two fixed sizes and are scaled to the tile with a transform: the Twitch player restarts its
      stream whenever its box grows (quality switch), and a transform is not a resize. ponytail: 720p on the spotlight
      whatever the screen; bump the big size if a 4K spotlight ever matters */
@@ -217,7 +232,7 @@
     body { --sb: 280px; }
     #side { position: absolute; inset: 0 auto 0 0; z-index: 20; box-shadow: 8px 0 30px #0008; }
     #main { margin-left: 34px; }
-    #hint, #update { left: calc(50% + 17px); max-width: calc(100vw - 60px); }
+    #update { left: calc(50% + 17px); max-width: calc(100vw - 60px); }
     body.collapsed #side { box-shadow: none; }
     #empty { padding: 20px; }
     #empty h1 { font-size: 30px; }
@@ -263,8 +278,14 @@
     <small>Glisse les tuiles pour les ranger. Clique une vidéo pour la mettre en avant.</small>
     <a class="gh" href="https://github.com/Moinax/twitch-grid" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="20" height="20"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span><b>★</b> Star sur GitHub</span></a>
   </div>
-  <div id="hint" hidden>Clique sur la vidéo pour activer le son</div>
   <div id="update" hidden onclick="location.reload()">Nouvelle version, clique pour recharger</div>
+  <div id="live-notifications" role="region" aria-label="Nouveaux streams en direct" aria-live="polite" aria-relevant="additions"></div>
+</div>
+<div id="audio-overlay" role="dialog" aria-modal="true" aria-labelledby="audio-overlay-title" aria-describedby="audio-overlay-description" tabindex="-1" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+  <h2 id="audio-overlay-title">Retrouver le son</h2>
+  <p id="audio-overlay-description">Clique n’importe où ou appuie sur une touche pour réactiver le son de tes streams.</p>
+  <button type="button">Réactiver le son</button>
 </div>
 <script src="library.js"></script>
 <script src="app.js"></script>

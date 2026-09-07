@@ -636,3 +636,122 @@ for (const single of [true, false]) test(`expand ${single ? 'single' : 'focused'
   expect(await page.locator('#side').evaluate(el=>el.inert)).toBe(false);
   expect(errors).toEqual([]);
 });
+
+for (const connected of [false, true]) test(`live notifications track transitions and open streams in ${connected ? 'connected' : 'guest'} mode`, async ({ page }) => {
+  const errors = await setup(page, connected);
+  if (connected) await api(page);
+  let roster = ['already', 'newlive', 'later'], online = new Set(['already']), failed = false;
+  const statuses = route => route.fulfill(failed ? {status:503,json:{}} : {json:{data: [...online].map(login => ({
+    user_login:login,broadcaster_login:login,is_live:true,game_name:'Art',title:'A new stream',viewer_count:42
+  }))}});
+  if (connected) {
+    await page.route('https://api.twitch.tv/helix/channels/followed?**', route => route.fulfill({json:{
+      data:roster.map(login=>({broadcaster_login:login,broadcaster_name:login})),pagination:{}
+    }}));
+    await page.route('https://api.twitch.tv/helix/streams?**', statuses);
+  } else await page.route('**/api/search?**', statuses);
+  await page.addInitScript(connected => {
+    if (connected) sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    localStorage.setItem('tg.favorites',JSON.stringify(['already','newlive','later'].map(twitch=>({twitch}))));
+    localStorage.setItem('tg.layout.'+(connected?'connected':'guest'),JSON.stringify({order:['already'],allPaused:true}));
+  }, connected);
+  await page.goto('/');
+  await expect(page.locator('#list [data-login="newlive"] .g')).toHaveText('Hors ligne');
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  online.add('newlive'); online.add('later');
+  failed=true;
+  await page.evaluate(()=>refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  failed=false;
+  await page.evaluate(()=>refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(2);
+  await page.evaluate(()=>refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(2);
+  await page.locator('.live-notification[data-login="later"] .dismiss').click();
+  await page.evaluate(()=>refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(1);
+  await page.locator('.live-notification[data-login="newlive"] .watch').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await expect(page.locator('#grid [data-login="newlive"]')).toHaveClass(/big/);
+  expect(await page.evaluate(()=>({paused:tiles.get('newlive').paused,muted:tiles.get('newlive').muted,otherPaused:tiles.get('already').paused,allPaused})))
+    .toEqual({paused:false,muted:false,otherPaused:true,allPaused:false});
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  online.delete('newlive');
+  await page.evaluate(()=>refresh());
+  online.add('newlive');
+  await page.evaluate(()=>refresh());
+  await page.locator('#grid .big .fs').click();
+  await page.locator('.live-notification .watch').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await expect(page.locator('#grid [data-login="newlive"]')).toHaveClass(/big/);
+  await expect(page.locator('.expanded')).toHaveCount(0);
+  online.delete('later'); await page.evaluate(()=>refresh());
+  online.add('later'); await page.evaluate(()=>refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(1);
+  if (connected) {
+    roster=roster.filter(login=>login!=='later');
+    await page.evaluate(()=>{lastFollows=0;return refresh();});
+  } else await page.locator('#list [data-login="later"] .favorite').click();
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  if (connected) {
+    online.delete('newlive'); await page.evaluate(()=>refresh());
+    online.add('newlive'); await page.evaluate(()=>refresh());
+    await expect(page.locator('.live-notification')).toHaveCount(1);
+    await page.locator('#disconnect').click();
+    await expect(page.locator('.live-notification')).toHaveCount(0);
+  }
+  expect(errors).toEqual([]);
+});
+
+
+for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture}`, async ({ page }) => {
+  const errors=await setup(page); await page.clock.install();
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:['one','two','muted','paused'].map(broadcaster_login=>({broadcaster_login,is_live:true}))}}));
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({
+    order:['one','two','muted','paused'],focused:'one',muted:{one:false,two:false,muted:true,paused:false},
+    paused:{paused:true},volume:{one:0.3,two:0.7,muted:0.4,paused:0.6},pinned:{two:true}
+  })));
+  await page.goto('/'); await page.clock.runFor(1200);
+  const overlay=page.locator('#audio-overlay');
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveCSS('backdrop-filter','blur(14px)');
+  expect(await overlay.boundingBox()).toEqual({x:0,y:0,...page.viewportSize()});
+  await page.evaluate(()=>{window.audioPlayers=[...tiles.values()].map(t=>t.player);});
+  if(gesture==='background') await page.mouse.click(4,4);
+  else if(gesture==='button') await overlay.locator('button').click();
+  else await page.keyboard.press('Space');
+  await page.clock.runFor(2500);
+  await expect(overlay).toBeHidden();
+  expect(await page.evaluate(()=>[...tiles.values()].map(t=>({muted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.player.paused}))))
+    .toEqual([{muted:false,volume:0.3,paused:false},{muted:false,volume:0.7,paused:false},{muted:true,volume:0.4,paused:false},{muted:true,volume:0.6,paused:true}]);
+  expect(await page.evaluate(()=>focused)).toBe('one');
+  expect(await page.evaluate(()=>[...tiles.values()].every((t,i)=>t.player===window.audioPlayers[i]))).toBe(true);
+  await page.evaluate(()=>tiles.get('one').player.emit('playbackBlocked'));
+  await page.clock.runFor(2500);
+  await expect(overlay).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('audio overlay skips silent and paused layouts; gesture also unlocks players still loading',async({page})=>{
+  await setup(page); await page.clock.install();
+  await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('}, 0);','}, 2000);')}));
+  await page.goto('/');
+  const overlay=page.locator('#audio-overlay');
+  await expect(overlay).toBeHidden();
+  await page.evaluate(()=>add(channel({twitch:'one',online:true}),true));
+  await expect(overlay).toBeHidden();
+  await page.evaluate(()=>{const t=tiles.get('one');t.muted=false;t.paused=true;updateAudioOverlay();});
+  await expect(overlay).toBeHidden();
+  await page.evaluate(()=>{const t=tiles.get('one');t.paused=false;t.volume=0;updateAudioOverlay();});
+  await expect(overlay).toBeHidden();
+  await page.evaluate(()=>{const t=tiles.get('one');t.volume=0.5;allPaused=true;updateAudioOverlay();});
+  await expect(overlay).toBeHidden();
+  await page.evaluate(()=>{allPaused=false;updateAudioOverlay();});
+  await expect(overlay).toBeVisible();
+  expect(await page.evaluate(()=>tiles.get('one').ready)).toBe(false);
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(4500);
+  await expect(overlay).toBeHidden();
+  expect(await page.evaluate(()=>({muted:tiles.get('one').player.getMuted(),paused:tiles.get('one').player.paused}))).toEqual({muted:false,paused:false});
+  await expect(page.locator('.audio-help')).toHaveCount(0);
+});

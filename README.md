@@ -16,6 +16,8 @@ Avec « Connecter Twitch », retrouve tes follows et cherche des streamers direc
 
 Chaque mode conserve sa grille dans le stockage local du navigateur : tuiles, ordre, mise en avant, pause, volume et réglages du son. Se connecter sauvegarde la grille sans compte et restaure la grille du mode connecté. Se déconnecter fait l’inverse. Si le mode choisi n’a pas encore de grille, l’accueil s’affiche. Les favoris locaux restent enregistrés.
 
+Quand une chaîne suivie ou un favori passe de hors ligne à en direct, une notification apparaît dans la page. Clique dessus pour ajouter le stream à la grille et le mettre en avant avec le son. Une croix permet de fermer la notification. Les streams déjà en direct au chargement ne déclenchent pas de notification. La détection utilise l’actualisation existante toutes les 30 secondes lorsque la page est visible ; le cache du mode sans compte peut retarder l’annonce d’une minute. Les notifications disparaissent si la chaîne repasse hors ligne, quitte ta liste ou si tu te déconnectes.
+
 Le compte connecté est celui de chaque visiteur. Les follows ne sont pas publiés pour les autres utilisateurs. La session Twitch reste dans l’onglet et disparaît à sa fermeture. Si elle expire, reconnecte-toi. La sidebar revient alors aux favoris locaux.
 
 ## Vue mise en avant
@@ -27,6 +29,8 @@ Clique une tuile pour afficher le lecteur Twitch complet, avec ses réglages de 
 Twitch accepte l’option des contrôles à la création du lecteur. Le passage entre les deux vues recrée donc les lecteurs des tuiles qui changent de mode. Les autres streams continuent à jouer.
 
 Le bouton d’agrandissement de la barre étend le stream à toute la fenêtre du navigateur. Les onglets et la barre d’adresse restent visibles. Un second clic restaure la disposition précédente, sans recréer le lecteur ni changer ses réglages audio. Échap permet aussi de revenir lorsque le clavier est actif dans la page.
+
+Après un rechargement, si la grille doit jouer avec du son, un overlay flouté couvre la page. Un clic n’importe où ou une touche réactive les sons prévus par la grille et ferme l’overlay. Les tuiles muettes, les volumes et les pauses restent tels qu’ils étaient enregistrés. L’overlay ne revient plus pendant cette visite.
 
 ## Lancer en local
 
