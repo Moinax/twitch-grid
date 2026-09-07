@@ -1,7 +1,7 @@
 const $ = s => document.querySelector(s);
 const list = $('#list'), grid = $('#grid');
 const tiles = new Map();   // twitch login -> { el, player, bar }
-let streamers = [], focused = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
+let streamers = [], focused = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
 
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
 // Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
@@ -62,9 +62,9 @@ const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)));
 // half-visible tile still spins
 const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.intersectionRatio >= 0.5; sync(t); mark(t); } }), { root: grid, threshold: 0.5 });
 // a relayout flickers visibility for a frame or two: let it settle before touching the player
-// a fullscreen tile leaves the grid's box, so the observer reports it hidden while it fills the screen; a tile with
+// An expanded tile leaves the grid's box, so the observer may report it hidden; a tile with
 // its sound on keeps playing wherever it is, the sound is the point
-const onScreen = t => t.visible || !t.muted || document.fullscreenElement === t.el;
+const onScreen = t => t.visible || !t.muted || expanded === t.el.dataset.login;
 // Firefox refuses an audible (re)start in an iframe that was never clicked, and the player then sits paused for good:
 // start muted, always allowed, and the watchdog gives the sound back once it plays (no restart in that)
 function start(t) { if (!t.ready) return; if (!t.muted && t.player.getPlayerState().playback !== 'Playing') applyMuted(t, true); t.player.play(); t.nudgedAt = Date.now(); }
@@ -117,25 +117,29 @@ function positionPreview() {
   fit(previewVideo);
 }
 function previewInfo(s) {
-  preview.classList.toggle('live', s.online);
   preview.querySelector('.name').textContent = s.display;
-  preview.querySelector('.badge').textContent = s.online === false ? 'Hors ligne' : s.online ? 'En direct · Muet' : 'Aperçu · Muet';
-  preview.querySelector('.details').textContent = [s.game, s.online ? s.viewersAmount.formatted + ' viewers' : ''].filter(Boolean).join(' · ');
+  const game = s.online === false ? '' : s.game, title = s.online === false ? '' : s.title;
+  const viewers = s.online && s.viewersAmount.formatted ? s.viewersAmount.formatted + ' spectateurs' : '';
+  for (const [selector, value] of [['.category', game], ['.stream-title', title], ['.viewers', viewers]]) {
+    const field = preview.querySelector(selector);
+    field.textContent = value;
+    field.hidden = !value;
+    field.title = value;
+  }
 }
 function showPreview(row) {
   const s = streamers.find(s => s.twitch === row.dataset.login);
-  if (!s || !row.isConnected || document.hidden) return;
+  if (!s || s.online === false || !row.isConnected || document.hidden) { hidePreview(); return; }
   previewRow = row;
   previewOnline = s.online;
   previewInfo(s);
   row.setAttribute('aria-describedby', 'preview');
   const status = preview.querySelector('.status'), message = status.querySelector('span');
   status.querySelector('img').src = s.profileUrl;
-  message.textContent = s.online === false ? 'Ce streamer est hors ligne' : 'Chargement de l’aperçu…';
+  message.textContent = 'Chargement de l’aperçu…';
   status.hidden = false;
   preview.hidden = false;
   positionPreview();
-  if (s.online === false) return;
   if (!window.Twitch?.Player) { message.textContent = 'Aperçu indisponible'; return; }
   const player = new Twitch.Player(previewVideo, { channel: s.twitch, parent: [location.hostname], width: 640, height: 360, autoplay: true, muted: true, controls: false });
   const frame = previewVideo.querySelector('iframe');
@@ -147,9 +151,10 @@ function showPreview(row) {
   player.addEventListener(Twitch.Player.PLAYING, () => { if (current()) { clearTimeout(previewLoadTimer); status.hidden = true; } });
   for (const event of ['offline', 'playbackBlocked', 'error']) player.addEventListener(event, () => {
     if (!current()) return;
+    if (event === 'offline') { hidePreview(); return; }
     clearTimeout(previewLoadTimer);
     status.hidden = false;
-    message.textContent = event === 'offline' ? 'Ce streamer est hors ligne' : 'Aperçu indisponible';
+    message.textContent = 'Aperçu indisponible';
   });
   previewLoadTimer = setTimeout(() => { if (current()) message.textContent = 'L’aperçu tarde à démarrer'; }, 12000);
 }
@@ -180,16 +185,33 @@ function toggle(s) {
   renderList();
 }
 
+function updateTileInfo(t, s) {
+  t.channel = s;
+  t.bar.querySelector('.viewers').textContent = s.online === false ? 'Hors ligne' : s.viewersAmount.formatted;
+  const info = t.bar.querySelector('.stream-info');
+  const game = s.online === false ? '' : s.game, title = s.online === false ? '' : s.title;
+  info.hidden = !game && !title;
+  info.title = [game, title].filter(Boolean).join(' · ');
+  for (const [selector, value] of [['.stream-category', game], ['.stream-title', title]]) {
+    const field = info.querySelector(selector);
+    field.textContent = value;
+    field.hidden = !value;
+  }
+}
+
 function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   if (tiles.has(s.twitch)) return;
   if (!window.Twitch?.Player) { notice('Le lecteur Twitch est indisponible. Recharge la page pour réessayer.'); return; }
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><b>${escapeHTML(s.display)}</b><span>${escapeHTML(s.viewersAmount.formatted)}</span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Plein écran" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" class="close">✕</button></div><div class="player"></div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small>Hors ligne</small><small class="more">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
+  el.innerHTML = `<div class="bar"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" class="close">✕</button></div><div class="player"></div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small>Hors ligne</small><small class="more">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume"><output></output></div>`;
   const [snd, min, fs, close] = el.querySelectorAll('button');
   min.onclick = e => { e.stopPropagation(); focus(s.twitch); };
-  fs.onclick = e => { e.stopPropagation(); document.fullscreenElement === el ? document.exitFullscreen() : el.requestFullscreen(); };
+  fs.onclick = e => { e.stopPropagation(); setExpanded(expanded === s.twitch ? null : s.twitch); };
+  fs.title = 'Agrandir dans la fenêtre';
+  fs.setAttribute('aria-label', fs.title);
+  fs.setAttribute('aria-pressed', 'false');
   const pp = el.querySelector('.ctl button'), vol = el.querySelector('.ctl input'), pct = el.querySelector('.ctl output');
   const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
   pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
@@ -198,7 +220,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   // the button cycles muted → loud → pinned (loud, and stays so out of the spotlight) → muted
   snd.onclick = e => { e.stopPropagation(); if (t.muted) setMuted(t, false); else if (!t.pinned) t.pinned = true; else { t.pinned = false; setMuted(t, true); } paint(t); save(); };
   const bar = el.querySelector('.bar');
-  bar.onclick = () => focus(s.twitch);
+  bar.onclick = () => expanded === s.twitch ? setExpanded(null) : focus(s.twitch);
   el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
   // ponytail: reorder via CSS `order` only — moving an iframe in the DOM reloads the player
   bar.draggable = true;
@@ -209,6 +231,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   close.onclick = e => { e.stopPropagation(); remove(s.twitch); renderList(); };
   grid.append(el);
   const t = { el, bar, visible: true, muted, volume, paused, pinned, ready: false, ppIcon };
+  updateTileInfo(t, s);
   tiles.set(s.twitch, t);
   ppIcon();
   io.observe(el);
@@ -296,6 +319,7 @@ function readNativeControls(t) {
 }
 
 function remove(login, updateLayout = true) {
+  if (expanded === login) setExpanded(null);
   tiles.get(login).player.destroy();
   clearTimeout(tiles.get(login).timer);
   ro.unobserve(tiles.get(login).el.querySelector('.player'));
@@ -321,8 +345,26 @@ function move(from, to) {
 
 function setMuted(t, m) { t.muted = m; if (t.ready) applyMuted(t, m); paint(t); }
 function paint(t) { t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned); }
+function setExpanded(login) {
+  expanded = login;
+  hidePreview();
+  $('#side').inert = !!expanded;
+  for (const [name, t] of tiles) {
+    const active = name === expanded;
+    t.el.classList.toggle('expanded', active);
+    t.el.inert = !!expanded && !active;
+    t.bar.draggable = tiles.size > 1 && !active;
+    const button = t.bar.querySelector('.fs');
+    button.title = active ? 'Revenir à la disposition précédente' : 'Agrandir dans la fenêtre';
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(active));
+    fit(t.el.querySelector('.player'));
+    sync(t);
+  }
+}
 // the spotlight brings the sound along; leaving it gives it back unless the button pinned it
 function focus(login) {
+  if (expanded) setExpanded(null);
   if (tiles.size < 2) return;
   const prev = focused;
   if (prev) readNativeControls(tiles.get(prev));
@@ -334,13 +376,14 @@ function focus(login) {
 
 function layout() {
   const n = tiles.size;
+  if (expanded && n > 1 && expanded !== focused) setExpanded(null);
   if (n < 2) focused = null;
   grid.classList.toggle('single', n === 1);
   grid.classList.toggle('focused', !!focused);
   for (const [login, t] of tiles) {
     t.el.classList.toggle('big', login === focused);
     t.el.style.order = order.indexOf(login);
-    t.bar.draggable = n > 1;
+    t.bar.draggable = n > 1 && login !== expanded;
     mountPlayer(t, n === 1 || login === focused);
     fit(t.el.querySelector('.player'));
   }
@@ -385,7 +428,7 @@ addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.ta
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
 onresize = layout;
 document.onfullscreenchange = () => tiles.forEach(t => { fit(t.el.querySelector('.player')); sync(t); });
-document.onkeydown = e => { if (e.key === 'Escape') { if (previewRow) hidePreview(); else if (focused) focus(focused); } };
+document.onkeydown = e => { if (e.key === 'Escape') { if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); } };
 // Check the static app files so a script-only deploy also offers a reload.
 const dev = location.hostname === 'localhost';
 let versionBody;
@@ -425,7 +468,7 @@ function rebuild() {
   const merged = new Map([...(library?.user ? follows : favorites), ...results].map(s => [s.twitch, s]));
   streamers = [...merged.values()];
   renderList();
-  for (const s of streamers) tiles.get(s.twitch)?.bar.querySelector('span').replaceChildren(s.online === false ? 'Hors ligne' : s.viewersAmount.formatted);
+  for (const s of streamers) { const t = tiles.get(s.twitch); if (t) updateTileInfo(t, s); }
 }
 function toggleFavorite(s) {
   if (library?.user) return;
@@ -535,12 +578,13 @@ async function refresh() {
     const logins = [...new Set([...nextChannels, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
     const live = await library.live(logins);
     if (version !== accountVersion) return;
-    const update = s => channel({ ...s, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
+    const update = s => channel({ ...s, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', title: live.get(s.twitch)?.title || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
     if (connected) follows = nextChannels.map(update);
     else favorites = favorites.map(s => logins.includes(s.twitch) ? update(s) : s);
     results = results.map(s => logins.includes(s.twitch) ? update(s) : s);
     if (reloadFollows) lastFollows = Date.now();
     rebuild(); if (connected || $('#notice').textContent === statusUnavailable) notice();
+    for (const [login, t] of tiles) if (logins.includes(login)) updateTileInfo(t, update(t.channel));
   } catch (error) {
     if (version === accountVersion) {
       if (connected) handleError(error);

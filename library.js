@@ -15,7 +15,7 @@ function channel(data) {
   return { twitch, display: data.display || data.broadcaster_name || data.display_name || twitch,
     profileUrl: /^https:\/\//.test(data.profileUrl || data.profile_image_url || data.thumbnail_url || '')
       ? (data.profileUrl || data.profile_image_url || data.thumbnail_url) : 'favicon.svg',
-    online: data.online ?? data.is_live ?? null, game: data.game || data.game_name || '',
+    online: data.online ?? data.is_live ?? null, game: data.game || data.game_name || '', title: data.title || '',
     viewersAmount: { number: data.viewer_count || 0, formatted: data.viewer_count == null ? '' : numberFormat.format(data.viewer_count) } };
 }
 class TwitchLibrary {

@@ -26,6 +26,8 @@ Clique une tuile pour afficher le lecteur Twitch complet, avec ses réglages de 
 
 Twitch accepte l’option des contrôles à la création du lecteur. Le passage entre les deux vues recrée donc les lecteurs des tuiles qui changent de mode. Les autres streams continuent à jouer.
 
+Le bouton d’agrandissement de la barre étend le stream à toute la fenêtre du navigateur. Les onglets et la barre d’adresse restent visibles. Un second clic restaure la disposition précédente, sans recréer le lecteur ni changer ses réglages audio. Échap permet aussi de revenir lorsque le clavier est actif dans la page.
+
 ## Lancer en local
 
 ```sh
@@ -69,6 +71,16 @@ Le serveur conserve les résultats pendant une minute et réutilise le jeton jus
 ## Déployer
 
 Le projet comprend les fichiers statiques et une fonction Node.js pour la recherche. Vercel doit servir la racine avec le preset « Other », sans commande de build. Associe le domaine `twitch.moinax.com` au projet Vercel et configure son DNS suivant les indications de Vercel.
+
+## Image de partage
+
+Les balises Open Graph et Twitter utilisent une image PNG de 1200 × 630 pixels. Pour modifier la carte, édite `scripts/share-card.html`, puis génère l’image avec :
+
+```sh
+pnpm og:generate
+```
+
+La commande utilise Chromium de Playwright et écrit `assets/share-card.png`. L’image est versionnée et servie directement, sans génération lors du déploiement.
 
 ## Vérifier
 

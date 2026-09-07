@@ -4,7 +4,7 @@ const originalFetch = global.fetch;
 const originalEnv = { id: process.env.TWITCH_SEARCH_CLIENT_ID, secret: process.env.TWITCH_SEARCH_CLIENT_SECRET };
 let handler, calls;
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {status,headers});
-const fixture = { broadcaster_login:'altair', display_name:'Altair', thumbnail_url:'https://example.com/avatar.png', is_live:true, game_name:'Art', private_field:'omit-me' };
+const fixture = { broadcaster_login:'altair', display_name:'Altair', thumbnail_url:'https://example.com/avatar.png', is_live:true, game_name:'Art', title:'Drawing <dragons>', private_field:'omit-me' };
 beforeEach(() => {
   process.env.TWITCH_SEARCH_CLIENT_ID = 'server-client'; process.env.TWITCH_SEARCH_CLIENT_SECRET = 'server-secret';
   delete require.cache[require.resolve('../api/search.js')]; handler = require('../api/search.js'); calls = [];
@@ -30,6 +30,7 @@ async function request(q='altair', method='GET', ip='127.0.0.1') {
 test('guest search returns channel cards, never credentials or unrelated Twitch fields', async () => {
   const res = await request(); assert.equal(res.statusCode,200); assert.equal(res.body.data[0].display_name,'Altair');
   assert.equal(res.body.data[0].private_field,undefined);
+  assert.equal(res.body.data[0].title,'Drawing <dragons>');
   assert.doesNotMatch(JSON.stringify(res),/server-secret|private-token/);
   const auth = calls.find(c=>c.url.endsWith('/oauth2/token'));
   assert.equal(auth.options.method,'POST'); assert.equal(auth.options.body.get('client_secret'),'server-secret');
@@ -49,7 +50,7 @@ test('exact username fallback checks live streams instead of assuming offline', 
   global.fetch = async url => {
     if (url.endsWith('/oauth2/token')) return json({access_token:'private-token',expires_in:3600});
     if (url.includes('/users?')) return json({data:[{login:'altair',display_name:'Altair'}]});
-    if (url.includes('/streams?')) return json({data:[{user_login:'altair',game_name:'Art',viewer_count:42}]});
+    if (url.includes('/streams?')) return json({data:[{user_login:'altair',game_name:'Art',title:'Drawing dragons',viewer_count:42}]});
     return json({data:[]});
   };
   const res = await request();
@@ -61,13 +62,15 @@ test('favorite lookup batches usernames and returns verified public statuses', a
     calls.push({url});
     if (url.endsWith('/oauth2/token')) return json({access_token:'private-token',expires_in:3600});
     if (url.includes('/users?')) return json({data:[{login:'altair',display_name:'Altair',email:'private@example.com'}, {login:'live',display_name:'Live'}]});
-    return json({data:[{user_login:'live',game_name:'Art',viewer_count:42,private_field:'omit-me'}]});
+    return json({data:[{user_login:'live',game_name:'Art',title:'Drawing dragons',viewer_count:42,private_field:'omit-me'}]});
   };
   const res = await request(new URLSearchParams([['login','live'],['login','Altair']]));
   assert.equal(res.statusCode,200);
   assert.equal(res.body.data[0].is_live,false);
   assert.equal(res.body.data[1].is_live,true);
   assert.equal(res.body.data[1].viewer_count,42);
+  assert.equal(res.body.data[1].title,'Drawing dragons');
+  assert.equal(res.body.data[0].title,'');
   assert.doesNotMatch(JSON.stringify(res),/server-secret|private-token|private@example|omit-me/);
   const streams = new URL(calls.find(c => c.url.includes('/streams?')).url);
   assert.deepEqual(streams.searchParams.getAll('user_login'),['altair','live']);

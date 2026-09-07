@@ -547,3 +547,92 @@ test('a slow previous search never replaces the latest results', async ({page}) 
   release(); await page.waitForTimeout(50);
   await expect(page.locator('#list .name')).toHaveText('latest');
 });
+
+for (const connected of [false, true]) test(`stream metadata follows focus, hover and refresh in ${connected ? 'connected' : 'guest'} mode`, async ({ page }) => {
+  const errors = await setup(page, connected);
+  if (connected) await api(page);
+  let title = 'Une aventure <img src=x> & des surprises', game = 'Baldur’s Gate 3', online = true;
+  const respond = route => route.fulfill({ json: { data: online ? ['one', 'two'].map(login => ({
+    user_login: login, broadcaster_login: login, is_live: true, game_name: game, title, viewer_count: 42
+  })) : [] } });
+  if (connected) await page.route('https://api.twitch.tv/helix/streams?**', respond);
+  else await page.route('**/api/search?**', respond);
+  await page.addInitScript(connected => {
+    if (connected) sessionStorage.setItem('tg.session', JSON.stringify('valid'));
+    localStorage.setItem('tg.layout.' + (connected ? 'connected' : 'guest'), JSON.stringify({ order: ['one', 'two'], focused: 'one' }));
+  }, connected);
+  await page.goto('/');
+  const big = page.locator('#grid [data-login="one"]'), small = page.locator('#grid [data-login="two"]');
+  await expect(big).toHaveClass(/full-player/);
+  await expect.poll(() => page.evaluate(() => refreshInFlight)).toBe(false);
+  await page.evaluate(() => refresh());
+  await expect(big.locator('.stream-category')).toHaveText(game);
+  await expect(big.locator('.stream-title')).toHaveText(title);
+  await expect(big.locator('.stream-info img')).toHaveCount(0);
+  await expect(big.locator('.stream-info')).toBeVisible();
+  await expect(small.locator('.stream-info')).toBeHidden();
+  await small.locator('.player').hover();
+  await expect(small.locator('.stream-info')).toBeVisible();
+  await expect(small.locator('.stream-info')).toHaveCSS('backdrop-filter', 'blur(12px)');
+  await page.locator('#toggle').hover();
+  await expect(small.locator('.stream-info')).toBeHidden();
+  await page.evaluate(() => { window.metadataPlayer = tiles.get('one').player; });
+  title = 'Nouveau titre'; game = 'Just Chatting';
+  await page.evaluate(() => refresh());
+  await expect(big.locator('.stream-title')).toHaveText(title);
+  await expect(big.locator('.stream-category')).toHaveText(game);
+  expect(await page.evaluate(() => tiles.get('one').player === window.metadataPlayer)).toBe(true);
+  await small.locator('.close').click();
+  await expect(big).toHaveClass(/full-player/);
+  await expect(big.locator('.stream-info')).toBeVisible();
+  online = false;
+  await page.evaluate(() => refresh());
+  await expect(big.locator('.stream-info')).toBeHidden();
+  await expect(big.locator('.viewers')).toHaveText('Hors ligne');
+  expect(errors).toEqual([]);
+});
+
+for (const single of [true, false]) test(`expand ${single ? 'single' : 'focused'} player within viewport and restore layout`, async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(single => localStorage.setItem('tg.layout.guest', JSON.stringify({
+    order: single ? ['one'] : ['one', 'two'], focused: single ? null : 'one', muted: {one:true}, volume:{one:0.35}
+  })), single);
+  await page.goto('/');
+  const tile = page.locator('#grid [data-login="one"]'), button = tile.locator('.fs');
+  await expect(button).toBeVisible();
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.ready))).toBe(true);
+  const before = await tile.boundingBox();
+  const focusedBefore = await page.evaluate(() => focused);
+  await page.evaluate(() => {
+    window.expansionPlayers = [...tiles.values()].map(t => t.player);
+    window.fullscreenCalls = 0;
+    Element.prototype.requestFullscreen = () => { window.fullscreenCalls++; return Promise.resolve(); };
+  });
+  await button.click();
+  await expect(tile).toHaveClass(/expanded/);
+  await expect(button).toHaveAttribute('aria-pressed','true');
+  expect(await tile.boundingBox()).toEqual({x:0,y:0,...page.viewportSize()});
+  expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+  expect(await page.evaluate(() => window.fullscreenCalls)).toBe(0);
+  expect(await page.locator('#side').evaluate(el=>el.inert)).toBe(true);
+  expect(await tile.locator('.bar').evaluate(el=>el.draggable)).toBe(false);
+  await page.setViewportSize({width:1000,height:700});
+  expect(await tile.boundingBox()).toEqual({x:0,y:0,width:1000,height:700});
+  await button.click();
+  await expect(tile).not.toHaveClass(/expanded/);
+  await page.setViewportSize({width:1280,height:720});
+  expect(await tile.boundingBox()).toEqual(before);
+  await button.click();
+  await page.keyboard.press('Escape');
+  await expect(tile).not.toHaveClass(/expanded/);
+  expect(await page.evaluate(() => focused)).toBe(focusedBefore);
+  expect(await page.locator('#side').evaluate(el=>el.inert)).toBe(false);
+  expect(await page.evaluate(() => [...tiles.values()].every((t,i)=>t.player===window.expansionPlayers[i]))).toBe(true);
+  expect(await page.evaluate(() => tiles.get('one').volume)).toBe(0.35);
+  await button.click();
+  if (single) await tile.locator('.close').click();
+  else await tile.locator('.min').click();
+  await expect(page.locator('.expanded')).toHaveCount(0);
+  expect(await page.locator('#side').evaluate(el=>el.inert)).toBe(false);
+  expect(errors).toEqual([]);
+});

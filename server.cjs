@@ -5,7 +5,8 @@ const search = require('./api/search.js');
 const port = Number(process.argv[2] || 8765);
 const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'],
   '/app.js': ['app.js', 'text/javascript'], '/library.js': ['library.js', 'text/javascript'],
-  '/config.json': ['config.json', 'application/json'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'] };
+  '/config.json': ['config.json', 'application/json'], '/favicon.svg': ['favicon.svg', 'image/svg+xml'],
+  '/assets/share-card.png': ['assets/share-card.png', 'image/png'] };
 http.createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   res.status = code => { res.statusCode = code; return res; };
@@ -15,7 +16,7 @@ http.createServer(async (req, res) => {
   const [file, type] = files[pathname];
   try {
     const body = await fs.readFile(path.join(__dirname, file));
-    res.setHeader('Content-Type', type + '; charset=utf-8'); res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', type === 'image/png' ? type : type + '; charset=utf-8'); res.setHeader('Cache-Control', 'no-store');
     res.end(body);
   } catch { res.statusCode = 500; res.end('Unable to read file'); }
 }).listen(port, '127.0.0.1', () => console.log(`http://localhost:${port}`));

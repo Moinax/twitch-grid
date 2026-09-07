@@ -8,5 +8,6 @@ playwright.config.js
 server.cjs
 __pycache__
 README.md
+scripts
 
 .env*
