@@ -503,6 +503,7 @@ test('a portrait grid keeps the small tiles in a strip under the front row', asy
 });
 test('the mute-all button silences every stream and gives the sound back to those that had it', async ({ page }) => {
   const errors = await setup(page);
+  await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two', 'three'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));   // live channels: offline ones would disable their play button
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three'], focused: 'one', muted: { one: false, two: false, three: true } })));
   await page.goto('/'); await page.locator('#audio-overlay').click();
   const button = page.locator('#muteall'), state = () => page.evaluate(() => ({ mutedAll, muted: [...tiles.values()].map(t => t.muted) }));
@@ -576,6 +577,7 @@ test('a locked grid refuses new streams until unlocked and remembers it', async 
 });
 test('tile controls appear on hover or keyboard focus and adjusting volume enables and saves sound', async ({ page }) => {
   const errors = await setup(page);
+  await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));   // live channels: offline ones would disable their play button
   await page.addInitScript(() => {
     if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],paused:{two:true}}));
   });
@@ -937,20 +939,22 @@ for (const connected of [false, true]) test(`live notifications track transition
   await page.locator('.live-notification[data-login="later"] .dismiss').click();
   await page.evaluate(()=>refresh());
   await expect(page.locator('.live-notification')).toHaveCount(1);
-  await page.locator('.live-notification[data-login="newlive"] .watch').click();
+  await page.locator('.live-notification[data-login="newlive"] .watch').click();   // the stream joins the grid, nothing more
   await expect(page.locator('#grid .tile')).toHaveCount(2);
-  await expect(page.locator('#grid [data-login="newlive"]')).toHaveClass(/big/);
-  expect(await page.evaluate(()=>({paused:tiles.get('newlive').paused,muted:tiles.get('newlive').muted,otherPaused:tiles.get('already').paused,allPaused})))
-    .toEqual({paused:false,muted:false,otherPaused:true,allPaused:false});
+  await expect(page.locator('#grid .big')).toHaveCount(0);
+  expect(await page.evaluate(()=>({focused,paused:tiles.get('newlive').paused,muted:tiles.get('newlive').muted,allPaused})))
+    .toEqual({focused:null,paused:false,muted:true,allPaused:true});
   await expect(page.locator('.live-notification')).toHaveCount(0);
   online.delete('newlive');
   await page.evaluate(()=>refresh());
   online.add('newlive');
   await page.evaluate(()=>refresh());
+  await page.locator('#grid [data-login="already"] .spotlight').click();
   await page.locator('#grid .big .fs').click();
-  await page.locator('.live-notification .watch').click();
+  await page.locator('.live-notification .watch').click();   // leaves the expanded view so the newcomer shows, keeps the spotlight
   await expect(page.locator('#grid .tile')).toHaveCount(2);
-  await expect(page.locator('#grid [data-login="newlive"]')).toHaveClass(/big/);
+  await expect(page.locator('#grid [data-login="already"]')).toHaveClass(/big/);
+  await expect(page.locator('#grid [data-login="newlive"]')).not.toHaveClass(/big/);
   await expect(page.locator('.expanded')).toHaveCount(0);
   online.delete('later'); await page.evaluate(()=>refresh());
   online.add('later'); await page.evaluate(()=>refresh());

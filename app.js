@@ -637,7 +637,7 @@ function add(s, muted = true, volume = 0.5, paused = false, chatOpen = false, ch
   layout();
   // Animate the header, never an ancestor of a live iframe: opacity blocks Twitch autoplay.
   if (restored && !matchMedia('(prefers-reduced-motion: reduce)').matches) bar.animate(
-    [{opacity:0,transform:'translateY(-4px)'},{opacity:1,transform:'none'}], {duration:220,easing:'ease-out'});
+    [{opacity:0,transform:'translateY(-4px)'},{opacity:1,transform:'none'}], {duration:300,easing:'cubic-bezier(0.32, 0.72, 0, 1)'});
   return true;
 }
 
@@ -809,7 +809,7 @@ function animateRemoval(t) {
   Object.assign(copy.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',zIndex:'20',pointerEvents:'none'});
   document.body.append(copy); exitingTiles.add(copy);
   const finish = () => { copy.remove(); exitingTiles.delete(copy); };
-  copy.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.97)'}],{duration:180,easing:'ease-in'}).finished.then(finish,finish);
+  copy.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.97)'}],{duration:250,easing:'cubic-bezier(0.32, 0.72, 0, 1)'}).finished.then(finish,finish);
 }
 
 function remove(login, updateLayout = true, automatic = false) {
@@ -1141,21 +1141,16 @@ function pruneLiveNotifications(channels) {
 function openLiveNotification(login) {
   const s = (library.user ? follows : favorites).find(s => s.twitch === login);
   if (!s || s.online !== true) { dismissLiveNotification(login); return; }
+  // The stream joins the grid, nothing more: no spotlight, no sound, and the pauses stay as they are.
   if (!tiles.has(login)) add(s);
   const t = tiles.get(login);
   if (!t) return;
-  if (expanded) setExpanded(null);
-  if (tiles.size > 1 && focused !== login) focus(login);
-  if (allPaused) {
-    tiles.forEach(other => { if (other !== t && other.channel.online !== false) { other.paused = true; other.ppIcon(); } });
-    allPaused = false; paintPlayAll();
-  }
-  t.paused = false; t.ppIcon(); setMuted(t, false); sync(t); mark(t);
+  if (expanded) setExpanded(null);   // an expanded tile would hide the newcomer
   if (innerWidth <= 700) document.body.classList.add('collapsed');
-  grid.scrollTop = 0;
   dismissLiveNotification(login);
   renderList(); save();
-  t.bar.querySelector('.fs').focus({ preventScroll: true });
+  t.el.scrollIntoView({ block: 'nearest' });
+  t.bar.querySelector('.spotlight').focus({ preventScroll: true });
 }
 function updateLiveNotifications(channels) {
   pruneLiveNotifications(channels);

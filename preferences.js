@@ -109,7 +109,7 @@ const translations = {
   'Son en trois états':['Sound in three states','Geluid in drie standen'],
   'Muet ou allumé, sur chaque tuile. Le spotlight allume le son et le rend en repartant. Un bouton coupe tout, un autre met tout en pause.':['Muted or on, on every tile. The spotlight turns the sound on and gives it back on the way out. One button mutes everything, another pauses everything.','Stil of aan, op elke tegel. De spotlight zet het geluid aan en geeft het terug bij het verlaten. Eén knop dempt alles, een andere pauzeert alles.'],
   'Notifications de direct':['Live notifications','Livemeldingen'],
-  'Quand une chaîne suivie démarre, une notification l’ajoute à la grille en un clic, avec le son.':['When a followed channel goes live, a notification adds it to the grid in one click, with sound.','Wanneer een gevolgd kanaal live gaat, zet een melding het met één klik in het raster, met geluid.'],
+  'Quand une chaîne suivie démarre, une notification l’ajoute à la grille en un clic.':['When a followed channel goes live, a notification adds it to the grid in one click.','Wanneer een gevolgd kanaal live gaat, zet een melding het met één klik in het raster.'],
   'Grilles nommées':['Named grids','Benoemde rasters'],
   'Enregistre plusieurs dispositions : soirée, tournoi, veille. Change de grille sans recharger la page.':['Save several layouts: evening, tournament, background. Switch grids without reloading the page.','Bewaar meerdere indelingen: avond, toernooi, achtergrond. Wissel van raster zonder de pagina te herladen.'],
   'Collaborations':['Collaborations','Samenwerkingen'],
