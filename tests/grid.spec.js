@@ -15,8 +15,9 @@ const mockPlayer = `window.Twitch = { Player: class {
   pause() { if (!this.paused) { this.paused = true; this.emit('pause'); } }
   destroy() { this.destroyed = true; this.frame.remove(); this.listeners = {}; }
 }};`;
-async function setup(page, connected = false) {
+async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
+  if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
     const params = new URL(route.request().url()).searchParams;
@@ -270,12 +271,12 @@ test('a slow Twitch player script does not block account setup or overwrite the 
   expect(errors).toEqual([]);
 });
 test('Twitch login still opens when the player script fails', async ({ page }) => {
-  await setup(page, true);
+  await setup(page, true, true);
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.abort());
   await page.route('https://id.twitch.tv/oauth2/authorize?**', r => r.fulfill({body:'Twitch authorization'}));
   await page.goto('/');
-  await expect(page.locator('#notice')).toContainText('lecteur Twitch est indisponible');
-  await page.locator('#top').click();
+  await expect(page.locator('#landing')).toBeVisible();
+  await page.locator('#landing-connect').click();
   await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
 });
 test('expired sessions fall back to saved favorites', async ({ page }) => {
@@ -335,11 +336,14 @@ test('failed favorite status checks stay unknown and recover on the next refresh
   await expect(page.locator('#notice')).toBeEmpty();
 });
 test('mobile sidebar opens for search and closes when a stream is selected', async ({ page }) => {
-  const errors = await setup(page);
+  const errors = await setup(page, false, true);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await expect(page.locator('body')).toHaveClass(/collapsed/);
-  await page.locator('#guest').click();
+  await expect(page.locator('#landing')).toBeVisible();
+  await expect(page.locator('#landing-connect')).toBeHidden();
+  await page.locator('#landing-guest').click();
+  await expect(page.locator('#landing')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/collapsed/);
   await expect(page.locator('#q')).toBeFocused();
   await favorite(page, 'zerator');
   await page.locator('#list .channel').click();
@@ -699,19 +703,32 @@ test('native Play resumes a spotlight restored in a paused state', async ({ page
   expect(await page.evaluate(() => ({ allPaused, one:tiles.get('one').paused, two:tiles.get('two').paused, playing:!tiles.get('one').player.paused })))
     .toEqual({allPaused:false,one:false,two:true,playing:true});
 });
-test('continue without an account only focuses search and leaves the welcome unchanged', async ({ page }) => {
-  const errors = await setup(page, true);
+test('the landing covers the app until the visitor continues without an account, remembered for the tab only', async ({ page }) => {
+  const errors = await setup(page, true, true);
   await page.setViewportSize({width:390,height:844});
   await page.goto('/');
-  await expect(page.locator('#top')).toBeEnabled();
-  const welcome = await page.locator('#empty').innerText();
-  await page.locator('#guest').click();
+  await expect(page.locator('#landing')).toBeVisible();
+  await expect(page.locator('#side')).toBeHidden();
+  await expect(page.locator('#empty')).toBeHidden();
+  await expect(page.locator('#landing-connect')).toBeEnabled();
+  await page.locator('#landing .reveal').scrollIntoViewIfNeeded();
+  await expect(page.locator('#landing .reveal span').first()).toHaveClass(/in/);
+  await page.locator('#landing-main').scrollIntoViewIfNeeded();
+  for (const id of ['features', 'how', 'faq', 'privacy']) await expect(page.locator('#' + id)).toHaveCount(1);
+  await page.locator('#landing-guest').click();
+  await expect(page.locator('#landing')).toBeHidden();
   await expect(page.locator('#q')).toBeFocused();
+  await expect(page.locator('#empty')).toBeVisible();
+  await page.locator('#toggle').click();   // on mobile the open sidebar covers the empty state
+  await page.locator('#show-landing').click();
+  await expect(page.locator('#landing')).toBeVisible();
+  await page.locator('#landing-guest').click();
+  await expect(page.locator('#landing')).toBeHidden();
   await expect(page.locator('#top')).toHaveText('Connecter Twitch');
   await expect(page.locator('#guest')).toBeVisible();
-  expect(await page.locator('#empty').innerText()).toBe(welcome);
-  expect(await page.evaluate(() => localStorage.getItem('tg.guest'))).toBeNull();
+  expect(await page.evaluate(() => [localStorage.getItem('tg.guest'), localStorage.getItem('tg.landing')])).toEqual([null, null]);
   await page.reload();
+  await expect(page.locator('#landing')).toBeHidden();
   await expect(page.locator('#top')).toHaveText('Connecter Twitch');
   await expect(page.locator('#guest')).toBeVisible();
   const icon = page.locator('#connect');
@@ -1450,4 +1467,33 @@ test('hovering a live channel in the sidebar shows the floating preview', async 
   await page.mouse.move(900, 700);
   await expect(page.locator('#preview')).toBeHidden();
   expect(errors).toEqual([]);
+});
+test('the landing stays away for connected visitors, saved favorites and open tiles, and switches language', async ({ page }) => {
+  const errors = await setup(page, true, true);
+  await page.addInitScript(() => sessionStorage.setItem('tg.session', JSON.stringify('valid')));
+  await api(page);
+  await page.goto('/');
+  await expect(page.locator('#disconnect')).toBeVisible();
+  await expect(page.locator('#landing')).toBeHidden();
+  await page.locator('#disconnect').click();
+  await expect(page.locator('#landing')).toBeVisible();
+  await page.locator('#landing-language').selectOption('en');
+  await expect(page.locator('#landing h1')).toHaveText('All your streams.One screen.');
+  await expect(page.locator('#landing .reveal')).toContainText('One stream up front');
+  await page.locator('#landing-language').selectOption('fr');
+  await expect(page.locator('#landing h1')).toHaveText('Tous tes streams.Un seul écran.');
+  await page.evaluate(() => localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'saved' }])));
+  await page.reload();
+  await expect(page.locator('#landing')).toBeHidden();
+  await expect(page.locator('#empty')).toBeVisible();
+  expect(errors).toEqual([]);
+  // a fresh tab: the previous one saves its empty layout when it closes, and the landing memory lives per tab
+  await page.close();
+  const tab = await page.context().newPage(); await setup(tab, true, true);
+  await tab.addInitScript(() => { localStorage.removeItem('tg.favorites'); localStorage.removeItem('tg.grids.guest'); localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['saved'] })); });
+  await tab.goto('/');
+  await expect(tab.locator('#landing')).toBeHidden();
+  await expect(tab.locator('#grid .tile')).toHaveCount(1);
+  await tab.locator('#grid .close').click();
+  await expect(tab.locator('#landing')).toBeVisible();
 });

@@ -706,6 +706,7 @@ function columnsFor(count, w, h) {
   return cols;
 }
 function layout() {
+  renderLanding();
   const n = tiles.size;
   if (n < 2) { focused = null; pins = []; }
   // the front row has its own order: the pins as pinned or dragged, then the spotlight last, below or right of them
@@ -985,17 +986,35 @@ function renderList() {
   renderEmpty();
 }
 function renderEmpty() {
+  renderLanding();
   const connected = !!library?.user;
   $('#top').hidden = connected || (accountReady && !library?.clientId);
   $('#top').disabled = !accountReady;
-  $('#guest').textContent = connected ? tr('Rechercher un streamer') : tr('Continuer sans compte');
-  $('#empty p').textContent = connected ? tr('Retrouve les chaînes que tu suis sur Twitch. Choisis un stream dans la liste pour commencer.') : tr('Connecte ton compte Twitch pour retrouver tes follows et regarder plusieurs streams sur un seul écran.');
+  $('#empty p').textContent = connected ? tr('Ta grille est vide. Tes follows sont dans la liste, les directs en premier.') : tr('Ta grille est vide. Trois gestes et tes streams sont côte à côte.');
 }
 function findStreamer() {
   document.body.classList.remove('collapsed');
   $('#q').focus();
   save();
 }
+// The landing covers the app until the visitor connects, has favorites or open tiles, or continues without an account (remembered for this tab only).
+let landingWanted = false;   // "Revoir la présentation" brings the landing back even with favorites or a dismissed visit
+function renderLanding() {
+  const pending = !accountReady && (readStored('tg.session', '', sessionStorage) || readStored('tg.oauth', null, sessionStorage));
+  const openTiles = restored ? order.length : (readStored('tg.layout.guest', {}).order?.length || 0);
+  document.body.classList.toggle('landing', landingWanted || !library?.user && !pending && !favorites.length && !openTiles && !readStored('tg.landing', false, sessionStorage));
+  for (const button of document.querySelectorAll('#landing .landing-connect')) { button.hidden = accountReady && !library?.clientId; button.disabled = !accountReady; }
+}
+const landingObserver = new IntersectionObserver(entries => {
+  for (const entry of entries) if (entry.isIntersecting) { entry.target.classList.add('in'); landingObserver.unobserve(entry.target); }
+}, { rootMargin: '0px 0px -15% 0px' });
+function splitReveal() {   // one span per word so the tagline lights up word by word as it scrolls into view
+  for (const el of document.querySelectorAll('#landing .reveal')) {
+    el.innerHTML = el.textContent.trim().split(/\s+/).map((word, i) => `<span style="transition-delay:${i * 40}ms">${escapeHTML(word)}</span>`).join(' ');
+    for (const word of el.children) landingObserver.observe(word);
+  }
+}
+for (const el of document.querySelectorAll('#landing .rise')) landingObserver.observe(el);
 async function search() {
   searchController?.abort();
   const version = ++searchVersion, query = $('#q').value.trim();
@@ -1078,6 +1097,10 @@ $('#add-login').onclick = () => {
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !$('#add-login').hidden) $('#add-login').click(); };
 $('#top').onclick = $('#connect').onclick = () => { saveCurrentLayout(); library.connect().catch(handleError); };
 $('#guest').onclick = findStreamer;
+for (const button of document.querySelectorAll('#landing .landing-connect')) button.onclick = $('#top').onclick;
+for (const button of document.querySelectorAll('#landing .landing-guest')) button.onclick = () => { landingWanted = false; writeStored('tg.landing', true, sessionStorage); renderLanding(); findStreamer(); };
+$('#show-landing').onclick = () => { landingWanted = true; renderLanding(); $('#landing').scrollTop = 0; $('#landing-main').focus({ preventScroll: true }); };
+$('#landing-language').onchange = e => setPreference('language', e.target.value);
 $('#disconnect').onclick = () => disconnect();
 async function init() {
   rebuild(); loadPlayer();
@@ -1094,6 +1117,8 @@ async function init() {
   updateAccount(); rebuild(); switchLayout(library.user ? 'connected' : 'guest'); await refresh();
 }
 initWorkspace();
+addEventListener('preferenceschange', () => { $('#landing-language').value = preferences.language; splitReveal(); });
+$('#landing-language').value = preferences.language; splitReveal();
 init().catch(handleError);
 setInterval(() => { if (!document.hidden) refresh(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

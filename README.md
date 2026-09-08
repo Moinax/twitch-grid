@@ -14,9 +14,13 @@ Le bouton au-dessus de la recherche ouvre les grilles nommées. Chaque mode cons
 
 Le menu d’une collaboration propose aussi de créer une grille nommée avec ses participants en direct. La grille précédente reste enregistrée. Le streamer d’origine est mis en avant s’il est en direct, avec les autres lecteurs sans son. Les réglages et les grilles restent accessibles par leurs icônes lorsque la sidebar est repliée.
 
+## Page d’accueil
+
+Une page de présentation couvre toute la fenêtre, sans la sidebar, tant que le visiteur n’a ni session Twitch, ni favori, ni tuile ouverte. Elle décrit chaque fonction, propose « Connecter Twitch » comme action principale et « Continuer sans compte » pour ouvrir la sidebar avec le focus sur la recherche. Ce second choix est retenu pour l’onglet en cours seulement, jamais dans le stockage local : un nouvel onglet retrouve la page tant que rien n’a été ajouté. Le sélecteur de langue de la barre utilise les mêmes préférences que les réglages de l’application ; le thème suit le réglage enregistré ou le système.
+
 ## Ta liste de streamers
 
-L’accueil propose « Connecter Twitch » et « Continuer sans compte ». Ce second bouton ouvre la sidebar et met le focus sur la recherche, sans mémoriser de choix. L’accueil reste affiché tant qu’aucune tuile n’est ouverte, même avec des favoris. L’icône Twitch de la sidebar reste accessible ; une icône de déconnexion la remplace quand un compte est connecté.
+Tant qu’aucune tuile n’est ouverte, même avec des favoris, la grille affiche un panneau de démarrage en trois étapes : trouver une chaîne, l’ajouter, la mettre en avant. « Rechercher un streamer » ouvre la sidebar et met le focus sur la recherche. Sans compte, un lien « Connecter Twitch » reste disponible, et « Revoir la présentation » rouvre la page d’accueil, même avec des favoris. L’icône Twitch de la sidebar reste accessible ; une icône de déconnexion la remplace quand un compte est connecté.
 
 Sans connexion, cherche un streamer par pseudo ou lien Twitch directement dans la sidebar. Les résultats affichent son avatar, sa catégorie et son statut au moment de la recherche. L’étoile ajoute la chaîne aux favoris de ce navigateur. Si la recherche est indisponible, l’ajout direct par pseudo reste possible.
 
