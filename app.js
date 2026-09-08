@@ -1,8 +1,7 @@
 const $ = s => document.querySelector(s);
 const list = $('#list'), grid = $('#grid');
 const tiles = new Map();   // twitch login -> { el, player, bar }
-let streamers = [], focused = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
-let chatOpen = false, chatPosition = 'auto';
+let streamers = [], focused = null, pins = [], locked = false, mutedAll = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
 const collaborations = new Map();
 const collaborationIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>';
 
@@ -10,10 +9,10 @@ const collaborationIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill=
 // Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
 let gridStore = null;
 function currentLayout() {
-  return { order: [...order], focused, allPaused, chatOpen, chatPosition,
+  return { order: [...order], focused, pins: [...pins], locked, mutedAll, allPaused,
     channels: order.map(login => { const {twitch,display,profileUrl}=tiles.get(login).channel; return {twitch,display,profileUrl}; }),
     collapsed: document.body.classList.contains('collapsed'),
-    ...Object.fromEntries(['muted','pinned','volume','paused'].map(key => [key,Object.fromEntries([...tiles].map(([login,t]) => [login,t[key]]))])) };
+    ...Object.fromEntries(['muted','pinned','volume','paused','chatOpen','chatPosition'].map(key => [key,Object.fromEntries([...tiles].map(([login,t]) => [login,t[key]]))])) };
 }
 function save() {
   if (!restored) return;
@@ -31,10 +30,15 @@ function restore() {
   const st = gridStore?.active.layout || readStored('tg.layout.' + layoutMode, {});
   const savedChannels = Array.isArray(st.channels) ? st.channels : [];
   allPaused = !!st.allPaused;
-  chatOpen = st.chatOpen === true;
-  chatPosition = st.chatPosition === 'below' ? 'bottom' : ['auto', 'top', 'bottom', 'left', 'right'].includes(st.chatPosition) ? st.chatPosition : 'auto';
-  for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel(savedChannels.find(x => x?.twitch === login) || { twitch: login }); if (s) add(s, st.muted?.[login] ?? true, st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login]); }
+  // chat settings live per stream; older layouts stored one value for the whole grid
+  const perTile = (value, login) => value && typeof value === 'object' ? value[login] : value;
+  const chatPositionOf = value => value === 'below' ? 'bottom' : ['auto', 'top', 'bottom', 'left', 'right'].includes(value) ? value : 'auto';
+  mutedAll = Array.isArray(st.mutedAll) ? st.mutedAll.filter(validLogin) : null;   // a global mute outranks whatever the tiles saved
+  for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel(savedChannels.find(x => x?.twitch === login) || { twitch: login }); if (s) add(s, !!mutedAll || (st.muted?.[login] ?? true), st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login], perTile(st.chatOpen, login) === true, chatPositionOf(perTile(st.chatPosition, login))); }
   focused = tiles.has(st.focused) ? st.focused : null;
+  pins = (Array.isArray(st.pins) ? st.pins : []).filter(login => tiles.has(login) && login !== focused);
+  locked = st.locked === true;
+  paintMuteAll();
   $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
   document.body.classList.toggle('collapsed', st.collapsed ?? innerWidth <= 700);
   layout();
@@ -56,7 +60,7 @@ function switchLayout(mode) {
   }
   gridStore = new GridStore(mode);
   renderGridLauncher();
-  allPaused = false;
+  allPaused = false; locked = false; mutedAll = null; paintMuteAll();
   $('#playall').textContent = '⏸\uFE0E';
   layout();
   restore();
@@ -95,9 +99,9 @@ function layoutChat(t) {
   // Compare the rendered video size after reserving space for each possible chat position.
   const belowVideo = Math.min(width, (height - chatHeight) * ratio);
   const rightVideo = Math.min(width - chatWidth, height * ratio);
-  const position = chatPosition === 'auto'
+  const position = t.chatPosition === 'auto'
     ? (height - width / ratio >= minChatHeight || belowVideo + 24 >= rightVideo ? 'bottom' : 'right')
-    : chatPosition;
+    : t.chatPosition;
   t.body.dataset.chatPosition = position;
   t.body.style.setProperty('--chat-width', chatWidth + 'px');
   t.body.style.setProperty('--video-height', Math.min(width / ratio, height - chatHeight) + 'px');
@@ -105,11 +109,11 @@ function layoutChat(t) {
 }
 function syncChat() {
   for (const [login, t] of tiles) {
-    const visible = restored && chatOpen && t.controls;
+    const visible = restored && t.chatOpen && t.controls;
     t.chat.hidden = !visible;
     t.chatOptions.hidden = !t.controls;
     if (!t.controls) t.chatOptions.open = false;
-    t.chatOptions.querySelector('select').value = chatPosition;
+    t.chatOptions.querySelector('select').value = t.chatPosition;
     const button = t.bar.querySelector('.chat-toggle');
     button.setAttribute('aria-expanded', String(visible));
     button.title = visible ? tr('Masquer le chat') : tr('Afficher le chat');
@@ -162,15 +166,15 @@ function updateCollaborationButtons(t) {
     const present = tiles.has(participant.twitch);
     row.querySelector('small').textContent = present ? tr('Déjà dans la grille') : participant.online ? participant.game || tr('En direct') : tr('Hors ligne');
     const button = row.querySelector('button');
-    button.disabled = present || !participant.online;
+    button.disabled = present || !participant.online || locked;
     button.textContent = present ? tr('Ajouté') : tr('Ajouter');
   }
   t.collaboration.querySelector('.create-collaboration-grid').disabled = !t.participants.some(s => s.online);
-  t.collaboration.querySelector('.add-collaboration').disabled = !t.participants.some(s => s.online && !tiles.has(s.twitch));
+  t.collaboration.querySelector('.add-collaboration').disabled = locked || !t.participants.some(s => s.online && !tiles.has(s.twitch));
 }
 function addCollaborators(t, participants) {
   const missing = participants.filter(s => s.online && !tiles.has(s.twitch));
-  if (!missing.length) return;
+  if (!missing.length || locked) return;
   // Keep the existing single player in the spotlight when its partners are added.
   if (tiles.size === 1) focused = order[0];
   for (const participant of missing) add(participant);
@@ -247,9 +251,10 @@ async function refreshCollaborations() {
 // half-visible tile still spins
 const io = new IntersectionObserver(es => es.forEach(e => { const t = tiles.get(e.target.dataset.login); if (t) { t.visible = e.intersectionRatio >= 0.5; sync(t); mark(t); } }), { root: grid, threshold: 0.5 });
 // a relayout flickers visibility for a frame or two: let it settle before touching the player
-// An expanded tile leaves the grid's box, so the observer may report it hidden; a tile with
-// its sound on keeps playing wherever it is, the sound is the point
-const onScreen = t => t.visible || !t.muted || expanded === t.el.dataset.login;
+// Expanded and front tiles sit fixed over the grid's box, outside its containing block, so the observer never sees
+// them: they are on screen by construction. A tile with its sound on keeps playing wherever it is, the sound is the point
+const seen = t => t.visible || t.el.classList.contains('big') || expanded === t.el.dataset.login;
+const onScreen = t => seen(t) || !t.muted;
 // Firefox refuses an audible (re)start in an iframe that was never clicked, and the player then sits paused for good:
 // start muted, always allowed, and the watchdog gives the sound back once it plays (no restart in that)
 function start(t) { if (!t.ready) return; if (!t.muted && t.player.getPlayerState().playback !== 'Playing') applyMuted(t, true); t.player.play(); t.nudgedAt = Date.now(); }
@@ -277,14 +282,14 @@ function mark(t) {
   const st = t.player.getPlayerState();
   const want = !allPaused && !t.paused && onScreen(t), playing = st.playback === 'Playing';
   t.el.classList.toggle('loading', want && !playing);
-  t.el.classList.toggle('partial', !allPaused && !t.paused && !t.visible && !playing);   // on screen but not enough for the player to start
+  t.el.classList.toggle('partial', !allPaused && !t.paused && !seen(t) && !playing);   // on screen but not enough for the player to start
   updateAudioOverlay();
 }
 
 let audioOverlayFocus = null;
 function updateAudioOverlay() {
   const overlay = $('#audio-overlay');
-  const needed = !activated && !allPaused && [...tiles.values()].some(t =>
+  const needed = !activated && !allPaused && !mutedAll && [...tiles.values()].some(t =>   // a global mute wants silence, not a prompt
     !t.paused && !t.muted && t.volume > 0 && t.channel.online !== false &&
     !t.el.classList.contains('offline') && !t.playbackError);
   if (needed === !overlay.hidden) return;
@@ -392,12 +397,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) hideP
 
 // Sidebar and Twitch account integration.
 function toggle(s) {
-  if (focused && focused !== s.twitch) {
-    if (!tiles.has(s.twitch)) add(s);
-    focus(s.twitch);
-  } else {
-    tiles.has(s.twitch) ? remove(s.twitch) : add(s);
-  }
+  // the sidebar fills the grid; only a lone spotlight, with nothing pinned, hands its place to the stream clicked
+  if (focused && !pins.length && focused !== s.twitch) { if (tiles.has(s.twitch) || add(s)) focus(s.twitch); }
+  else tiles.has(s.twitch) ? remove(s.twitch) : add(s);
   if (innerWidth <= 700) { document.body.classList.add('collapsed'); save(); }
   renderList();
 }
@@ -418,15 +420,17 @@ function updateTileInfo(t, s) {
   }
 }
 
-function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
-  if (tiles.has(s.twitch)) return;
-  if (!window.Twitch?.Player) { notice(tr('Le lecteur Twitch est indisponible. Recharge la page pour réessayer.')); return; }
+function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chatOpen = false, chatPosition = 'auto') {
+  if (tiles.has(s.twitch)) return true;
+  if (locked && restored) { notice(tr('Grille verrouillée : déverrouille-la pour ajouter un stream.')); return false; }
+  if (!window.Twitch?.Player) { notice(tr('Le lecteur Twitch est indisponible. Recharge la page pour réessayer.')); return false; }
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Revenir à la grille" data-i18n-title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause" data-i18n-title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume"><output></output></div>`;
-  const [snd, min, fs, close] = ['.snd', '.min', '.fs', '.close'].map(selector => el.querySelector(selector));
-  min.onclick = e => { e.stopPropagation(); focus(s.twitch); };
+  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Épingler" data-i18n-title="Épingler" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Revenir à la grille" data-i18n-title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="drop" data-i18n="Déposer ici">Déposer ici</div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause" data-i18n-title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume"><output></output></div>`;
+  const [snd, min, spot, fs, close] = ['.snd', '.min', '.spotlight', '.fs', '.close'].map(selector => el.querySelector(selector));
+  min.onclick = e => { e.stopPropagation(); minimize(s.twitch); };
+  spot.onclick = e => { e.stopPropagation(); pin(s.twitch); };
   fs.onclick = e => { e.stopPropagation(); setExpanded(expanded === s.twitch ? null : s.twitch); };
   fs.title = tr('Agrandir dans la fenêtre');
   fs.setAttribute('aria-label', fs.title);
@@ -442,27 +446,28 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   volumeSound.onclick = snd.onclick;
   vol.before(volumeSound);
   const bar = el.querySelector('.bar');
-  bar.onclick = () => expanded === s.twitch ? setExpanded(null) : focus(s.twitch);
   el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
   // ponytail: reorder via CSS `order` only — moving an iframe in the DOM reloads the player
-  bar.draggable = true;
-  bar.ondragstart = e => { dragging = s.twitch; document.body.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
-  el.ondragover = e => { e.preventDefault(); el.classList.add('over'); };
-  el.ondragleave = () => el.classList.remove('over');
-  el.ondrop = e => { e.preventDefault(); move(dragging, s.twitch); };
+  bar.ondragstart = e => {
+    dragging = s.twitch; document.body.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
+    for (const [login, t] of tiles) { t.el.classList.toggle('drop-target', canDrop(login)); t.el.classList.toggle('dragged', login === s.twitch); }
+  };
+  el.ondragover = e => { if (!canDrop(s.twitch)) return; e.preventDefault(); el.classList.add('over'); };
+  el.ondragleave = e => { if (!el.contains(e.relatedTarget)) el.classList.remove('over'); };
+  el.ondrop = e => { e.preventDefault(); if (canDrop(s.twitch)) move(dragging, s.twitch); };
   close.onclick = e => { e.stopPropagation(); remove(s.twitch); renderList(); };
   translateTree(el);
   grid.append(el);
-  const t = { el, bar, visible: true, muted, volume, paused, pinned, ready: false, ppIcon, body: el.querySelector('.tile-body'), chat: el.querySelector('.chat'), chatOptions: el.querySelector('.chat-options') };
+  const t = { el, bar, visible: true, muted, volume, paused, pinned, chatOpen, chatPosition, ready: false, ppIcon, body: el.querySelector('.tile-body'), chat: el.querySelector('.chat'), chatOptions: el.querySelector('.chat-options') };
   t.chat.id = 'chat-' + s.twitch;
   t.chat.setAttribute('aria-label', tr('Chat de {name}', {name:s.display}));
   const chatButton = bar.querySelector('.chat-toggle');
   chatButton.setAttribute('aria-controls', t.chat.id);
-  chatButton.onclick = e => { e.stopPropagation(); chatOpen = !chatOpen; syncChat(); save(); };
+  chatButton.onclick = e => { e.stopPropagation(); t.chatOpen = !t.chatOpen; syncChat(); save(); };
   t.chatOptions.onclick = e => e.stopPropagation();
   t.chatOptions.ontoggle = () => { if (t.chatOptions.open) closeTileMenus(false, t.chatOptions); };
   t.chatOptions.ondragstart = e => { e.preventDefault(); e.stopPropagation(); };
-  t.chatOptions.querySelector('select').onchange = e => { chatPosition = e.target.value; syncChat(); save(); };
+  t.chatOptions.querySelector('select').onchange = e => { t.chatPosition = e.target.value; syncChat(); save(); };
   t.chatOptions.querySelector('a').href = `https://www.twitch.tv/popout/${s.twitch}/chat?popout=` + (document.documentElement.dataset.theme === 'dark' ? '&darkpopout=1' : '');
   setupCollaboration(t);
   updateTileInfo(t, s);
@@ -473,6 +478,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false) {
   chatResize.observe(t.body);
   order.push(s.twitch);
   layout();
+  return true;
 }
 
 // Twitch only accepts the controls option when creating an embed. Recreate the changed
@@ -545,6 +551,7 @@ function readNativeControls(t) {
   if (t.pendingMute) {
     if (audio.muted === t.pendingMute.value || Date.now() - t.pendingMute.at > 2000) t.pendingMute = null;
   } else if (t.nativeAudio && audio.muted !== t.nativeAudio.muted) {
+    if (mutedAll && !audio.muted) { setMuted(t, false); return; }   // silenced again: the global mute holds
     t.muted = audio.muted;
     if (t.muted) t.pinned = false;
     changed = true;
@@ -568,25 +575,55 @@ function remove(login, updateLayout = true) {
   tiles.get(login).el.remove();
   tiles.delete(login);
   order.splice(order.indexOf(login), 1);
+  pins = pins.filter(l => l !== login);
   if (focused === login) focused = null;
   if (updateLayout) layout();
 }
 
 function clearTiles() {
   for (const login of [...tiles.keys()]) remove(login, false);
-  focused = null;
+  focused = null; pins = [];
 }
 
 function move(from, to) {
   if (!from || from === to) return;
-  order.splice(order.indexOf(from), 1);
-  order.splice(order.indexOf(to), 0, from);
+  const roles = [role(from), role(to)];
+  if (roles[0] === roles[1]) {
+    // within a row the tile slides to the target: the index taken before the removal lands it after the target when
+    // moving down, before it when moving up. The pinned row keeps its own order, the grid order is left alone
+    const row = roles[0] === 'pinned' ? pins : order;
+    const i = row.indexOf(from), j = row.indexOf(to);
+    row.splice(i, 1);
+    row.splice(j, 0, from);
+  } else {
+    // across rows the dropped tile takes the pin slot or the spotlight of the one it replaces, which takes the dropped
+    // tile's role; the grid order never moves. A tile reaching the front gets the sound, one leaving it hands it back
+    const toIdx = pins.indexOf(to), fromIdx = pins.indexOf(from);
+    if (toIdx >= 0) pins[toIdx] = from; else if (fromIdx >= 0) pins[fromIdx] = to;
+    if (focused === to) focused = from; else if (focused === from) focused = to;
+    for (const [login, before, after] of [[from, roles[0], roles[1]], [to, roles[1], roles[0]]]) {
+      const t = tiles.get(login);
+      readNativeControls(t);
+      if (after === 'side') { if (!t.pinned) setMuted(t, true); }
+      else if (before === 'side') setMuted(t, false);
+    }
+  }
   layout();
 }
 
-function setMuted(t, m) { t.muted = m; if (t.ready) applyMuted(t, m); paint(t); }
+// the global mute outranks every intent, and keeps track of the tiles that would have sound for its release
+function setMuted(t, m) {
+  if (mutedAll) {
+    const login = t.el.dataset.login;
+    mutedAll = m ? mutedAll.filter(l => l !== login) : [...new Set([...mutedAll, login])];
+    m = true;
+  }
+  t.muted = m; if (t.ready) applyMuted(t, m); paint(t);
+}
 function paint(t) {
   t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned);
+  const spot = t.el.querySelector('.spotlight'), pinned = pins.includes(t.el.dataset.login);
+  spot.title = tr(pinned ? 'Désépingler' : 'Épingler'); spot.setAttribute('aria-label', spot.title); spot.setAttribute('aria-pressed', String(pinned));
   for (const button of t.el.querySelectorAll('.snd')) {
     button.title = t.pinned ? tr('Désépingler le son') : tr('Épingler le son');
     button.setAttribute('aria-label', button.title);
@@ -601,7 +638,7 @@ function setExpanded(login) {
     const active = name === expanded;
     t.el.classList.toggle('expanded', active);
     t.el.inert = !!expanded && !active;
-    t.bar.draggable = tiles.size > 1 && !active;
+    t.bar.draggable = !expanded && canDrag(name);
     const button = t.bar.querySelector('.fs');
     button.title = active ? tr('Revenir à la disposition précédente') : tr('Agrandir dans la fenêtre');
     button.setAttribute('aria-label', button.title);
@@ -611,10 +648,11 @@ function setExpanded(login) {
   }
   syncChat();
 }
-// the spotlight brings the sound along; leaving it gives it back unless the button pinned it
+// the front row holds the pinned tiles plus one spotlight: the spotlight brings the sound along and gives it back when it
+// leaves unless the button pinned it; pinning keeps a tile in front and brings its sound as well
 function focus(login) {
   if (expanded) setExpanded(null);
-  if (tiles.size < 2) return;
+  if (tiles.size < 2 || pins.includes(login)) return;
   const prev = focused;
   if (prev) readNativeControls(tiles.get(prev));
   focused = focused === login ? null : login;
@@ -622,37 +660,107 @@ function focus(login) {
   if (focused) setMuted(tiles.get(focused), false);
   layout();
 }
+function pin(login, value = !pins.includes(login)) {
+  if (expanded) setExpanded(null);
+  if (tiles.size < 2 || value === pins.includes(login)) return;
+  if (value) {
+    pins.push(login);
+    if (focused === login) focused = null;
+    setMuted(tiles.get(login), false);   // coming to the front always brings the sound
+  } else {
+    // an unpinned tile stays in front as the spotlight, and the previous spotlight steps aside as it would on a click
+    pins = pins.filter(l => l !== login);
+    const prev = focused;
+    focused = login;
+    if (prev && prev !== login) { readNativeControls(tiles.get(prev)); if (!tiles.get(prev).pinned) setMuted(tiles.get(prev), true); }
+  }
+  layout();
+}
+// every tile but the spotlight drags, and any other tile takes the drop
+const role = login => pins.includes(login) ? 'pinned' : login === focused ? 'focused' : 'side';
+const canDrag = login => tiles.size > 1 && login !== expanded && login !== focused;
+const canDrop = login => !!dragging && dragging !== login;
+// back to the grid, whatever kept the tile in front
+function minimize(login) {
+  if (focused === login) { focus(login); return; }
+  if (!pins.includes(login)) return;
+  pins = pins.filter(l => l !== login);
+  readNativeControls(tiles.get(login));
+  if (!tiles.get(login).pinned) setMuted(tiles.get(login), true);
+  layout();
+}
+function unpinAll() {
+  for (const login of pins) { readNativeControls(tiles.get(login)); if (!tiles.get(login).pinned) setMuted(tiles.get(login), true); }
+  pins = [];
+  layout();
+}
 
+// the column count whose cells hold the widest 16:9 video: two streams stack on a tall box, sit side by side on a wide one
+function columnsFor(count, w, h) {
+  const bar = parseFloat(getComputedStyle(grid).getPropertyValue('--bar')) || 34;
+  let cols = 1, best = 0;
+  for (let c = 1; c <= count; c++) {
+    const video = Math.min(w / c, (h / Math.ceil(count / c) - bar) * 16 / 9);
+    if (video > best) { best = video; cols = c; }
+  }
+  return cols;
+}
 function layout() {
   const n = tiles.size;
-  if (expanded && n > 1 && expanded !== focused) setExpanded(null);
-  if (n < 2) focused = null;
+  if (n < 2) { focused = null; pins = []; }
+  // the front row has its own order: the pins as pinned or dragged, then the spotlight last, below or right of them
+  const frontOrder = [...pins, ...(focused ? [focused] : [])], front = login => frontOrder.includes(login), count = frontOrder.length;
+  const split = count > 0 && count < n;   // a front row beside a column of small ones; everything in front is a plain grid of full players
+  if (expanded && n > 1 && !front(expanded)) setExpanded(null);
   grid.classList.toggle('single', n === 1);
-  grid.classList.toggle('focused', !!focused);
+  grid.classList.toggle('focused', split);
   for (const [login, t] of tiles) {
-    t.el.classList.toggle('big', login === focused);
-    t.el.style.order = order.indexOf(login);
-    t.bar.draggable = n > 1 && login !== expanded;
-    mountPlayer(t, n === 1 || login === focused);
+    t.el.classList.toggle('big', front(login));
+    t.el.style.order = front(login) ? frontOrder.indexOf(login) : order.indexOf(login);
+    t.bar.draggable = canDrag(login);
+    mountPlayer(t, n === 1 || front(login));
     fit(t.el.querySelector('.player'));
     updateCollaborationButtons(t);
     if (t.collaboration.open) positionCollaborationMenu(t);
   }
-  if (focused) {
-    const wide = innerWidth / innerHeight > 2;   // ultrawide → two side columns
-    grid.style.setProperty('--cols', wide ? 2 : 1);
-    grid.style.setProperty('--side', wide ? '30vw' : '22vw');
-    grid.style.gridTemplateColumns = '';
-    grid.style.gridTemplateRows = `repeat(${Math.max(Math.ceil((n - 1) / (wide ? 2 : 1)), 1)}, var(--tile-h))`;
-  } else {
-    // the column count whose cells hold the widest 16:9 video: two streams stack on a tall grid, sit side by side on a wide one
-    const w = grid.clientWidth || innerWidth, h = grid.clientHeight || innerHeight, bar = parseFloat(getComputedStyle(grid).getPropertyValue('--bar')) || 34;
-    let cols = 1, best = 0;
-    for (let c = 1; c <= n; c++) {
-      const video = Math.min(w / c, (h / Math.ceil(n / c) - bar) * 16 / 9);
-      if (video > best) { best = video; cols = c; }
+  if (split) {
+    // ponytail: front tiles leave the grid flow and are placed by hand in the box the small tiles leave them, since
+    // wrapping them in their own grid would move the iframes and reload the players
+    const box = grid.getBoundingClientRect(), bar = parseFloat(getComputedStyle(grid).getPropertyValue('--bar')) || 34;
+    const below = box.height > box.width;   // a portrait box keeps the small tiles in a strip under the front row instead of a column beside it
+    grid.classList.toggle('below', below);
+    let w = box.width, h = box.height;
+    if (below) {
+      const sideCols = Math.max(1, Math.round(box.width / ((innerHeight * .22 - bar) * 16 / 9))), tileH = box.width / sideCols * 9 / 16 + bar;
+      // the strip shows as many rows as the front row can spare without shrinking its videos
+      const frontCols = columnsFor(count, w, box.height - tileH - 2), frontRows = Math.ceil(count / frontCols);
+      const frontMin = frontRows * ((w - 2 * (frontCols - 1)) / frontCols * 9 / 16 + bar) + 2 * (frontRows - 1);
+      const stripRows = Math.max(1, Math.min(Math.ceil((n - count) / sideCols), Math.floor((box.height - frontMin) / (tileH + 2))));
+      h = box.height - stripRows * (tileH + 2);
+      grid.style.setProperty('--cols', sideCols);
+      grid.style.setProperty('--tile-h', tileH + 'px');
+      grid.style.gridTemplateColumns = `repeat(${sideCols}, 1fr)`;
+      grid.style.gridTemplateRows = `${h}px repeat(${Math.max(Math.ceil((n - count) / sideCols), 1)}, var(--tile-h))`;
+    } else {
+      const wide = innerWidth / innerHeight > 2, sideCols = wide ? 2 : 1;   // ultrawide → two side columns
+      w = box.width - innerWidth * (wide ? .3 : .22) - 2;
+      grid.style.setProperty('--cols', sideCols);
+      grid.style.setProperty('--side', wide ? '30vw' : '22vw');
+      grid.style.removeProperty('--tile-h');
+      grid.style.gridTemplateColumns = '';
+      grid.style.gridTemplateRows = `repeat(${Math.max(Math.ceil((n - count) / sideCols), 1)}, var(--tile-h))`;
     }
-    const rows = Math.ceil(n / cols) || 1;
+    const cols = columnsFor(count, w, h), rows = Math.ceil(count / cols);
+    const cw = (w - 2 * (cols - 1)) / cols, ch = (h - 2 * (rows - 1)) / rows;
+    frontOrder.forEach((login, i) => {
+      const style = tiles.get(login).el.style;
+      style.setProperty('--x', box.left + (i % cols) * (cw + 2) + 'px'); style.setProperty('--y', box.top + Math.floor(i / cols) * (ch + 2) + 'px');
+      style.setProperty('--w', cw + 'px'); style.setProperty('--h', ch + 'px');
+    });
+  } else {
+    grid.classList.remove('below'); grid.style.removeProperty('--tile-h');
+    for (const t of tiles.values()) for (const name of ['--x', '--y', '--w', '--h']) t.el.style.removeProperty(name);
+    const cols = columnsFor(n, grid.clientWidth || innerWidth, grid.clientHeight || innerHeight), rows = Math.ceil(n / cols) || 1;
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
   }
@@ -663,6 +771,18 @@ function layout() {
 }
 
 $('#toggle').onclick = () => { hidePreview(); document.body.classList.toggle('collapsed'); save(); };
+// one button silences everything and gives the sound back to exactly the streams that had it
+function paintMuteAll() {
+  const button = $('#muteall');
+  button.setAttribute('aria-pressed', String(!!mutedAll));
+  button.title = tr(mutedAll ? 'Réactiver le son' : 'Couper tous les sons'); button.setAttribute('aria-label', button.title);
+}
+$('#muteall').onclick = () => {
+  tiles.forEach(readNativeControls);
+  if (mutedAll) { const loud = mutedAll; mutedAll = null; for (const login of loud) if (tiles.has(login)) setMuted(tiles.get(login), false); }
+  else { const loud = [...tiles].filter(([, t]) => !t.muted).map(([login]) => login); tiles.forEach(t => setMuted(t, true)); mutedAll = loud; }
+  paintMuteAll(); save();
+};
 $('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(t => { sync(t); mark(t); }); save(); };
 onpagehide = saveCurrentLayout;
 function tick() {
@@ -694,11 +814,11 @@ addEventListener('keydown', e => {
 // a click on the video lands inside the iframe and never reaches this page: the only trace is the focus leaving for it
 // (Firefox fires blur before it moves activeElement to the iframe, hence the tick)
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') { closeTileMenus(); activate(); } }));
-document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over').forEach(t => t.classList.remove('over')); };
+document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over, .tile.drop-target, .tile.dragged').forEach(t => t.classList.remove('over', 'drop-target', 'dragged')); };
 new ResizeObserver(() => { if (restored) layout(); }).observe(grid);   // window resizes and sidebar toggles both change the grid box
 grid.addEventListener('scroll', () => closeTileMenus(), { passive: true });
 document.onfullscreenchange = () => tiles.forEach(t => { fit(t.el.querySelector('.player')); sync(t); });
-document.onkeydown = e => { if (e.key === 'Escape') { if (closeTileMenus(true)) { e.preventDefault(); return; } if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); } };
+document.onkeydown = e => { if (e.key === 'Escape') { if (closeTileMenus(true)) { e.preventDefault(); return; } if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); else if (pins.length) unpinAll(); } };
 // Check the static app files so a script-only deploy also offers a reload.
 const dev = location.hostname === 'localhost';
 let versionBody;
@@ -735,7 +855,7 @@ function openLiveNotification(login) {
   const t = tiles.get(login);
   if (!t) return;
   if (expanded) setExpanded(null);
-  if (tiles.size > 1 && focused !== login) focus(login);
+  if (tiles.size > 1 && focused !== login && !pins.includes(login)) focus(login);
   if (allPaused) {
     tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
     allPaused = false; $('#playall').textContent = '⏸\uFE0E';
@@ -830,8 +950,10 @@ function renderList() {
     }
     li.querySelector('.g').textContent = [s.online === false ? tr('Hors ligne') : s.online ? tr('En direct') : '', s.game].filter(Boolean).join(' · ') || tr('Chaîne Twitch');
     li.querySelector('.v').textContent = s.online ? s.viewersAmount.formatted || 'LIVE' : '';
-    const play = li.querySelector('.channel');
-    play.disabled = !accountReady;
+    const play = li.querySelector('.channel'), blocked = locked && !tiles.has(s.twitch);
+    play.disabled = !accountReady || blocked;
+    play.title = blocked ? tr('Grille verrouillée') : '';
+    play.classList.toggle('blocked', blocked);
     play.setAttribute('aria-label', tr(tiles.has(s.twitch) ? 'Afficher ou retirer {name}' : 'Regarder {name}', {name:s.display}));
     play.setAttribute('aria-pressed', tiles.has(s.twitch));
     play.onclick = () => { hidePreview(); toggle(s); };

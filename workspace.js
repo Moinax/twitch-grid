@@ -1,14 +1,21 @@
 let gridAction = null;
+function gridSummary(item) {
+  const count=item.layout.order?.length || 0;
+  const text=item.id===gridStore.activeId?tr('Grille actuelle'):count?tr(count===1?'{count} tuile':'{count} tuiles',{count}):tr('Aucune tuile');
+  return item.layout.locked ? text + ' · ' + tr('verrouillée') : text;
+}
 function renderGridLauncher() {
   document.getElementById('current-grid-name').textContent = gridStore ? gridStore.label() : tr('Grille par défaut');
+  const lock = document.getElementById('grid-lock');
+  lock.setAttribute('aria-pressed', String(locked)); lock.disabled = !restored;
+  lock.title = tr(locked ? 'Déverrouiller la grille' : 'Verrouiller la grille'); lock.setAttribute('aria-label', lock.title);
   const menu = document.getElementById('grid-menu-list');
   menu.replaceChildren();
   for (const item of gridStore?.items || []) {
     const button = document.createElement('button'); button.type='button'; button.className='open-grid'; button.dataset.gridId=item.id;
     button.innerHTML='<i class="grid-mark"></i><span><strong></strong><small></small></span>';
     button.querySelector('strong').textContent=gridStore.label(item);
-    const count=item.layout.order?.length || 0;
-    button.querySelector('small').textContent=item.id===gridStore.activeId?tr('Grille actuelle'):count?tr(count===1?'{count} tuile':'{count} tuiles',{count}):tr('Aucune tuile');
+    button.querySelector('small').textContent=gridSummary(item);
     button.setAttribute('aria-current',String(item.id===gridStore.activeId));
     button.onclick=()=>{ document.getElementById('grid-switcher').open=false; switchNamedGrid(item.id); };
     menu.append(button);
@@ -28,8 +35,7 @@ function renderSavedGrids() {
     row.innerHTML='<button type="button" class="open-grid"><i class="grid-mark"></i><span><strong></strong><small></small></span></button><button type="button" class="rename-grid icon-button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button><button type="button" class="delete-grid icon-button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></button>';
     const open=row.querySelector('.open-grid');
     open.querySelector('strong').textContent=gridStore.label(item);
-    const count=item.layout.order?.length || 0;
-    open.querySelector('small').textContent=item.id===gridStore.activeId?tr('Grille actuelle'):count?tr(count===1?'{count} tuile':'{count} tuiles',{count}):tr('Aucune tuile');
+    open.querySelector('small').textContent=gridSummary(item);
     open.setAttribute('aria-current',String(item.id===gridStore.activeId));
     open.title=tr('Ouvrir cette grille'); open.disabled=!restored;
     open.onclick=()=>{ switchNamedGrid(item.id); document.getElementById('grids-dialog').close(); };
@@ -102,7 +108,8 @@ function submitGridForm(event) {
     if (kind==='collaboration') {
       const channels=[...new Map(participants.filter(s=>s.online).map(s=>[s.twitch,s])).values()];
       const main=channels.find(s=>s.twitch===source.twitch) || channels[0];
-      snapshot={...snapshot,order:channels.map(s=>s.twitch),channels,focused:channels.length>1?main?.twitch:null,muted:Object.fromEntries(channels.map(s=>[s.twitch,s!==main]))};
+      // a multi-stream opens with everyone pinned, each with its own chat, and locked so nobody else joins by accident
+      snapshot={...snapshot,order:channels.map(s=>s.twitch),channels,pins:channels.map(s=>s.twitch),locked:true,muted:Object.fromEntries(channels.map(s=>[s.twitch,s!==main]))};
     }
     restored=false;clearTiles();gridStore.create(name,snapshot);restore();renderList();refresh();
   }
@@ -132,7 +139,7 @@ function refreshPreferences() {
     const s=(library.user?follows:favorites).find(s=>s.twitch===login);
     if(s) toast.querySelector('b').textContent=tr('{name} est en direct',{name:s.display});
   }
-  syncChat(); hidePreview();
+  syncChat(); hidePreview(); paintMuteAll();
   document.getElementById('language-setting').value=preferences.language;
   document.getElementById('theme-setting').value=preferences.theme;
 }
@@ -141,6 +148,7 @@ function initWorkspace() {
   document.getElementById('grids-shortcut').onclick=openGrids;
   document.getElementById('grids-open').onclick=()=>{document.getElementById('grid-switcher').open=false;openGrids();};
   document.getElementById('grid-switcher').ontoggle=e=>{ if (e.target.open) { closeTileMenus(false,e.target); hidePreview(); } };
+  document.getElementById('grid-lock').onclick=()=>{ if (!restored) return; locked=!locked; renderList(); layout(); };
   document.getElementById('language-setting').value=preferences.language;
   document.getElementById('theme-setting').value=preferences.theme;
   document.getElementById('language-setting').onchange=e=>setPreference('language',e.target.value);
