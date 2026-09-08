@@ -985,7 +985,7 @@ function renderList() {
       indicator.setAttribute('aria-label', indicator.title);
       li.querySelector('.name').after(indicator);
     }
-    li.querySelector('.g').textContent = [s.online === false ? tr('Hors ligne') : s.online ? tr('En direct') : '', s.game].filter(Boolean).join(' · ') || tr('Chaîne Twitch');
+    li.querySelector('.g').textContent = [s.online === false ? tr('Hors ligne') : '', s.game].filter(Boolean).join(' · ') || tr('Chaîne Twitch');
     li.querySelector('.v').textContent = s.online ? s.viewersAmount.formatted || 'LIVE' : '';
     const play = li.querySelector('.channel'), blocked = locked && !tiles.has(s.twitch);
     play.disabled = !accountReady || blocked;
