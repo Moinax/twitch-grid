@@ -51,13 +51,13 @@ test('favorites survive reload; grid, focus, sound and removal remain usable', a
   await page.reload();
   await expect(page.locator('#grid .tile')).toHaveCount(2);
   await expect(page.locator('#grid [data-login="zerator"]')).toHaveClass(/big/);
-  await expect(page.locator('#playall')).toHaveText('▶︎');
+  await expect(page.locator('#playall')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#list [data-login="zerator"] .favorite').click();
   await expect(page.locator('#list li')).toHaveCount(1);
   await page.reload();
   await expect(page.locator('#grid .tile')).toHaveCount(2);
   await expect(page.locator('#list li')).toHaveCount(1);
-  await page.locator('#grid .big .min').click();
+  await page.locator('#grid .big .spotlight').click();
   await page.locator('#grid [data-login="zerator"] .close').click();
   await expect(page.locator('#grid .tile')).toHaveCount(1);
   expect(errors).toEqual([]);
@@ -366,7 +366,7 @@ test('one tile has native controls without spotlight and switches back after add
   await page.clock.runFor(2500);
   await page.evaluate(() => { window.singlePlayer = tiles.get('one').player; });
   await one.locator('.bar b').click();
-  expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer && pins.length === 0)).toBe(true);
+  expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer)).toBe(true);
   const bounds = await one.boundingBox(), gridBounds = await page.locator('#grid').boundingBox();
   expect(bounds.width).toBeCloseTo(gridBounds.width, 0);
   await page.evaluate(() => { const p = tiles.get('one').player; p.pause(); p.setVolume(0.25); p.setMuted(true); p.setQuality('720p60'); });
@@ -397,116 +397,78 @@ test('removing the second tile clears a saved spotlight without recreating the r
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   await expect(page.locator('#grid .spotlight')).toBeHidden();
   expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer)).toBe(true);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).pins)).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).focused)).toBeNull();
 });
-test('pins keep tiles in front beside a single spotlight, each with full controls', async ({ page }) => {
+test('the spotlight button and a click on a small tile bring one stream in front with the sound', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
   for (const login of ['one', 'two', 'three']) { await favorite(page, login); await page.locator(`#list [data-login="${login}"] .channel`).click(); }
   const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]'), three = page.locator('#grid [data-login="three"]');
-  // the sidebar fills a plain grid; a click on a tile makes it the spotlight
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   await expect(page.locator('#grid .tile iframe[data-controls="false"]')).toHaveCount(3);
   await three.locator('.player').click();
   await expect(three.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'false');
   await expect(page.locator('#grid')).toHaveClass(/focused/);
-  await expect(three.locator('.spotlight')).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate(() => ({ focused, pins, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'three', pins: [], muted: [true, true, false] });
-  const alone = await three.boundingBox();
-  // pinning the spotlight frees it: the next side tile joins the pinned one in front, with the sound
-  await three.locator('.spotlight').click();
   await expect(three.locator('.spotlight')).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => ({ focused, pins }))).toEqual({ focused: null, pins: ['three'] });
-  await page.evaluate(() => { window.pinnedPlayer = tiles.get('three').player; });
-  await one.locator('.player').click();
-  await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
-  await expect(three.locator('iframe')).toHaveAttribute('data-controls', 'true');
-  expect(await page.evaluate(() => ({ focused, pins, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'one', pins: ['three'], muted: [false, true, false] });
-  // the front tiles split the box left of the side column, the spotlight after the pinned ones; the small tile keeps its column
-  const a = await three.boundingBox(), b = await one.boundingBox(), c = await two.boundingBox();
-  expect(a.width).toBeCloseTo(alone.width, 0); expect(a.height + b.height).toBeLessThanOrEqual(alone.height);
-  expect(b.y).toBeGreaterThan(a.y + a.height - 1); expect(c.x).toBeGreaterThan(a.x + a.width);
-  // tiles in front trade the remove button for a way back to the grid, which drops the pin as well
-  for (const tile of [one, three]) { await expect(tile.locator('.close')).toBeHidden(); await expect(tile.locator('.min')).toBeVisible(); }
-  await expect(two.locator('.min')).toBeHidden(); await expect(two.locator('.close')).toBeVisible();
-  await three.locator('.min').click();
-  expect(await page.evaluate(() => ({ focused, pins, muted: tiles.get('three').muted }))).toEqual({ focused: 'one', pins: [], muted: true });
+  await expect(three.locator('.spotlight')).toHaveAttribute('title', 'Revenir à la grille');
+  await expect(one.locator('.spotlight')).toHaveAttribute('title', 'Spotlight');
+  expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'three', muted: [true, true, false] });
+  // the spotlight keeps its remove button; the button in its bar brings it back to the grid
+  await expect(three.locator('.close')).toBeVisible();
   await three.locator('.spotlight').click();
-  await page.evaluate(() => { window.pinnedPlayer = tiles.get('three').player; });
-  expect(await page.evaluate(() => ({ focused, pins }))).toEqual({ focused: 'one', pins: ['three'] });
-  // another side tile replaces the unpinned spotlight, never the pinned one
+  expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: null, muted: [true, true, true] });
+  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
+  // the button also brings a small tile in front; another tile replaces it, and the sound follows
+  await one.locator('.spotlight').click();
+  expect(await page.evaluate(() => focused)).toBe('one');
   await two.locator('.player').click();
   await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'false');
-  expect(await page.evaluate(() => ({ focused, pins, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'two', pins: ['three'], muted: [true, false, false] });
-  // with pins in front, a stream from the sidebar joins the side
+  expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'two', muted: [true, false, true] });
+  // a stream from the sidebar takes the spotlight's place
   await favorite(page, 'four'); await page.locator('#list [data-login="four"] .channel').click();
-  const four = page.locator('#grid [data-login="four"]');
-  await expect(four.locator('iframe')).toHaveAttribute('data-controls', 'false');
-  expect(await page.evaluate(() => focused)).toBe('two');
-  expect(await page.evaluate(() => tiles.get('three').player === window.pinnedPlayer)).toBe(true);
-  // Escape drops the spotlight first, then the pins (once the sidebar preview is out of the way)
+  expect(await page.evaluate(() => focused)).toBe('four');
+  await expect(page.locator('#grid [data-login="four"] iframe')).toHaveAttribute('data-controls', 'true');
+  // Escape drops the spotlight once the sidebar preview is out of the way
   await page.locator('#q').focus(); await expect.poll(() => page.evaluate(() => previewRow)).toBeNull();
   await page.keyboard.press('Escape');
-  expect(await page.evaluate(() => ({ focused, pins }))).toEqual({ focused: null, pins: ['three'] });
-  expect((await three.boundingBox()).height).toBeCloseTo(alone.height, 0);
-  await page.keyboard.press('Escape');
-  expect(await page.evaluate(() => ({ focused, pins, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: null, pins: [], muted: [true, true, true, true] });
-  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
+  expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: null, muted: [true, true, true, true] });
   await expect(page.locator('#grid .tile iframe[data-controls="false"]')).toHaveCount(4);
-  // everyone pinned is a plain grid of full players; unpinning with a free spotlight keeps the tile in front
-  for (const tile of [one, two, three, four]) await tile.locator('.spotlight').click();
-  await expect(page.locator('#grid .tile iframe[data-controls="true"]')).toHaveCount(4);
-  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
-  await four.locator('.spotlight').click();
-  expect(await page.evaluate(() => ({ focused, pins }))).toEqual({ focused: 'four', pins: ['one', 'two', 'three'] });
-  await expect(page.locator('#grid .tile iframe[data-controls="true"]')).toHaveCount(4);
-  // unpinning with a spotlight already taken keeps the tile in front and sends the former spotlight aside
-  await one.locator('.spotlight').click();
-  expect(await page.evaluate(() => ({ focused, pins, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'one', pins: ['two', 'three'], muted: [false, false, false, true] });
-  await expect(four.locator('iframe')).toHaveAttribute('data-controls', 'false');
-  await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
+  // removing the spotlight itself clears the front
+  await one.locator('.player').click();
+  await one.locator('.close').click();
+  expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: null, count: 3 });
   expect(errors).toEqual([]);
 });
-test('tiles drag onto any other tile, sliding within a row and trading roles across rows', async ({ page }) => {
+test('tiles drag onto any other tile: sliding within the grid order, or taking the spotlight when dropped on it', async ({ page }) => {
   const errors = await setup(page);
-  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four'], focused: 'one', pins: ['two', 'three'] })));
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four'], focused: 'one' })));
   await page.goto('/');
   const tile = login => page.locator(`#grid [data-login="${login}"]`);
-  const state = () => page.evaluate(() => ({ order, focused, pins, muted: Object.fromEntries([...tiles].map(([login, t]) => [login, t.muted])) }));
-  // the spotlight never drags; every other tile does, and its bar says so
+  const state = () => page.evaluate(() => ({ order, focused }));
   expect(await page.evaluate(() => [...tiles].map(([login, t]) => [login, t.bar.draggable]))).toEqual([['one', false], ['two', true], ['three', true], ['four', true]]);
   await expect(tile('one').locator('.bar')).toHaveCSS('cursor', 'default');
   await expect(tile('two').locator('.bar')).toHaveCSS('cursor', 'grab');
-  // every other tile shows a drop zone, brighter under the cursor
+  // every other tile shows a drop zone, brighter under the cursor, the spotlight included
   await page.evaluate(() => tiles.get('two').bar.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })));
   await expect(page.locator('body')).toHaveClass(/dragging/);
-  await expect(tile('one').locator('.drop')).toBeVisible(); await expect(tile('four').locator('.drop')).toHaveText('Déposer ici');
-  await expect(tile('two').locator('.drop')).toBeHidden();
+  await expect(tile('four').locator('.drop')).toBeVisible(); await expect(tile('four').locator('.drop')).toHaveText('Déposer ici');
+  await expect(tile('one').locator('.drop')).toBeVisible(); await expect(tile('two').locator('.drop')).toBeHidden();
   await page.evaluate(() => tiles.get('four').el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })));
   await expect(tile('four')).toHaveClass(/over/);
   await page.evaluate(() => document.dispatchEvent(new DragEvent('dragend', { bubbles: true })));
   await expect(page.locator('.drop-target')).toHaveCount(0);
-  // within a row the tile slides: after the target going down, before it going up; the pinned row has its own order
-  await tile('three').locator('.bar').dragTo(tile('two'));
-  expect(await state()).toMatchObject({ order: ['one', 'two', 'three', 'four'], pins: ['three', 'two'] });
-  await tile('three').locator('.bar').dragTo(tile('two'));
-  expect(await state()).toMatchObject({ order: ['one', 'two', 'three', 'four'], pins: ['two', 'three'] });
-  await tile('four').locator('.bar').dragTo(tile('one'));   // the spotlight is not a side tile: this is a role swap, see below
-  // across rows the dropped tile takes the slot and role of the one it replaces, the grid order never moves, the sound follows the front
-  expect(await state()).toEqual({ order: ['one', 'two', 'three', 'four'], focused: 'four', pins: ['two', 'three'], muted: { one: true, two: true, three: true, four: false } });
-  await favorite(page, 'five'); await page.locator('#list [data-login="five"] .channel').click();
-  await tile('five').locator('.bar').dragTo(tile('two'));
-  expect(await state()).toEqual({ order: ['one', 'two', 'three', 'four', 'five'], focused: 'four', pins: ['five', 'three'], muted: { one: true, two: true, three: true, four: false, five: false } });
-  await expect(tile('five').locator('iframe')).toHaveAttribute('data-controls', 'true');
-  await expect(tile('two').locator('iframe')).toHaveAttribute('data-controls', 'false');
-  await tile('three').locator('.bar').dragTo(tile('four'));
-  expect(await state()).toEqual({ order: ['one', 'two', 'three', 'four', 'five'], focused: 'three', pins: ['five', 'four'], muted: { one: true, two: true, three: true, four: false, five: false } });
-  // with everything in front the grid shows the front order: the pins first, the spotlight last
-  await tile('one').locator('.spotlight').click(); await tile('two').locator('.spotlight').click();
-  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
-  expect(await page.evaluate(() => Object.fromEntries([...tiles].map(([login, t]) => [login, +t.el.style.order])))).toEqual({ five: 0, four: 1, one: 2, two: 3, three: 4 });
-  expect((await state()).order).toEqual(['one', 'two', 'three', 'four', 'five']);
+  // the tile slides: after the target going down, before it going up
+  await tile('two').locator('.bar').dragTo(tile('four'));
+  expect(await state()).toEqual({ order: ['one', 'three', 'four', 'two'], focused: 'one' });
+  await tile('two').locator('.bar').dragTo(tile('three'));
+  expect(await state()).toEqual({ order: ['one', 'two', 'three', 'four'], focused: 'one' });
+  await tile('four').locator('.bar').dragTo(tile('one'));   // dropped on the spotlight: four takes it with the sound, one goes back to its place in the grid
+  expect(await state()).toEqual({ order: ['one', 'two', 'three', 'four'], focused: 'four' });
+  expect(await page.evaluate(() => [...tiles.values()].map(t => t.muted))).toEqual([true, true, true, false]);
+  await expect(tile('four').locator('.player iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(tile('one').locator('.player iframe')).toHaveAttribute('data-controls', 'false');
+  expect(await page.evaluate(() => Object.fromEntries([...tiles].map(([login, t]) => [login, +t.el.style.order])))).toEqual({ one: 0, two: 1, three: 2, four: 0 });
   expect(errors).toEqual([]);
 });
 test('a portrait grid keeps the small tiles in a strip under the front row', async ({ page }) => {
@@ -541,6 +503,8 @@ test('the mute-all button silences every stream and gives the sound back to thos
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   await button.click();
   await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#tooltip')).toHaveText('Réactiver le son');   // the title shows as a tooltip while the pointer stays
+  await page.mouse.move(0, 0);
   await expect(button).toHaveAttribute('title', 'Réactiver le son');
   expect(await state()).toEqual({ mutedAll: ['one', 'two'], muted: [true, true, true], pinned: true });
   // the global mute outranks the spotlight: the tile coming to the front stays silent, the set follows the intent
@@ -575,6 +539,7 @@ test('a locked grid refuses new streams until unlocked and remembers it', async 
   await expect(lock).toHaveAttribute('aria-pressed', 'false');
   await lock.click();
   await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.move(0, 0);
   await expect(lock).toHaveAttribute('title', 'Déverrouiller la grille');
   await expect(two).toBeDisabled();
   await expect(two).toHaveAttribute('title', 'Grille verrouillée');
@@ -614,11 +579,11 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   await volume.press('ArrowRight');
   await expect(volume).toHaveValue('0.55');
   await expect(one).toHaveClass(/loud/);
-  await expect(one.locator('.bar .snd')).toHaveAttribute('aria-pressed','true');
+  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound','on');
   expect(await page.evaluate(() => {
     const t=tiles.get('one');
-    return {muted:t.muted,playerMuted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.paused,otherMuted:tiles.get('two').muted,pins};
-  })).toEqual({muted:false,playerMuted:false,volume:0.55,paused:true,otherMuted:true,pins:[]});
+    return {muted:t.muted,playerMuted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.paused,otherMuted:tiles.get('two').muted};
+  })).toEqual({muted:false,playerMuted:false,volume:0.55,paused:true,otherMuted:true});
   await page.locator('#q').focus();
   await page.locator('#q').hover();
   await expect(one.locator('.ctl')).toBeHidden();
@@ -634,7 +599,7 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   await expect(volume).toHaveValue('0.55');
   expect(errors).toEqual([]);
 });
-test('sound buttons toggle pinning, while spotlight audio stays active until focus changes', async ({ page }) => {
+test('the sound button cycles muted, on and pinned; the spotlight takes the sound from on, never from pinned', async ({ page }) => {
   const errors=await setup(page);
   await page.addInitScript(() => {
     if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two']}));
@@ -644,21 +609,30 @@ test('sound buttons toggle pinning, while spotlight audio stays active until foc
   const header=tile.locator('.bar .snd'),sound=tile.locator('.ctl .snd');
   const state=()=>page.evaluate(()=>({muted:tiles.get('one').muted,pinned:tiles.get('one').pinned}));
   await tile.hover();
-  await expect(sound).toHaveAttribute('aria-pressed','false');
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await expect(sound).toHaveAttribute('title','Allumer le son');
   await sound.click();
+  expect(await state()).toEqual({muted:false,pinned:false});
+  await expect(header).toHaveAttribute('data-sound','on');
+  await expect(header).toHaveAttribute('title','Épingler le son');
+  await header.click();
   expect(await state()).toEqual({muted:false,pinned:true});
-  await expect(header).toHaveAttribute('aria-pressed','true');
-  await expect(sound).toHaveAttribute('aria-pressed','true');
+  await expect(sound).toHaveAttribute('data-sound','pinned');
+  await expect(sound).toHaveAttribute('title','Couper le son');
   await header.click();
   expect(await state()).toEqual({muted:true,pinned:false});
-  await expect(sound).toHaveAttribute('aria-pressed','false');
-  await tile.locator('.player').click();
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await tile.locator('.player').click();   // the spotlight turns its sound on
   expect(await state()).toEqual({muted:false,pinned:false});
-  await header.click();
+  await header.click();   // pinned from the spotlight
   expect(await state()).toEqual({muted:false,pinned:true});
   await other.locator('.player').click();   // two takes the spotlight; the pinned sound of one survives on the side
   expect(await state()).toEqual({muted:false,pinned:true});
   await header.click();
+  expect(await state()).toEqual({muted:true,pinned:false});
+  await tile.hover(); await sound.click();   // on, from the side
+  expect(await state()).toEqual({muted:false,pinned:false});
+  await page.keyboard.press('Escape'); await other.locator('.player').click();   // the spotlight leaves and comes back: a sound merely on is taken away
   expect(await state()).toEqual({muted:true,pinned:false});
   await tile.locator('.player').click();   // back in the spotlight: audible again, and two loses its sound
   expect(await state()).toEqual({muted:false,pinned:false});
@@ -666,10 +640,10 @@ test('sound buttons toggle pinning, while spotlight audio stays active until foc
   await page.keyboard.press('Escape');   // leaving without a pinned sound mutes it
   expect(await state()).toEqual({muted:true,pinned:false});
   await tile.hover();
-  await sound.click();
+  await sound.click(); await header.click();
   await page.reload();
   expect(await state()).toEqual({muted:false,pinned:true});
-  await expect(header).toHaveAttribute('aria-pressed','true');
+  await expect(header).toHaveAttribute('data-sound','pinned');
   expect(errors).toEqual([]);
 });
 test('native pause, volume and mute survive the watchdog and returning to the grid', async ({ page }) => {
@@ -686,7 +660,7 @@ test('native pause, volume and mute survive the watchdog and returning to the gr
   expect(await page.evaluate(() => {
     const t = tiles.get('one'); return { paused:t.paused, muted:t.muted, volume:t.volume, playing:!t.player.paused };
   })).toEqual({ paused:true, muted:true, volume:0.25, playing:false });
-  await page.locator('#grid .big .min').click();
+  await page.locator('#grid .big .spotlight').click();
   await page.clock.runFor(1000);
   await expect(page.locator('#grid [data-login="one"] .ctl input')).toHaveValue('0.25');
   expect(await page.evaluate(() => tiles.get('one').player.paused)).toBe(true);
@@ -876,7 +850,7 @@ for (const single of [true, false]) test(`expand ${single ? 'single' : 'focused'
   await expect(button).toBeVisible();
   await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.ready))).toBe(true);
   const before = await tile.boundingBox();
-  const pinsBefore = await page.evaluate(() => pins);
+  const focusedBefore = await page.evaluate(() => focused);
   await page.evaluate(() => {
     window.expansionPlayers = [...tiles.values()].map(t => t.player);
     window.fullscreenCalls = 0;
@@ -899,7 +873,7 @@ for (const single of [true, false]) test(`expand ${single ? 'single' : 'focused'
   await button.click();
   await page.keyboard.press('Escape');
   await expect(tile).not.toHaveClass(/expanded/);
-  expect(await page.evaluate(() => pins)).toEqual(pinsBefore);
+  expect(await page.evaluate(() => focused)).toEqual(focusedBefore);
   expect(await page.locator('#side').evaluate(el=>el.inert)).toBe(false);
   expect(await page.evaluate(() => [...tiles.values()].every((t,i)=>t.player===window.expansionPlayers[i]))).toBe(true);
   expect(await page.evaluate(() => tiles.get('one').volume)).toBe(0.35);
@@ -1087,17 +1061,24 @@ test('chat uses vertical letterboxing, follows spotlight and preserves players w
   await two.locator('.chat-toggle').click();
   await expect(page.locator('.chat iframe')).toHaveCount(1);
   await expect(two.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/two\/chat/);
-  await one.locator('.spotlight').click();   // a pinned tile carries its own chat beside the spotlight
-  await expect(page.locator('.chat iframe')).toHaveCount(2);
-  await one.locator('.spotlight').click();   // unpinned, one takes the spotlight and two steps aside
+  await one.locator('.spotlight').click();   // one takes the spotlight with its own chat, two steps aside
   await expect(page.locator('.chat iframe')).toHaveCount(1);
-  await one.locator('.min').click();
+  await expect(one.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/one\/chat/);
+  await one.locator('.spotlight').click();   // back to a plain grid: at 950px each, both tiles keep the full player and their own chat
+  await expect(page.locator('#grid .player iframe[data-controls="true"]')).toHaveCount(2);
+  await expect(page.locator('.chat iframe')).toHaveCount(2);
+  await page.setViewportSize({width:1200,height:650});   // stacked 517px videos: simplified players, the chats fold away and remember they were open
   await expect(page.locator('.chat iframe')).toHaveCount(0);
-  await one.locator('.player').click();
+  await one.locator('.spotlight').click();
   await expect(one.locator('.chat')).toBeVisible();
   await one.locator('.chat-toggle').click();
   await expect(page.locator('.chat iframe')).toHaveCount(0);
   await expect(one.locator('.chat-toggle')).toHaveAttribute('aria-expanded','false');
+  await selectChatPosition(one,'left');   // choosing a place opens the chat there and closes the menu
+  await expect(one.locator('.chat iframe')).toHaveCount(1);
+  await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position','left');
+  await expect(one.locator('.chat-toggle')).toHaveAttribute('aria-expanded','true');
+  expect(await one.locator('.chat-options').evaluate(el => el.open)).toBe(false);
   expect(errors).toEqual([]);
 });
 
@@ -1126,11 +1107,12 @@ test('compact chat menu works with keyboard, outside clicks and a narrow viewpor
   await page.locator('.chat-toggle').click();
   await expect(summary).toBeVisible();
   await expect(page.locator('.chat')).toBeHidden();
-  await selectChatPosition(page.locator('#grid .tile'),'left');
-  await expect(page.locator('.chat iframe')).toHaveCount(0);
-  await page.locator('.chat-toggle').click();
+  await selectChatPosition(page.locator('#grid .tile'),'left');   // choosing a place opens the chat there and closes the menu
+  await expect(page.locator('.chat iframe')).toHaveCount(1);
   await expect(options.locator('select')).toBeHidden();
   await expect(page.locator('.tile-body')).toHaveAttribute('data-chat-position','left');
+  await page.locator('.chat-toggle').click();
+  await expect(page.locator('.chat iframe')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -1396,10 +1378,9 @@ test('a collaboration can open in its own named grid without changing the origin
   await page.goto('/');await page.locator('#grid .collaboration summary').click();
   await page.locator('.create-collaboration-grid').click();await nameGrid(page,'Duo du soir');
   await expect(page.locator('#grid .tile')).toHaveCount(3);
-  expect(await page.evaluate(()=>({order,pins,locked,chatOpen:[...tiles.values()].some(t=>t.chatOpen),grids:gridStore.items.map(i=>i.layout.order)})))
-    .toEqual({order:['live','partner','third'],pins:['live','partner','third'],locked:true,chatOpen:false,grids:[['live'],['live','partner','third']]});
-  // a multi-stream opens locked, with everyone pinned in a plain grid of full players and only the source audible
-  await expect(page.locator('#grid .tile iframe[data-controls="true"]')).toHaveCount(3);
+  expect(await page.evaluate(()=>({order,focused,locked,chatOpen:[...tiles.values()].some(t=>t.chatOpen),grids:gridStore.items.map(i=>i.layout.order)})))
+    .toEqual({order:['live','partner','third'],focused:null,locked:true,chatOpen:false,grids:[['live'],['live','partner','third']]});
+  // a multi-stream opens locked as a plain grid, everyone equal, only the source audible
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   await expect(page.locator('#grid-lock')).toHaveAttribute('aria-pressed','true');
   expect(await page.evaluate(()=>add({twitch:'sidebar',display:'Sidebar',profileUrl:''}))).toBe(false);
@@ -1496,4 +1477,88 @@ test('the landing stays away for connected visitors, saved favorites and open ti
   await expect(tab.locator('#grid .tile')).toHaveCount(1);
   await tab.locator('#grid .close').click();
   await expect(tab.locator('#landing')).toBeVisible();
+});
+
+test('a pause right after our own unmute counts as blocked playback, never as a saved pause', async ({ page }) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?login=**', route => route.fulfill({ json: { data: new URL(route.request().url()).searchParams.getAll('login').map(login => ({ broadcaster_login: login, is_live: true, game_name: 'Art', viewer_count: 12 })) } }));   // offline channels never need the overlay
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], focused: 'one', muted: { one: false, two: true } })));
+  await page.goto('/');
+  await expect(page.locator('#audio-overlay')).toBeVisible();
+  await page.evaluate(() => { for (const t of tiles.values()) t.player.play(); });
+  await page.locator('#audio-overlay button').click();
+  await expect(page.locator('#audio-overlay')).toBeHidden();
+  await page.evaluate(() => tiles.get('one').player.emit('pause'));
+  expect(await page.evaluate(() => ({ paused: tiles.get('one').paused, blocked: tiles.get('one').playbackBlocked }))).toEqual({ paused: false, blocked: true });
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).paused.one)).toBe(false);
+  await page.evaluate(() => { tiles.get('one').player.emit('play'); tiles.get('one').player.emit('playing'); });
+  expect(await page.evaluate(() => tiles.get('one').playbackBlocked)).toBe(false);
+  await page.waitForTimeout(1100);
+  await page.evaluate(() => tiles.get('one').player.emit('pause'));
+  expect(await page.evaluate(() => tiles.get('one').paused)).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).paused.one)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('a stream that ends takes its tile away after a minute unless pinned, locked or back online', async ({ page }) => {
+  const errors = await setup(page); await page.clock.install();
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four'], focused: 'one' })));
+  await page.goto('/'); await page.clock.runFor(1000);
+  await expect(page.locator('#grid .tile')).toHaveCount(4);
+  expect(await page.evaluate(() => [...tiles.values()].every(t => t.wasOnline))).toBe(true);
+  await page.evaluate(() => { for (const login of ['one', 'two', 'three', 'four']) tiles.get(login).player.emit('offline'); });
+  await page.clock.runFor(30000);
+  await page.evaluate(() => tiles.get('three').player.emit('online'));
+  await page.clock.runFor(31000);
+  await expect(page.locator('#grid .tile')).toHaveCount(2);   // two and four are gone; the spotlight one stays, three came back
+  expect(await page.evaluate(() => order)).toEqual(['one', 'three']);
+  await expect(page.locator('#notice')).toContainText('four');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual(['one', 'three']);
+  await page.locator('#grid-lock').click();
+  await page.evaluate(() => tiles.get('three').player.emit('offline'));
+  await page.clock.runFor(61000);
+  await expect(page.locator('#grid .tile')).toHaveCount(2);   // a locked grid keeps its tiles
+  await page.locator('#grid-lock').click();
+  await page.evaluate(() => tiles.get('three').player.emit('offline'));   // unlocked: the next offline signal starts a new minute
+  await page.clock.runFor(61000);
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+test('wide enough videos get the full player and wide enough tiles the chat, with a margin and a settle delay on resizes', async ({ page }) => {
+  const errors = await setup(page); await mockChat(page);
+  await page.setViewportSize({ width: 1400, height: 720 });
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], collapsed: true, chatOpen: { one: true } })));
+  await page.goto('/');
+  const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]');
+  // two tiles side by side across 1352px: 676px videos, full players without a spotlight
+  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);
+  await expect(page.locator('#grid')).not.toHaveClass(/focused/);
+  // stacked at 1102px the videos shrink to 579px: under the entry line but above the keep line, the full players stay
+  await page.setViewportSize({ width: 1150, height: 720 });
+  await page.waitForTimeout(600);
+  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);
+  // 526px videos: the simplified players come back once the resize settles
+  await page.setViewportSize({ width: 1100, height: 600 });
+  await expect(page.locator('#grid iframe[data-controls="false"]')).toHaveCount(2);
+  await page.setViewportSize({ width: 1400, height: 720 });
+  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);
+  // the spotlight always has the full player and, at 696px wide, its chat
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.locator('#toggle').click();
+  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);   // stacked at 579px: kept by the margin
+  await one.locator('.spotlight').click();
+  await expect(one.locator('.player iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(two.locator('.player iframe')).toHaveAttribute('data-controls', 'false');
+  await expect(one.locator('.chat-toggle')).toBeVisible();
+  await expect(one.locator('.chat iframe')).toHaveCount(1);
+  // a lone tile on a narrow window keeps the full player but loses the chat until the sidebar folds away
+  await two.locator('.close').click();
+  await page.setViewportSize({ width: 850, height: 600 });
+  await expect(one.locator('.player iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(one.locator('.chat-toggle')).toBeHidden();
+  await expect(one.locator('.chat iframe')).toHaveCount(0);
+  await page.locator('#toggle').click();
+  await expect(one.locator('.chat-toggle')).toBeVisible();
+  await expect(one.locator('.chat iframe')).toHaveCount(1);
+  expect(errors).toEqual([]);
 });

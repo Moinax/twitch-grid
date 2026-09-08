@@ -38,15 +38,27 @@
 
   /* ---- sidebar ---- */
   body { --sb: 300px; }
-  body.collapsed { --sb: 34px; }
+  body.collapsed { --sb: 48px; }
   #side { width: var(--sb); flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
-  body.collapsed #side header { padding: 4px; flex: 1; min-height: 0; display: flex; border-bottom: 0; }
-  body.collapsed #side header > :not(.row), body.collapsed .row > :not(#ctl), body.collapsed #list { display: none; }
-  body.collapsed #side header .row { flex: 1; align-items: stretch; }
-  body.collapsed #ctl { flex-direction: column; flex: 1; }
-  body.collapsed #toggle { order: -1; }
-  body.collapsed #connect, body.collapsed #disconnect { order: 1; }
-  body.collapsed #ctl a { order: 2; margin-top: auto; }
+  /* collapsed: header, row and controls dissolve so every button becomes a column item; the rail sits between the grid and playback groups and the account group pinned at the bottom */
+  body.collapsed #side header, body.collapsed #side header .row, body.collapsed #ctl, body.collapsed #workspace-controls { display: contents; }
+  body.collapsed #side header > :not(.row):not(#workspace-controls), body.collapsed .row > :not(#ctl), body.collapsed #grid-switcher { display: none; }
+  body.collapsed #ctl button, body.collapsed #ctl a, body.collapsed #grid-lock { flex: none; align-self: center; width: 32px; height: 32px; margin-top: 4px; border: 0; border-radius: 6px; background: var(--raised); }
+  body.collapsed #toggle { order: -4; margin: 8px 0 0; }
+  body.collapsed #grids-shortcut { order: -3; margin-top: 12px; }
+  body.collapsed #grid-lock { order: -3; }
+  body.collapsed #grid-lock[aria-pressed="true"] { background: var(--accent-soft); }
+  body.collapsed #playall, body.collapsed #muteall { order: -2; }
+  body.collapsed #playall { margin-top: 12px; }
+  body.collapsed #connect, body.collapsed #disconnect { order: 1; margin-top: 8px; }
+  body.collapsed #ctl a { order: 2; margin-bottom: 8px; }
+  /* collapsed: the list stays as a rail of avatars; the hover preview and the tooltip carry the names */
+  body.collapsed #list { margin-top: 12px; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  body.collapsed #list li { padding: 0 3px 0 0; justify-content: center; }
+  body.collapsed #list .channel { flex: none; position: relative; padding: 4px 0; }
+  body.collapsed #list img { width: 32px; height: 32px; }
+  body.collapsed #list li.live .channel::after { content: ""; position: absolute; right: -2px; bottom: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 2px var(--panel); }
+  body.collapsed #list .n, body.collapsed #list .v, body.collapsed #list .favorite { display: none; }
   .row { display: flex; align-items: center; gap: 8px; }
   .row img { display: block; border-radius: 4px; }
   .row b { flex: 1; }
@@ -56,6 +68,7 @@
   #ctl button, #ctl a { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; border-radius: 4px; background: var(--raised); color: var(--fg); cursor: pointer; font-size: 14px; transition: background-color .2s var(--ease), color .2s var(--ease), transform .2s var(--ease); }
   #ctl button:hover, #ctl a:hover { background: var(--line); }
   #ctl button:disabled { opacity: .5; cursor: default; }
+  #playall[aria-pressed="true"] .pause, #playall[aria-pressed="false"] .play { display: none; }
   #muteall[aria-pressed="true"] { color: #bf94ff; }
   #muteall[aria-pressed="true"] .on, #muteall[aria-pressed="false"] .off { display: none; }
   #ctl a svg { fill: currentColor; }
@@ -81,6 +94,8 @@
   #list .v { color: var(--dim); font-variant-numeric: tabular-nums; }
   #list li.live .v::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--live); margin-right: 5px; }
   #list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  #tooltip { position: fixed; top: 0; left: 0; z-index: 50; max-width: 320px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--fg); font-size: 12px; line-height: 16px; font-weight: 600; text-wrap: pretty; box-shadow: 0 8px 24px #18181880; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
+  #tooltip.in { opacity: 1; }
   #preview { position: fixed; z-index: 10; width: 362px; max-width: calc(100vw - 16px); overflow: hidden; border: 1px solid #9147ff66; border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px #181818cc; animation: menu-in .3s var(--ease); }
   #preview .video { position: relative; aspect-ratio: 16 / 9; background: #000; }
   #preview .player { position: absolute; inset: 0; pointer-events: none; }
@@ -131,9 +146,10 @@
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
   /* a frame around bar + video reads as one card even when the player letterboxes; an overlay, the iframe would hide an outline */
   .tile::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid var(--line); pointer-events: none; transition: border-color .2s var(--ease); }
-  .tile:where(:not(.full-player):not(:fullscreen)):hover::after { border-color: var(--accent); }
-  .tile:where(:not(.full-player):not(:fullscreen)):hover .bar { background: var(--raised); }
-  .tile:where(:not(.full-player):not(:fullscreen)):hover .bar b { color: #fff; }
+  /* every grid tile lights up under the pointer, whatever player it carries; the spotlight and a lone tile have nowhere to go */
+  #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover::after { border-color: var(--accent); }
+  #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar { background: var(--raised); }
+  #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar b { color: #fff; }
   body.dragging iframe { pointer-events: none; }
   /* while a bar is dragged, every other tile offers a drop zone that brightens under the cursor */
   .tile .drop { display: none; position: absolute; inset: 0; z-index: 4; align-items: center; justify-content: center; border: 2px solid #9147ff66; background: #9147ff1f; color: #fff; font-size: 14px; font-weight: 600; letter-spacing: .02em; pointer-events: none; transition: background-color .2s var(--ease), border-color .2s var(--ease); }
@@ -163,9 +179,8 @@
   .tile:not(.full-player):hover .stream-info { visibility: visible; opacity: 1; transform: none; }
   .tile:not(.full-player) .stream-category { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-bottom: 2px; }
   .tile:not(.full-player) .stream-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-  .tile.big .close, .tile:not(.big) .min, #grid.single .spotlight, .tile:not(.full-player) .fs { display: none; }   /* A tile in front goes back to the grid before it can be removed; a single player has nothing to pin against. */
+  #grid.single .spotlight, .tile:not(.full-player) .fs { display: none; }   /* a single player has nothing to come in front of */
   .tile .bar .spotlight[aria-pressed="true"] { color: #bf94ff; }
-  .tile .bar .spotlight[aria-pressed="true"] svg { stroke-width: 3.5; }   /* bold like the sound pin */
   #grid.single .bar, .tile .bar[draggable="false"] { cursor: default; }
   #grid.single .bar::before, .tile .bar[draggable="false"]::before { display: none; }
   .tile .bar svg { display: block; }
@@ -200,7 +215,7 @@
   .live-notification b { font-weight: 700; }
   .live-notification small { display: block; margin-top: 2px; color: #d6baff; font-size: 12px; line-height: 16px; }
   .live-notification .dismiss { flex: none; display: flex; padding: 8px; margin-right: 4px; color: var(--dim); }
-  .tile.pin .snd svg { stroke-width: 3.5; }   /* bold: pinned, the sound survives leaving the spotlight */
+  .tile:not(.pin) .snd .pinned { display: none; }   /* the pin glyph: the sound survives leaving the spotlight */
   .tile .player { flex: 1; min-height: 0; position: relative; }
   .tile-body { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .tile-body > .player { min-width: 0; }
@@ -315,8 +330,8 @@
   @media (max-width: 700px) {
     body { --sb: 280px; }
     #side { position: absolute; inset: 0 auto 0 0; z-index: 20; box-shadow: 8px 0 30px #181818cc; }
-    #main { margin-left: 34px; }
-    #update { left: calc(50% + 17px); max-width: calc(100vw - 60px); }
+    #main { margin-left: 48px; }
+    #update { left: calc(50% + 24px); max-width: calc(100vw - 72px); }
     body.collapsed #side { box-shadow: none; }
     #empty { padding: 20px; }
     #empty h1 { font-size: 30px; line-height: 36px; }
@@ -407,9 +422,10 @@
   [data-theme="light"] #empty h1 { background-image: linear-gradient(90deg, #000, #666); }
   [data-theme="light"] #empty .gh { box-shadow: 0 6px 22px #20202714; }
   [data-theme="light"] #preview { box-shadow: 0 12px 40px #20202733; }
+  [data-theme="light"] #tooltip { box-shadow: 0 8px 24px #20202726; }
   [data-theme="light"] .live-notification { background: #ffffffe6; box-shadow: 0 6px 24px #20202726; }
   [data-theme="light"] .live-notification small { color: #7734d8; }
-  [data-theme="light"] .tile:where(:not(.full-player)):hover .bar b { color: var(--fg); }
+  [data-theme="light"] #grid:not(.single) .tile:where(:not(.big)):hover .bar b { color: var(--fg); }
   [data-theme="light"] .tile.loud .snd { color: #7734d8; }
   [data-theme="light"] .tile .ctl { color: #fff; }
   [data-theme="light"] .tile:not(.full-player) .stream-info { background: #ffffffed; }
@@ -447,7 +463,25 @@
   #landing .landing-guest:hover { background: var(--raised); border-color: var(--dim); transform: translateY(-2px); }
   #landing .cta { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; margin-top: 32px; }
   #landing .cta .landing-connect { padding: 12px 24px; font-size: 16px; line-height: 24px; }
-  #landing .hero { max-width: 1120px; margin: 0 auto; padding: 96px 24px 64px; text-align: center; }
+  #landing .hero { position: relative; max-width: 1120px; margin: 0 auto; padding: 96px 24px 64px; text-align: center; }
+  #landing .hero > *, #landing .final > * { position: relative; }
+  #landing .hero::before, #landing .final::before { content: ""; position: absolute; inset: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M48 .5H.5V48' fill='none' stroke='%239147ff' stroke-opacity='.18'/%3E%3C/svg%3E") 0 0 / 48px 48px; mask-image: radial-gradient(60% 55% at 50% 40%, #000, transparent); -webkit-mask-image: radial-gradient(60% 55% at 50% 40%, #000, transparent); pointer-events: none; animation: drift 60s linear infinite; }
+  @keyframes drift { to { background-position: 48px 48px; } }
+  #landing .mock-row em::before, #landing .mock-bar .bar em { animation: pulse 2s var(--ease) infinite; }
+  @keyframes pulse { 50% { opacity: .4; } }
+  #landing .mock-ctl .range i { animation: volume 5s var(--ease) infinite alternate; }
+  @keyframes volume { from { width: 35%; } to { width: 70%; } }
+  #landing .mock-tile.mock-chat .line { animation: chatline 6s var(--ease) infinite; }
+  #landing .mock-tile.mock-chat .line:nth-child(3) { animation-delay: 1.2s; }
+  #landing .mock-tile.mock-chat .line:nth-child(4) { animation-delay: 2.4s; }
+  #landing .mock-tile.mock-chat .line:nth-child(5) { animation-delay: 3.6s; }
+  @keyframes chatline { 0% { opacity: 0; transform: translateX(-8px); } 12%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  #landing .snd-cycle { position: relative; display: block; width: 14px; height: 14px; }
+  #landing .snd-cycle svg { position: absolute; inset: 0; opacity: 0; animation: soundcycle 7.5s var(--ease) infinite; }
+  #landing .snd-cycle svg:nth-child(2) { animation-delay: 2.5s; }
+  #landing .snd-cycle svg:nth-child(3) { animation-delay: 5s; }
+  @keyframes soundcycle { 0%, 30% { opacity: 1; } 34%, 100% { opacity: 0; } }
+  #landing .snd-cycle svg:first-child { color: var(--dim); }
   #landing .hero > * { animation: rise .9s var(--ease) both; }
   #landing .hero > :nth-child(2) { animation-delay: .1s; }
   #landing .hero > :nth-child(3) { animation-delay: .2s; }
@@ -487,7 +521,7 @@
   #landing .mock-bar .badge { display: flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 4px; background: var(--raised); font-size: 12px; }
   #landing .mock-bar .viewers { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
   #landing .mock-bar > svg { flex: none; color: var(--dim); }
-  #landing .mock-bar > .loud { color: #bf94ff; }
+  #landing .mock-bar .loud { color: #bf94ff; }
   #landing .mock-body { position: relative; flex: 1; }
   #landing .mock-body .play { position: absolute; inset: 0; margin: auto; width: 48px; height: 48px; border-radius: 50%; background: #ffffff1f; border: 1px solid #ffffff40; }
   #landing .mock-body .play::after { content: ""; position: absolute; inset: 0; margin: auto; width: 0; height: 0; border: 8px solid transparent; border-left: 14px solid #fff; transform: translateX(4px); }
@@ -530,7 +564,7 @@
   #landing .qa summary::after { content: ""; flex: none; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--dim); border-bottom: 2px solid var(--dim); transform: translateY(-2px) rotate(45deg); transition: transform .5s var(--ease); }
   #landing .qa[open] summary::after { transform: translateY(2px) rotate(-135deg); }
   #landing .qa p { padding: 0 16px 16px; color: var(--dim); text-wrap: pretty; }
-  #landing .final { padding-bottom: 96px; text-align: center; }
+  #landing .final { position: relative; padding-bottom: 96px; text-align: center; }
   #landing .final h2, #landing .final .sub { margin-left: auto; margin-right: auto; }
   #landing .foot { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; max-width: 1120px; margin: 0 auto; padding: 24px 24px 40px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14px; line-height: 20px; font-weight: 600; }
   #landing .foot nav { display: flex; gap: 16px; }
@@ -559,14 +593,15 @@
     #landing .cards, #landing .steps, #landing .checks { grid-template-columns: 1fr; }
   }
   @media (prefers-reduced-motion: reduce) {
-    #landing .hero > * { animation: none; }
+    #landing .hero > *, #landing .hero::before, #landing .final::before, #landing .mock em, #landing .mock em::before, #landing .mock .range i, #landing .mock .line { animation: none; }
+    #landing .snd-cycle svg { animation: none; } #landing .snd-cycle svg:nth-child(2) { opacity: 1; }
     .rise, #landing .reveal span { opacity: 1; transform: none; filter: none; transition: none; }
   }
   [data-theme="light"] #landing .mock-bar .cat, [data-theme="light"] #landing .mock-bar > .loud, [data-theme="light"] #landing .mock-row > svg { color: #7734d8; }
   [data-theme="light"] #landing h1 { background-image: linear-gradient(90deg, #000, #666); }
   [data-theme="light"] #landing .island { box-shadow: 0 12px 32px #20202726; }
   [data-theme="light"] #landing .mock { box-shadow: 0 32px 80px #20202733, 0 0 0 1px #7734d81f; }
-  [data-theme="light"] #landing .icon, [data-theme="light"] #landing .mock-tile .bar em { color: #7734d8; }
+  [data-theme="light"] #landing .icon, [data-theme="light"] #landing .mock-bar .loud { color: #7734d8; }
   [data-theme="light"] #landing .mock-tile .bar em { color: #ff7775; }
   [data-theme="light"] #landing .checks li::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237734d8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5 9-10'/%3E%3C/svg%3E"); }
 </style>
@@ -604,11 +639,11 @@
         </div>
         <div class="mock-grid">
           <div class="mock-tile big">
-            <div class="mock-bar"><span class="grip"></span><img src="favicon.svg" alt=""><b>maelle_joue</b><span class="info"><span class="cat">Just Chatting</span><span class="title">On teste la grille ce soir avec les copains</span></span><span class="badge"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>3</span><span class="viewers">4,2 k</span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg><svg class="loud" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></div>
+            <div class="mock-bar"><span class="grip"></span><img src="favicon.svg" alt=""><b>maelle_joue</b><span class="info"><span class="cat">Just Chatting</span><span class="title">On teste la grille ce soir avec les copains</span></span><span class="badge"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>3</span><span class="viewers">4,2 k</span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg><span class="snd-cycle loud"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/><g transform="translate(11 -2) scale(.55)" stroke-width="3.5"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></g></svg></span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></div>
             <div class="mock-body"><span class="play"></span></div>
           </div>
           <div class="mock-tile">
-            <div class="mock-bar"><span class="grip"></span><img src="favicon.svg" alt=""><b>kaidenlive</b><span class="badge"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>3</span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6"/><path d="m17 9 6 6"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg></div>
+            <div class="mock-bar"><span class="grip"></span><img src="favicon.svg" alt=""><b>kaidenlive</b><span class="badge"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>3</span><span class="loud"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/><g transform="translate(11 -2) scale(.55)" stroke-width="3.5"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></g></svg></span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></svg><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg></div>
             <div class="mock-body"><span class="play"></span><span class="mock-ctl"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M8 5v14M16 5v14"/></svg><span class="range"><i></i></span>50 %</span></div>
           </div>
           <div class="mock-tile">
@@ -623,14 +658,14 @@
     <section class="block rise" aria-labelledby="why-title">
       <h2 id="why-title" data-i18n="">Twitch, sans jongler entre les onglets</h2>
       <div class="cards">
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M3.5 3.5a12 12 0 0 0 0 17M20.5 3.5a12 12 0 0 1 0 17"/></svg></span><h3 data-i18n="">Tes directs d’abord</h3><p data-i18n="">Les chaînes en direct passent en tête de liste, statut vérifié toutes les 30 secondes. Un clic, et le stream rejoint la grille.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></span><h3 data-i18n="">Un seul son à la fois</h3><p data-i18n="">Le stream en avant a le son, les autres restent muets. Tes volumes et tes pauses survivent au rechargement.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></span><h3 data-i18n="">Une grille qui se souvient</h3><p data-i18n="">Tuiles épinglées, grilles nommées, chat et disposition : tout est enregistré dans ton navigateur et revient tel quel.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4M3.5 3.5a12 12 0 0 0 0 17M20.5 3.5a12 12 0 0 1 0 17"/></svg></span><h3 data-i18n="">Tes directs d’abord</h3><p data-i18n="">Les chaînes en direct passent en tête de liste, statut vérifié toutes les 30 secondes. Un clic, et le stream rejoint la grille ; un stream terminé la quitte tout seul après une minute.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></span><h3 data-i18n="">Un seul son à la fois</h3><p data-i18n="">Le stream en spotlight a le son, les autres restent muets. Épingle le son d’une tuile pour le garder quand le spotlight change.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></span><h3 data-i18n="">Une grille qui se souvient</h3><p data-i18n="">Son épinglé, grilles nommées, chat et disposition : tout est enregistré dans ton navigateur et revient tel quel.</p></article>
       </div>
     </section>
 
     <section class="tagline" aria-label="Twitch grid en une phrase" data-i18n-aria-label="">
-      <p class="reveal" data-i18n="">Un stream en avant, les autres sous la main. Le son que tu choisis, la grille qui s’en souvient.</p>
+      <p class="reveal" data-i18n="">Un stream en spotlight, les autres sous la main. Le son que tu choisis, la grille qui s’en souvient.</p>
     </section>
 
     <section id="features" class="block rise" aria-labelledby="features-title">
@@ -639,16 +674,16 @@
       <div class="cards">
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg></span><h3 data-i18n="">Follows en direct</h3><p data-i18n="">Connecte Twitch : tes chaînes suivies apparaissent, directs en premier, rafraîchies toutes les 30 secondes.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z"/></svg></span><h3 data-i18n="">Favoris sans compte</h3><p data-i18n="">Cherche un pseudo ou colle un lien Twitch. La liste reste dans ce navigateur.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></span><h3 data-i18n="">Mise en avant</h3><p data-i18n="">Clique une tuile pour le lecteur Twitch complet : qualité, volume, plein écran. Les autres gardent des commandes simplifiées.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4zM19 5a10 10 0 0 1 0 14"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></span><h3 data-i18n="">Son par tuile</h3><p data-i18n="">Choisis le stream qui parle. Un bouton coupe tout, un autre met tout en pause.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></span><h3 data-i18n="">Spotlight</h3><p data-i18n="">Passe un stream en spotlight : grand, avec le son et le lecteur Twitch complet. Toute autre tuile assez large reçoit aussi le lecteur complet.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4zM19 5a10 10 0 0 1 0 14"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></span><h3 data-i18n="">Son en trois états</h3><p data-i18n="">Muet, allumé ou épinglé, sur chaque tuile. Allumé suit le spotlight, épinglé reste. Un bouton coupe tout, un autre met tout en pause.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></span><h3 data-i18n="">Notifications de direct</h3><p data-i18n="">Quand une chaîne suivie démarre, une notification l’ajoute à la grille en un clic, avec le son.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span><h3 data-i18n="">Grilles nommées</h3><p data-i18n="">Enregistre plusieurs dispositions : soirée, tournoi, veille. Change de grille sans recharger la page.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg></span><h3 data-i18n="">Collaborations</h3><p data-i18n="">Le chat partagé Twitch révèle les partenaires d’un stream. Ajoute tous les participants en direct d’un coup.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><h3 data-i18n="">Chat intégré</h3><p data-i18n="">Le chat du stream en avant s’ouvre à côté de la vidéo : auto, haut, bas, gauche ou droite.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><h3 data-i18n="">Épingler et verrouiller</h3><p data-i18n="">Garde des tuiles en tête de grille et verrouille la disposition pour éviter les ajouts par erreur.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span><h3 data-i18n="">Agrandir</h3><p data-i18n="">Étends le stream en avant à toute la fenêtre du navigateur. Échap pour revenir.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><h3 data-i18n="">Chat intégré</h3><p data-i18n="">Le chat s’ouvre à côté de toute tuile assez large : auto, haut, bas, gauche ou droite, mémorisé par stream.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><h3 data-i18n="">Grille verrouillée</h3><p data-i18n="">Verrouille la grille pour qu’aucun stream ne s’ajoute par erreur. Un stream terminé quitte la grille après une minute.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span><h3 data-i18n="">Agrandir</h3><p data-i18n="">Étends le stream en spotlight à toute la fenêtre du navigateur. Échap pour revenir.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><h3 data-i18n="">Trois langues, deux thèmes</h3><p data-i18n="">Français, anglais, néerlandais. Clair, sombre ou selon le système, sans recharger les vidéos.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span><h3 data-i18n="">Aperçu au survol</h3><p data-i18n="">Survole une chaîne en direct dans la liste : un aperçu s’ouvre avec le titre et la catégorie du stream.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span><h3 data-i18n="">Sidebar en rail</h3><p data-i18n="">Repliée, la liste devient un rail d’avatars, directs marqués en rouge. Le survol ouvre un aperçu du stream avec son titre et sa catégorie.</p></article>
       </div>
     </section>
 
@@ -657,7 +692,7 @@
       <ol class="steps">
         <li><b>1</b><h3 data-i18n="">Connecte Twitch, ou cherche un pseudo</h3><p data-i18n="">Le bouton ouvre Twitch et ramène tes follows. Sans compte, la recherche suffit.</p></li>
         <li><b>2</b><h3 data-i18n="">Remplis la grille</h3><p data-i18n="">Clique les chaînes en direct dans la liste. Glisse les tuiles pour les ranger.</p></li>
-        <li><b>3</b><h3 data-i18n="">Choisis l’avant et le son</h3><p data-i18n="">Clique une vidéo pour la mettre en avant. Le son la suit, le reste se tait.</p></li>
+        <li><b>3</b><h3 data-i18n="">Choisis le spotlight et le son</h3><p data-i18n="">Passe une vidéo en spotlight. Le son la suit, le reste se tait.</p></li>
       </ol>
     </section>
 
@@ -682,6 +717,7 @@
         <details class="qa"><summary data-i18n="">Où sont enregistrées mes grilles ?</summary><p data-i18n="">Dans le stockage local de ton navigateur, séparément pour le mode connecté et le mode sans compte. Change de navigateur et tu repars de zéro.</p></details>
         <details class="qa"><summary data-i18n="">Comment sont détectées les collaborations ?</summary><p data-i18n="">Grâce aux sessions de chat partagé de Twitch. Une collaboration qui n’utilise pas cette fonction n’est pas détectée.</p></details>
         <details class="qa"><summary data-i18n="">Ça marche sur mobile ?</summary><p data-i18n="">Oui. La liste se replie, le chat passe sous la vidéo et les grilles restent accessibles. Un grand écran reste plus confortable pour plusieurs streams.</p></details>
+        <details class="qa"><summary data-i18n="">Pourquoi certaines tuiles ont le lecteur Twitch complet et d’autres non ?</summary><p data-i18n="">Dès qu’une tuile est assez large, elle reçoit le lecteur complet et, plus large encore, son chat. Réduis la fenêtre et elle repasse aux commandes simplifiées, sans rien perdre.</p></details>
         <details class="qa"><summary data-i18n="">C’est gratuit ?</summary><p data-i18n="">Oui, sans publicité ni version payante. Le code est public sous licence MIT ; tu peux aussi l’héberger de ton côté.</p></details>
       </div>
     </section>
@@ -708,7 +744,7 @@
 </section>
 <aside id="side">
   <header>
-    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>Twitch grid</b><div id="ctl"><button id="connect" title="Connecter Twitch" data-i18n-title="Connecter Twitch" aria-label="Connecter Twitch" data-i18n-aria-label="Connecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6V1.714h14.571Z"/></svg></button><button id="disconnect" title="Déconnecter Twitch" data-i18n-title="Déconnecter Twitch" aria-label="Déconnecter Twitch" data-i18n-aria-label="Déconnecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button><a href="https://github.com/Moinax/twitch-grid" target="_blank" rel="noopener" title="Mettre une étoile sur GitHub" data-i18n-title="Mettre une étoile sur GitHub"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a><button id="grids-shortcut" class="workspace-shortcut" title="Grilles" data-i18n-title="Grilles" aria-label="Grilles" data-i18n-aria-label="Grilles"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button id="playall" title="Play/pause tous les streams" data-i18n-title="Play/pause tous les streams">⏸&#xFE0E;</button><button id="muteall" title="Couper tous les sons" data-i18n-title="Couper tous les sons" aria-label="Couper tous les sons" data-i18n-aria-label="Couper tous les sons" aria-pressed="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button id="toggle" title="Afficher/masquer la liste" data-i18n-title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
+    <div class="row"><img src="favicon.svg" width="20" height="20" alt=""><b>Twitch grid</b><div id="ctl"><button id="connect" title="Connecter Twitch" data-i18n-title="Connecter Twitch" aria-label="Connecter Twitch" data-i18n-aria-label="Connecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6V1.714h14.571Z"/></svg></button><button id="disconnect" title="Déconnecter Twitch" data-i18n-title="Déconnecter Twitch" aria-label="Déconnecter Twitch" data-i18n-aria-label="Déconnecter Twitch" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button><a href="https://github.com/Moinax/twitch-grid" target="_blank" rel="noopener" title="Mettre une étoile sur GitHub" data-i18n-title="Mettre une étoile sur GitHub"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a><button id="grids-shortcut" class="workspace-shortcut" title="Grilles" data-i18n-title="Grilles" aria-label="Grilles" data-i18n-aria-label="Grilles"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button id="playall" title="Play/pause tous les streams" data-i18n-title="Play/pause tous les streams" aria-label="Play/pause tous les streams" data-i18n-aria-label="Play/pause tous les streams" aria-pressed="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="pause"><path d="M8 5v14M16 5v14"/></g><g class="play"><path d="M7 4v16l13-8z" fill="currentColor"/></g></svg></button><button id="muteall" title="Couper tous les sons" data-i18n-title="Couper tous les sons" aria-label="Couper tous les sons" data-i18n-aria-label="Couper tous les sons" aria-pressed="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button id="toggle" title="Afficher/masquer la liste" data-i18n-title="Afficher/masquer la liste"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path class="in" d="m15 18-6-6 6-6"/><path class="out" d="m9 18 6-6-6-6"/></svg></button></div></div>
     <div id="workspace-controls"><details id="grid-switcher"><summary title="Changer de grille" data-i18n-title="Changer de grille"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span id="current-grid-name">Grille par défaut</span><svg class="chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="grid-menu"><div id="grid-menu-list"></div><button id="grids-open" type="button" data-i18n="Gérer les grilles…">Gérer les grilles…</button></div></details><button id="grid-lock" type="button" aria-pressed="false" title="Verrouiller la grille" data-i18n-title="Verrouiller la grille" aria-label="Verrouiller la grille" data-i18n-aria-label="Verrouiller la grille" disabled><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path class="open" d="M8 11V7a4 4 0 0 1 7.7-1.5"/><path class="closed" d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button></div>
     <div class="search-field">
       <input id="q" type="search" aria-label="Rechercher un streamer" data-i18n-aria-label="Rechercher un streamer" placeholder="Rechercher un streamer…" data-i18n-placeholder="Rechercher un streamer…" autocomplete="off" maxlength="100">
@@ -724,6 +760,7 @@
   <p id="list-empty"></p>
   <footer><div id="preferences"><label title="Langue" data-i18n-title="Langue"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><select id="language-setting" aria-label="Langue" data-i18n-aria-label="Langue"><option value="fr">FR</option><option value="en">EN</option><option value="nl">NL</option></select></label><label title="Thème" data-i18n-title="Thème"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18A9 9 0 0 0 12 3z" fill="currentColor" stroke="none"/></svg><select id="theme-setting" aria-label="Thème" data-i18n-aria-label="Thème"><option value="system">Auto</option><option value="light" data-i18n="Clair">Clair</option><option value="dark" data-i18n="Sombre">Sombre</option></select></label></div></footer>
 </aside>
+<div id="tooltip" role="tooltip" hidden></div>
 <div id="preview" role="tooltip" hidden>
   <div class="video"><div class="player"></div><div class="status"><img alt=""><span></span></div></div>
   <div class="info"><div class="heading"><b class="name"></b><span class="viewers" hidden></span></div><div class="category" hidden></div><div class="stream-title" hidden></div></div>
@@ -737,7 +774,7 @@
     <ol class="start">
       <li><b>1</b><h2 data-i18n="">Trouve une chaîne</h2><span data-i18n="">Dans la liste : tes follows, ou une recherche par pseudo ou lien Twitch.</span></li>
       <li><b>2</b><h2 data-i18n="">Ajoute-la à la grille</h2><span data-i18n="">Un clic sur une chaîne en direct ouvre son lecteur ici.</span></li>
-      <li><b>3</b><h2 data-i18n="">Mets en avant, choisis le son</h2><span data-i18n="">Clique une vidéo pour l’agrandir. Le son la suit, les autres se taisent.</span></li>
+      <li><b>3</b><h2 data-i18n="">Passe en spotlight, choisis le son</h2><span data-i18n="">Clique une vidéo pour l’agrandir. Le son la suit, les autres se taisent.</span></li>
     </ol>
     <button id="guest" data-i18n="Rechercher un streamer">Rechercher un streamer</button>
     <span class="links"><button id="top" class="link" disabled data-i18n="Connecter Twitch">Connecter Twitch</button><button id="show-landing" class="link" type="button" data-i18n="">Revoir la présentation</button></span>

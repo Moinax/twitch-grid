@@ -1,15 +1,16 @@
 const $ = s => document.querySelector(s);
 const list = $('#list'), grid = $('#grid');
 const tiles = new Map();   // twitch login -> { el, player, bar }
-let streamers = [], focused = null, pins = [], locked = false, mutedAll = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
+let streamers = [], focused = null, locked = false, mutedAll = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
 const collaborations = new Map();
 const collaborationIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>';
 
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
 // Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
 let gridStore = null;
+function paintPlayAll() { $('#playall').setAttribute('aria-pressed', String(allPaused)); }
 function currentLayout() {
-  return { order: [...order], focused, pins: [...pins], locked, mutedAll, allPaused,
+  return { order: [...order], focused, locked, mutedAll, allPaused,
     channels: order.map(login => { const {twitch,display,profileUrl}=tiles.get(login).channel; return {twitch,display,profileUrl}; }),
     collapsed: document.body.classList.contains('collapsed'),
     ...Object.fromEntries(['muted','pinned','volume','paused','chatOpen','chatPosition'].map(key => [key,Object.fromEntries([...tiles].map(([login,t]) => [login,t[key]]))])) };
@@ -34,12 +35,13 @@ function restore() {
   const perTile = (value, login) => value && typeof value === 'object' ? value[login] : value;
   const chatPositionOf = value => value === 'below' ? 'bottom' : ['auto', 'top', 'bottom', 'left', 'right'].includes(value) ? value : 'auto';
   mutedAll = Array.isArray(st.mutedAll) ? st.mutedAll.filter(validLogin) : null;   // a global mute outranks whatever the tiles saved
+  batching = true;
   for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel(savedChannels.find(x => x?.twitch === login) || { twitch: login }); if (s) add(s, !!mutedAll || (st.muted?.[login] ?? true), st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login], perTile(st.chatOpen, login) === true, chatPositionOf(perTile(st.chatPosition, login))); }
+  batching = false;
   focused = tiles.has(st.focused) ? st.focused : null;
-  pins = (Array.isArray(st.pins) ? st.pins : []).filter(login => tiles.has(login) && login !== focused);
   locked = st.locked === true;
   paintMuteAll();
-  $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E';
+  paintPlayAll();
   document.body.classList.toggle('collapsed', st.collapsed ?? innerWidth <= 700);
   layout();
   tick();   // right away, not at the first second: a click that lands before it hits the page instead of the video
@@ -61,7 +63,7 @@ function switchLayout(mode) {
   gridStore = new GridStore(mode);
   renderGridLauncher();
   allPaused = false; locked = false; mutedAll = null; paintMuteAll();
-  $('#playall').textContent = '⏸\uFE0E';
+  paintPlayAll();
   layout();
   restore();
   tick();
@@ -109,12 +111,13 @@ function layoutChat(t) {
 }
 function syncChat() {
   for (const [login, t] of tiles) {
-    const visible = restored && t.chatOpen && t.controls;
+    const allowed = t.controls && t.chatFits, visible = restored && t.chatOpen && allowed;
     t.chat.hidden = !visible;
-    t.chatOptions.hidden = !t.controls;
-    if (!t.controls) t.chatOptions.open = false;
+    t.chatOptions.hidden = !allowed;
+    if (!allowed) t.chatOptions.open = false;
     t.chatOptions.querySelector('select').value = t.chatPosition;
     const button = t.bar.querySelector('.chat-toggle');
+    button.hidden = !allowed;
     button.setAttribute('aria-expanded', String(visible));
     button.title = visible ? tr('Masquer le chat') : tr('Afficher le chat');
     button.setAttribute('aria-label', button.title);
@@ -397,15 +400,30 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) hideP
 
 // Sidebar and Twitch account integration.
 function toggle(s) {
-  // the sidebar fills the grid; only a lone spotlight, with nothing pinned, hands its place to the stream clicked
-  if (focused && !pins.length && focused !== s.twitch) { if (tiles.has(s.twitch) || add(s)) focus(s.twitch); }
+  // the sidebar fills the grid; a spotlight hands its place to the stream clicked
+  if (focused && focused !== s.twitch) { if (tiles.has(s.twitch) || add(s)) focus(s.twitch); }
   else tiles.has(s.twitch) ? remove(s.twitch) : add(s);
   if (innerWidth <= 700) { document.body.classList.add('collapsed'); save(); }
   renderList();
 }
 
+// A stream that ends leaves its tile a minute to come back; then the tile goes, unless it is the spotlight or the grid is locked.
+// Only a tile seen live can go: a channel added while offline waits for its stream.
+function trackOnline(t, online) {
+  if (online) { t.wasOnline = true; clearTimeout(t.offlineTimer); t.offlineTimer = null; return; }
+  if (!t.wasOnline || t.offlineTimer) return;
+  t.offlineTimer = setTimeout(() => {
+    t.offlineTimer = null;
+    const login = t.el.dataset.login;
+    if (!tiles.has(login) || locked || focused === login) return;
+    if (!t.el.classList.contains('offline') && t.ready && t.player.getPlayerState().playback === 'Playing') return;   // a stale status against a player that plays
+    remove(login); save();
+    notice(tr('{name} est hors ligne, la tuile a été retirée.', { name: t.channel.display }));
+  }, 60000);
+}
 function updateTileInfo(t, s) {
   t.channel = s;
+  if (typeof s.online === 'boolean') trackOnline(t, s.online);
   renderCollaboration(t, s.online === false ? [] : collaborations.get(s.twitch)?.participants || []);
   t.bar.querySelector('.stream-avatar').src = s.profileUrl;
   t.bar.querySelector('.viewers').textContent = s.online === false ? tr('Hors ligne') : s.viewersAmount.formatted;
@@ -427,10 +445,9 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chat
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><button title="Épingler" data-i18n-title="Épingler" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Revenir à la grille" data-i18n-title="Revenir à la grille" class="min"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="drop" data-i18n="Déposer ici">Déposer ici</div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause" data-i18n-title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume"><output></output></div>`;
-  const [snd, min, spot, fs, close] = ['.snd', '.min', '.spotlight', '.fs', '.close'].map(selector => el.querySelector(selector));
-  min.onclick = e => { e.stopPropagation(); minimize(s.twitch); };
-  spot.onclick = e => { e.stopPropagation(); pin(s.twitch); };
+  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g><g class="pinned" transform="translate(11 -2) scale(.55)" stroke-width="3.5"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></g></svg></button><button title="Spotlight" data-i18n-title="Spotlight" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="12" height="14" rx="1"/><rect x="17" y="5" width="4" height="6" rx="1"/><rect x="17" y="13" width="4" height="6" rx="1"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="drop" data-i18n="Déposer ici">Déposer ici</div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause" data-i18n-title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume"><output></output></div>`;
+  const [snd, spot, fs, close] = ['.snd', '.spotlight', '.fs', '.close'].map(selector => el.querySelector(selector));
+  spot.onclick = e => { e.stopPropagation(); focus(s.twitch); };
   fs.onclick = e => { e.stopPropagation(); setExpanded(expanded === s.twitch ? null : s.twitch); };
   fs.title = tr('Agrandir dans la fenêtre');
   fs.setAttribute('aria-label', fs.title);
@@ -439,9 +456,9 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chat
   const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
   pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
   vol.value = volume; pct.value = Math.round(volume * 100) + '%';
-  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; t.player.setVolume(t.volume); if (!t.controls) t.pinned = true; setMuted(t, false); save(); };
-  // Pinning keeps audio when another stream takes the spotlight.
-  snd.onclick = e => { e.stopPropagation(); t.pinned = !t.pinned; setMuted(t, !t.pinned && !t.controls); save(); };
+  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; t.player.setVolume(t.volume); setMuted(t, false); save(); };
+  // one button cycles the three sound states: muted, on (until the spotlight moves), pinned (until changed here)
+  snd.onclick = e => { e.stopPropagation(); if (t.muted) { t.pinned = false; setMuted(t, false); } else if (!t.pinned) { t.pinned = true; paint(t); } else { t.pinned = false; setMuted(t, true); } save(); };
   const volumeSound = snd.cloneNode(true);
   volumeSound.onclick = snd.onclick;
   vol.before(volumeSound);
@@ -467,7 +484,7 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chat
   t.chatOptions.onclick = e => e.stopPropagation();
   t.chatOptions.ontoggle = () => { if (t.chatOptions.open) closeTileMenus(false, t.chatOptions); };
   t.chatOptions.ondragstart = e => { e.preventDefault(); e.stopPropagation(); };
-  t.chatOptions.querySelector('select').onchange = e => { t.chatPosition = e.target.value; syncChat(); save(); };
+  t.chatOptions.querySelector('select').onchange = e => { t.chatPosition = e.target.value; t.chatOpen = true; t.chatOptions.open = false; syncChat(); save(); };   // choosing a place is asking for the chat
   t.chatOptions.querySelector('a').href = `https://www.twitch.tv/popout/${s.twitch}/chat?popout=` + (document.documentElement.dataset.theme === 'dark' ? '&darkpopout=1' : '');
   setupCollaboration(t);
   updateTileInfo(t, s);
@@ -515,8 +532,9 @@ function mountPlayer(t, controls) {
     sync(t); mark(t);
   });
   for (const event of ['playing', 'play', 'pause', 'ended', 'playbackBlocked', 'offline', 'online', 'error']) player.addEventListener(event, () => {
-    if (!current()) return;
+    if (!current() || unloading) return;   // a player torn down by the navigation is not a viewer pausing
     if (event === 'offline' || event === 'online') t.el.classList.toggle('offline', event === 'offline');
+    if (event === 'offline' || event === 'online' || event === 'playing') trackOnline(t, event !== 'offline');
     if (event === 'playbackBlocked') t.playbackBlocked = true;
     if (event === 'playing' || event === 'offline' || event === 'error') t.playbackBlocked = false;
     if (event === 'error') t.playbackError = true;
@@ -526,13 +544,17 @@ function mountPlayer(t, controls) {
       if (activated) applyMuted(t, t.muted);
     }
     if (controls && (t.hasPlayed || (event === 'play' && t.ready))) {
-      if (event === 'pause' && !allPaused && onScreen(t) && !t.playbackBlocked) t.paused = true;
+      if (event === 'pause' && !allPaused && onScreen(t) && !t.playbackBlocked) {
+        // Firefox answers an unmute in a frame never clicked by pausing the media: blocked playback, not a pause the viewer chose
+        if (Date.now() - (t.unmutedAt || 0) < 1000) t.playbackBlocked = true;
+        else t.paused = true;
+      }
       if (event === 'play') {
         t.paused = false;
         // A native Play resumes this stream even after the global pause.
         if (allPaused) {
           tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
-          allPaused = false; $('#playall').textContent = '⏸\uFE0E';
+          allPaused = false; paintPlayAll();
         }
       }
       t.ppIcon(); save();
@@ -542,6 +564,7 @@ function mountPlayer(t, controls) {
 }
 function applyMuted(t, value) {
   t.pendingMute = { value, at: Date.now() };
+  if (!value) t.unmutedAt = Date.now();
   t.player.setMuted(value);
 }
 function readNativeControls(t) {
@@ -568,46 +591,29 @@ function readNativeControls(t) {
 function remove(login, updateLayout = true) {
   if (expanded === login) setExpanded(null);
   tiles.get(login).player.destroy();
-  clearTimeout(tiles.get(login).timer);
+  clearTimeout(tiles.get(login).timer); clearTimeout(tiles.get(login).offlineTimer);
   ro.unobserve(tiles.get(login).el.querySelector('.player'));
   chatResize.unobserve(tiles.get(login).body);
   io.unobserve(tiles.get(login).el);
   tiles.get(login).el.remove();
   tiles.delete(login);
   order.splice(order.indexOf(login), 1);
-  pins = pins.filter(l => l !== login);
   if (focused === login) focused = null;
   if (updateLayout) layout();
 }
 
 function clearTiles() {
   for (const login of [...tiles.keys()]) remove(login, false);
-  focused = null; pins = [];
+  focused = null;
 }
 
 function move(from, to) {
   if (!from || from === to) return;
-  const roles = [role(from), role(to)];
-  if (roles[0] === roles[1]) {
-    // within a row the tile slides to the target: the index taken before the removal lands it after the target when
-    // moving down, before it when moving up. The pinned row keeps its own order, the grid order is left alone
-    const row = roles[0] === 'pinned' ? pins : order;
-    const i = row.indexOf(from), j = row.indexOf(to);
-    row.splice(i, 1);
-    row.splice(j, 0, from);
-  } else {
-    // across rows the dropped tile takes the pin slot or the spotlight of the one it replaces, which takes the dropped
-    // tile's role; the grid order never moves. A tile reaching the front gets the sound, one leaving it hands it back
-    const toIdx = pins.indexOf(to), fromIdx = pins.indexOf(from);
-    if (toIdx >= 0) pins[toIdx] = from; else if (fromIdx >= 0) pins[fromIdx] = to;
-    if (focused === to) focused = from; else if (focused === from) focused = to;
-    for (const [login, before, after] of [[from, roles[0], roles[1]], [to, roles[1], roles[0]]]) {
-      const t = tiles.get(login);
-      readNativeControls(t);
-      if (after === 'side') { if (!t.pinned) setMuted(t, true); }
-      else if (before === 'side') setMuted(t, false);
-    }
-  }
+  if (to === focused) { focus(from); return; }   // dropped on the spotlight: the tiles trade roles, the grid order stays
+  // the tile slides to the target: the index taken before the removal lands it after the target when moving down, before it when moving up
+  const i = order.indexOf(from), j = order.indexOf(to);
+  order.splice(i, 1);
+  order.splice(j, 0, from);
   layout();
 }
 
@@ -622,12 +628,13 @@ function setMuted(t, m) {
 }
 function paint(t) {
   t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned);
-  const spot = t.el.querySelector('.spotlight'), pinned = pins.includes(t.el.dataset.login);
-  spot.title = tr(pinned ? 'Désépingler' : 'Épingler'); spot.setAttribute('aria-label', spot.title); spot.setAttribute('aria-pressed', String(pinned));
+  const spot = t.el.querySelector('.spotlight'), front = focused === t.el.dataset.login;
+  spot.title = tr(front ? 'Revenir à la grille' : 'Spotlight'); spot.setAttribute('aria-label', spot.title); spot.setAttribute('aria-pressed', String(front));
+  const sound = t.muted ? 'muted' : t.pinned ? 'pinned' : 'on';
   for (const button of t.el.querySelectorAll('.snd')) {
-    button.title = t.pinned ? tr('Désépingler le son') : tr('Épingler le son');
+    button.title = tr(sound === 'muted' ? 'Allumer le son' : sound === 'on' ? 'Épingler le son' : 'Couper le son');
     button.setAttribute('aria-label', button.title);
-    button.setAttribute('aria-pressed', String(t.pinned));
+    button.dataset.sound = sound;
   }
 }
 function setExpanded(login) {
@@ -648,52 +655,19 @@ function setExpanded(login) {
   }
   syncChat();
 }
-// the front row holds the pinned tiles plus one spotlight: the spotlight brings the sound along and gives it back when it
-// leaves unless the button pinned it; pinning keeps a tile in front and brings its sound as well
+// the spotlight brings the sound along and takes it from the tiles merely on; a pinned sound stays
 function focus(login) {
   if (expanded) setExpanded(null);
-  if (tiles.size < 2 || pins.includes(login)) return;
+  if (tiles.size < 2) return;
   const prev = focused;
   if (prev) readNativeControls(tiles.get(prev));
   focused = focused === login ? null : login;
-  if (prev && prev !== focused && !tiles.get(prev).pinned) setMuted(tiles.get(prev), true);
+  for (const [other, o] of tiles) if (other !== focused && !o.pinned && (mutedAll ? mutedAll.includes(other) : !o.muted)) setMuted(o, true);   // the intent counts under a global mute
   if (focused) setMuted(tiles.get(focused), false);
   layout();
-}
-function pin(login, value = !pins.includes(login)) {
-  if (expanded) setExpanded(null);
-  if (tiles.size < 2 || value === pins.includes(login)) return;
-  if (value) {
-    pins.push(login);
-    if (focused === login) focused = null;
-    setMuted(tiles.get(login), false);   // coming to the front always brings the sound
-  } else {
-    // an unpinned tile stays in front as the spotlight, and the previous spotlight steps aside as it would on a click
-    pins = pins.filter(l => l !== login);
-    const prev = focused;
-    focused = login;
-    if (prev && prev !== login) { readNativeControls(tiles.get(prev)); if (!tiles.get(prev).pinned) setMuted(tiles.get(prev), true); }
-  }
-  layout();
-}
-// every tile but the spotlight drags, and any other tile takes the drop
-const role = login => pins.includes(login) ? 'pinned' : login === focused ? 'focused' : 'side';
+}// every tile but the spotlight drags, and any other tile takes the drop
 const canDrag = login => tiles.size > 1 && login !== expanded && login !== focused;
 const canDrop = login => !!dragging && dragging !== login;
-// back to the grid, whatever kept the tile in front
-function minimize(login) {
-  if (focused === login) { focus(login); return; }
-  if (!pins.includes(login)) return;
-  pins = pins.filter(l => l !== login);
-  readNativeControls(tiles.get(login));
-  if (!tiles.get(login).pinned) setMuted(tiles.get(login), true);
-  layout();
-}
-function unpinAll() {
-  for (const login of pins) { readNativeControls(tiles.get(login)); if (!tiles.get(login).pinned) setMuted(tiles.get(login), true); }
-  pins = [];
-  layout();
-}
 
 // the column count whose cells hold the widest 16:9 video: two streams stack on a tall box, sit side by side on a wide one
 function columnsFor(count, w, h) {
@@ -705,13 +679,17 @@ function columnsFor(count, w, h) {
   }
   return cols;
 }
+// the rendered video width that grants the full Twitch player, the tile width or the room under the video that grants the chat,
+// in pixels; the keep values hold what a tile already has so a window near the line does not flap
+const PLAYER_WIDTH = { enter: 640, keep: 560 }, CHAT_WIDTH = { enter: 640, keep: 560 }, CHAT_HEIGHT = { enter: 420, keep: 380 };
+let mountTimer, resizing = false, batching = false;
 function layout() {
+  if (batching) return;   // a restore adds every tile first and lays them out once
   renderLanding();
   const n = tiles.size;
-  if (n < 2) { focused = null; pins = []; }
-  // the front row has its own order: the pins as pinned or dragged, then the spotlight last, below or right of them
-  const frontOrder = [...pins, ...(focused ? [focused] : [])], front = login => frontOrder.includes(login), count = frontOrder.length;
-  const split = count > 0 && count < n;   // a front row beside a column of small ones; everything in front is a plain grid of full players
+  if (n < 2) focused = null;
+  const frontOrder = focused ? [focused] : [], front = login => frontOrder.includes(login), count = frontOrder.length;
+  const split = count > 0 && count < n;   // the spotlight beside a column of small ones
   if (expanded && n > 1 && !front(expanded)) setExpanded(null);
   grid.classList.toggle('single', n === 1);
   grid.classList.toggle('focused', split);
@@ -719,10 +697,6 @@ function layout() {
     t.el.classList.toggle('big', front(login));
     t.el.style.order = front(login) ? frontOrder.indexOf(login) : order.indexOf(login);
     t.bar.draggable = canDrag(login);
-    mountPlayer(t, n === 1 || front(login));
-    fit(t.el.querySelector('.player'));
-    updateCollaborationButtons(t);
-    if (t.collaboration.open) positionCollaborationMenu(t);
   }
   if (split) {
     // ponytail: front tiles leave the grid flow and are placed by hand in the box the small tiles leave them, since
@@ -765,6 +739,30 @@ function layout() {
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
   }
+  // The spotlight and a lone tile always get the full player. Any other tile gets it once wide enough, and its chat wider
+  // still, measured on the tile with a margin either way so a window near the line does not flap. A first mount, a role
+  // change and a tile leaving the front apply now; a change that only comes from a window resize waits for it to settle.
+  const barHeight = parseFloat(getComputedStyle(grid).getPropertyValue('--bar')) || 34;
+  let sizeChange = false;
+  for (const [login, t] of tiles) {
+    const w = t.el.clientWidth, h = t.el.clientHeight - barHeight, video = Math.min(w, h * 16 / 9), spare = h - w * 9 / 16;
+    t.fits = t.sized ? video >= PLAYER_WIDTH.keep : video >= PLAYER_WIDTH.enter;   // the margin protects a player earned by size, not one that came with a role
+    t.chatFits = t.chatFits ? w >= CHAT_WIDTH.keep || spare >= CHAT_HEIGHT.keep : w >= CHAT_WIDTH.enter || spare >= CHAT_HEIGHT.enter;
+    const byRole = n === 1 || front(login), want = byRole || t.fits;
+    if (!t.player || byRole || (t.controls && !t.sized && !want)) mountPlayer(t, want);
+    else if (want !== t.controls) sizeChange = true;
+    t.sized = !byRole && t.controls;
+    fit(t.el.querySelector('.player'));
+    updateCollaborationButtons(t);
+    paint(t);
+    if (t.collaboration.open) positionCollaborationMenu(t);
+  }
+  clearTimeout(mountTimer);
+  const applySizes = () => {
+    for (const [login, t] of tiles) if (tiles.size > 1 && login !== focused && t.fits !== t.controls) { mountPlayer(t, t.fits); t.sized = t.controls; fit(t.el.querySelector('.player')); }
+    syncChat();
+  };
+  if (sizeChange) { if (resizing) mountTimer = setTimeout(applySizes, 300); else applySizes(); }   // only a window resize waits to settle
   syncChat();
   save();
   updateAudioOverlay();
@@ -784,8 +782,45 @@ $('#muteall').onclick = () => {
   else { const loud = [...tiles].filter(([, t]) => !t.muted).map(([login]) => login); tiles.forEach(t => setMuted(t, true)); mutedAll = loud; }
   paintMuteAll(); save();
 };
-$('#playall').onclick = () => { allPaused = !allPaused; $('#playall').textContent = allPaused ? '▶\uFE0E' : '⏸\uFE0E'; tiles.forEach(t => { sync(t); mark(t); }); save(); };
-onpagehide = saveCurrentLayout;
+$('#playall').onclick = () => { allPaused = !allPaused; paintPlayAll(); tiles.forEach(t => { sync(t); mark(t); }); save(); };
+let unloading = false;
+onpagehide = () => { unloading = true; saveCurrentLayout(); };
+// Tooltips: every title shows as a styled tooltip; the attribute moves aside while the pointer or the focus is on the element
+// so the browser's own tooltip stays quiet, and comes back as soon as they leave.
+const tooltip = $('#tooltip');
+let tipTarget = null, tipTimer;
+function stashTitle(el) { if (el.hasAttribute('title')) { el.dataset.tip = el.getAttribute('title'); el.removeAttribute('title'); } }
+function showTip(el, delay) {
+  hideTip();
+  stashTitle(el);
+  if (!el.dataset.tip) return;
+  tipTarget = el;
+  tipTimer = setTimeout(() => {
+    if (tipTarget !== el || !el.isConnected) return;
+    tooltip.textContent = el.dataset.tip; tooltip.hidden = false;
+    const r = el.getBoundingClientRect(), w = tooltip.offsetWidth, h = tooltip.offsetHeight;
+    const x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8);
+    const y = r.bottom + h + 16 > innerHeight ? r.top - h - 8 : r.bottom + 8;
+    tooltip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    tooltip.classList.add('in');
+  }, delay);
+}
+function hideTip() {
+  clearTimeout(tipTimer);
+  if (tipTarget && tipTarget.dataset.tip !== undefined) { tipTarget.setAttribute('title', tipTarget.dataset.tip); delete tipTarget.dataset.tip; }
+  tipTarget = null; tooltip.classList.remove('in'); tooltip.hidden = true;
+}
+const tipSource = target => { const el = target.closest?.('[title], [data-tip]'); return el && el.tagName !== 'IFRAME' ? el : null; };
+document.addEventListener('pointerover', e => { const el = tipSource(e.target); if (el && el !== tipTarget && e.pointerType !== 'touch') showTip(el, 400); });
+document.addEventListener('pointerout', e => { if (tipTarget && !tipTarget.contains(e.relatedTarget)) hideTip(); });
+document.addEventListener('focusin', e => { const el = tipSource(e.target); if (el && el.matches(':focus-visible')) showTip(el, 0); });
+document.addEventListener('focusout', () => { if (tipTarget && !tipTarget.matches(':hover')) hideTip(); });
+document.addEventListener('dragstart', hideTip, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); }, true);
+// a click often changes the title of the button under the pointer: keep it aside and refresh the tooltip
+new MutationObserver(records => { for (const r of records) if (r.target === tipTarget && r.target.hasAttribute('title')) { stashTitle(r.target); tooltip.textContent = r.target.dataset.tip; } })
+  .observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['title'] });
+onpageshow = () => { unloading = false; };
 function tick() {
   // after a reload the page itself has no focus, so a click in a player moves it there without the blur below: catch up
   if (!activated && document.activeElement?.tagName === 'IFRAME') activate();
@@ -816,10 +851,10 @@ addEventListener('keydown', e => {
 // (Firefox fires blur before it moves activeElement to the iframe, hence the tick)
 addEventListener('blur', () => setTimeout(() => { if (document.activeElement?.tagName === 'IFRAME') { closeTileMenus(); activate(); } }));
 document.ondragend = () => { dragging = null; document.body.classList.remove('dragging'); document.querySelectorAll('.tile.over, .tile.drop-target, .tile.dragged').forEach(t => t.classList.remove('over', 'drop-target', 'dragged')); };
-new ResizeObserver(() => { if (restored) layout(); }).observe(grid);   // window resizes and sidebar toggles both change the grid box
+new ResizeObserver(() => { if (restored) { resizing = true; layout(); resizing = false; } }).observe(grid);   // window resizes and sidebar toggles both change the grid box
 grid.addEventListener('scroll', () => closeTileMenus(), { passive: true });
 document.onfullscreenchange = () => tiles.forEach(t => { fit(t.el.querySelector('.player')); sync(t); });
-document.onkeydown = e => { if (e.key === 'Escape') { if (closeTileMenus(true)) { e.preventDefault(); return; } if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); else if (pins.length) unpinAll(); } };
+document.onkeydown = e => { if (e.key === 'Escape') { if (closeTileMenus(true)) { e.preventDefault(); return; } if (expanded) setExpanded(null); else if (previewRow) hidePreview(); else if (focused) focus(focused); } };
 // Check the static app files so a script-only deploy also offers a reload.
 const dev = location.hostname === 'localhost';
 let versionBody;
@@ -856,10 +891,10 @@ function openLiveNotification(login) {
   const t = tiles.get(login);
   if (!t) return;
   if (expanded) setExpanded(null);
-  if (tiles.size > 1 && focused !== login && !pins.includes(login)) focus(login);
+  if (tiles.size > 1 && focused !== login) focus(login);
   if (allPaused) {
     tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
-    allPaused = false; $('#playall').textContent = '⏸\uFE0E';
+    allPaused = false; paintPlayAll();
   }
   t.paused = false; t.ppIcon(); setMuted(t, false); sync(t); mark(t);
   if (innerWidth <= 700) document.body.classList.add('collapsed');
@@ -938,6 +973,7 @@ function renderList() {
     li.className = (s.online === true ? 'live' : s.online === false ? 'off' : '') + (tiles.has(s.twitch) ? ' on' : '');
     li.innerHTML = '<button class="channel"><img alt="" loading="lazy"><span class="n"><span class="name"></span><div class="g"></div></span><span class="v"></span></button><button class="favorite"><svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></button>';
     li.querySelector('img').src = s.profileUrl;
+    li.querySelector('img').title = s.display;   // the collapsed rail shows only the avatar
     li.querySelector('.name').textContent = s.display;
     const participants = s.online === false ? [] : collaborations.get(s.twitch)?.participants || [];
     if (participants.some(p => p.twitch !== s.twitch)) {

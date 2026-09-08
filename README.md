@@ -1,6 +1,6 @@
 # Twitch grid
 
-Plusieurs streams Twitch sur un seul écran, avec une grille réorganisable, un stream en avant et des réglages audio par tuile.
+Plusieurs streams Twitch sur un seul écran, avec une grille réorganisable, un stream en spotlight et des réglages audio par tuile.
 
 Site : https://twitch.moinax.com
 
@@ -8,11 +8,11 @@ Site : https://twitch.moinax.com
 
 La roue dentée ouvre les réglages de langue, français, anglais ou néerlandais, et de thème, système, clair ou sombre. Ces préférences sont communes aux modes connecté et sans compte, enregistrées dans le navigateur et appliquées sans recharger les vidéos. Le thème système suit les changements du système d’exploitation. Les lecteurs et le chat intégrés restent des interfaces Twitch ; leur langue dépend de Twitch.
 
-Le bouton au-dessus de la recherche ouvre les grilles nommées. Chaque mode conserve sa propre collection et sa dernière grille active. L’ancienne grille devient automatiquement la grille par défaut. Chaque modification est enregistrée dans la grille active, y compris les tuiles, leur ordre, le son, les pauses, la mise en avant et le chat.
+Le bouton au-dessus de la recherche ouvre les grilles nommées. Chaque mode conserve sa propre collection et sa dernière grille active. L’ancienne grille devient automatiquement la grille par défaut. Chaque modification est enregistrée dans la grille active, y compris les tuiles, leur ordre, le son, les pauses, le spotlight et le chat.
 
 « Enregistrer sous… » crée une copie avec un nom sans interrompre les lecteurs. « Grille vierge » crée une nouvelle grille vide. La liste permet d’ouvrir, renommer ou supprimer une grille. La suppression demande confirmation ; supprimer la dernière grille recrée une grille par défaut vide. Les favoris restent indépendants des grilles.
 
-Le menu d’une collaboration propose aussi de créer une grille nommée avec ses participants en direct. La grille précédente reste enregistrée. Le streamer d’origine est mis en avant s’il est en direct, avec les autres lecteurs sans son. Les réglages et les grilles restent accessibles par leurs icônes lorsque la sidebar est repliée.
+Le menu d’une collaboration propose aussi de créer une grille nommée avec ses participants en direct. La grille précédente reste enregistrée. Tous les participants en direct s’affichent à égalité dans une grille simple, sans spotlight ; seul le streamer d’origine a le son. Les réglages et les grilles restent accessibles par leurs icônes lorsque la sidebar est repliée. Repliée, la sidebar empile ses actions par groupes : replier, puis grilles et verrou, puis pause et son, le rail d’avatars au centre, et le compte Twitch avec GitHub en bas. Le rail garde la liste sous forme d’avatars : point rouge pour les directs, fond violet pour les chaînes déjà dans la grille, avatar estompé hors ligne. Le survol affiche l’aperçu et le nom, le clic ajoute ou retire la tuile.
 
 ## Page d’accueil
 
@@ -20,39 +20,41 @@ Une page de présentation couvre toute la fenêtre, sans la sidebar, tant que le
 
 ## Ta liste de streamers
 
-Tant qu’aucune tuile n’est ouverte, même avec des favoris, la grille affiche un panneau de démarrage en trois étapes : trouver une chaîne, l’ajouter, la mettre en avant. « Rechercher un streamer » ouvre la sidebar et met le focus sur la recherche. Sans compte, un lien « Connecter Twitch » reste disponible, et « Revoir la présentation » rouvre la page d’accueil, même avec des favoris. L’icône Twitch de la sidebar reste accessible ; une icône de déconnexion la remplace quand un compte est connecté.
+Tant qu’aucune tuile n’est ouverte, même avec des favoris, la grille affiche un panneau de démarrage en trois étapes : trouver une chaîne, l’ajouter, la passer en spotlight. « Rechercher un streamer » ouvre la sidebar et met le focus sur la recherche. Sans compte, un lien « Connecter Twitch » reste disponible, et « Revoir la présentation » rouvre la page d’accueil, même avec des favoris. L’icône Twitch de la sidebar reste accessible ; une icône de déconnexion la remplace quand un compte est connecté.
 
 Sans connexion, cherche un streamer par pseudo ou lien Twitch directement dans la sidebar. Les résultats affichent son avatar, sa catégorie et son statut au moment de la recherche. L’étoile ajoute la chaîne aux favoris de ce navigateur. Si la recherche est indisponible, l’ajout direct par pseudo reste possible.
 
-Le statut des favoris est vérifié au chargement, puis toutes les 30 secondes tant que la page est visible. Le serveur garde les réponses en cache une minute. Une chaîne hors ligne apparaît grisée, même si elle n’a pas diffusé depuis longtemps.
+Le statut des favoris est vérifié au chargement, puis toutes les 30 secondes tant que la page est visible. Le serveur garde les réponses en cache une minute. Une chaîne hors ligne apparaît grisée, même si elle n’a pas diffusé depuis longtemps. Quand un stream ouvert dans la grille se termine, sa tuile attend une minute puis disparaît, avec un message dans la sidebar, sauf si elle est en spotlight ou si la grille est verrouillée. Le retour en direct pendant cette minute annule le retrait. Une chaîne ajoutée alors qu’elle était déjà hors ligne reste en place et attend son direct.
 
 Avec « Connecter Twitch », retrouve tes follows et cherche des streamers directement dans la sidebar. Les chaînes en direct passent en premier. Les statuts se rafraîchissent toutes les 30 secondes et les follows environ toutes les minutes, tant que la page est visible. La connexion remplace les favoris par les follows. Il n’y a plus d’onglet ni de bouton de favoris dans ce mode. Les favoris locaux réapparaissent à la déconnexion.
 
-Chaque mode conserve sa grille dans le stockage local du navigateur : tuiles, ordre, mise en avant, pause, volume et réglages du son. Se connecter sauvegarde la grille sans compte et restaure la grille du mode connecté. Se déconnecter fait l’inverse. Si le mode choisi n’a pas encore de grille, l’accueil s’affiche. Les favoris locaux restent enregistrés.
+Chaque mode conserve sa grille dans le stockage local du navigateur : tuiles, ordre, spotlight, pause, volume et réglages du son. Se connecter sauvegarde la grille sans compte et restaure la grille du mode connecté. Se déconnecter fait l’inverse. Si le mode choisi n’a pas encore de grille, l’accueil s’affiche. Les favoris locaux restent enregistrés.
 
-Quand une chaîne suivie ou un favori passe de hors ligne à en direct, une notification apparaît dans la page. Clique dessus pour ajouter le stream à la grille et le mettre en avant avec le son. Une croix permet de fermer la notification. Les streams déjà en direct au chargement ne déclenchent pas de notification. La détection utilise l’actualisation existante toutes les 30 secondes lorsque la page est visible ; le cache du mode sans compte peut retarder l’annonce d’une minute. Les notifications disparaissent si la chaîne repasse hors ligne, quitte ta liste ou si tu te déconnectes.
+Quand une chaîne suivie ou un favori passe de hors ligne à en direct, une notification apparaît dans la page. Clique dessus pour ajouter le stream à la grille et le passer en spotlight avec le son. Une croix permet de fermer la notification. Les streams déjà en direct au chargement ne déclenchent pas de notification. La détection utilise l’actualisation existante toutes les 30 secondes lorsque la page est visible ; le cache du mode sans compte peut retarder l’annonce d’une minute. Les notifications disparaissent si la chaîne repasse hors ligne, quitte ta liste ou si tu te déconnectes.
 
 Le compte connecté est celui de chaque visiteur. Les follows ne sont pas publiés pour les autres utilisateurs. La session Twitch reste dans l’onglet et disparaît à sa fermeture. Si elle expire, reconnecte-toi. La sidebar revient alors aux favoris locaux.
 
-Une petite icône de groupe signale les collaborations dans la sidebar et le header des tuiles. Dans le header, elle ouvre la liste des participants avec leurs avatars et les boutons Ajouter et Tout ajouter. Seuls les participants en direct absents de la grille sont ajoutés. Les nouveaux lecteurs démarrent sans son ; la mise en avant, les sons et les pauses existants sont conservés. Une tuile seule reste en avant quand ses partenaires sont ajoutés.
+Une petite icône de groupe signale les collaborations dans la sidebar et le header des tuiles. Dans le header, elle ouvre la liste des participants avec leurs avatars et les boutons Ajouter et Tout ajouter. Seuls les participants en direct absents de la grille sont ajoutés. Les nouveaux lecteurs démarrent sans son ; le spotlight, les sons et les pauses existants sont conservés. Une tuile seule reste en spotlight quand ses partenaires sont ajoutés.
 
 La détection utilise les sessions de chat partagé de Twitch, sans ouvrir le chat dans la grille. Elle fonctionne avec ou sans connexion et ne détecte pas les collaborations qui n’utilisent pas cette fonction Twitch. Les résultats sont conservés une minute et revérifiés lors des actualisations. Le mode sans compte utilise les mêmes identifiants serveur que la recherche. Si la détection est indisponible, les icônes sont masquées jusqu’à une actualisation réussie.
 
-## Vue mise en avant
+## Vue spotlight
 
-Une tuile seule affiche directement le lecteur Twitch complet et occupe toute la grille. Cliquer dessus ne change pas de vue. Dès la deuxième tuile, la grille retrouve ses commandes simplifiées et chaque stream peut être mis en avant. Revenir à une seule tuile rétablit le lecteur complet.
+Une tuile seule affiche directement le lecteur Twitch complet et occupe toute la grille. Cliquer dessus ne change pas de vue. Dès la deuxième tuile, la grille retrouve ses commandes simplifiées et chaque stream peut passer en spotlight. Revenir à une seule tuile rétablit le lecteur complet.
 
-Clique une tuile pour afficher le lecteur Twitch complet, avec ses réglages de qualité, son volume, sa pause et son plein écran. Les petites tuiles gardent les commandes simplifiées. Les changements de volume, de son et de pause faits dans le lecteur sont conservés au retour à la grille.
+Clique une tuile pour afficher le lecteur Twitch complet, avec ses réglages de qualité, son volume, sa pause et son plein écran. Le bouton « Spotlight » de la barre fait la même chose et ramène à la grille. Les autres tuiles reçoivent aussi le lecteur complet dès que leur vidéo fait au moins 640 pixels de large, et leur chat quand la tuile fait 640 pixels ou laisse 420 pixels libres sous la vidéo ; elles les gardent jusqu’à 560 pixels, pour qu’une fenêtre proche de la limite ne fasse pas clignoter les lecteurs. Un changement dû à la taille attend 300 millisecondes après la fin du redimensionnement. Les petites tuiles gardent les commandes simplifiées. Les changements de volume, de son et de pause faits dans le lecteur sont conservés au retour à la grille.
+
+Le bouton son de chaque tuile tourne entre trois états : muet, allumé et épinglé. Une tuile allumée se tait quand le spotlight change ; une tuile épinglée garde son son quoi qu’il arrive, jusqu’à ce que tu le coupes. Passer en spotlight allume la tuile et coupe celles qui étaient seulement allumées. Le bouton son du lecteur Twitch compte comme muet ou allumé, jamais épinglé. Le glisser des barres réordonne la grille ; déposer une tuile sur le spotlight lui prend la place, l’ancienne retourne dans la grille à sa position. Les libellés des boutons s’affichent dans une infobulle au survol ou au focus clavier.
 
 Twitch accepte l’option des contrôles à la création du lecteur. Le passage entre les deux vues recrée donc les lecteurs des tuiles qui changent de mode. Les autres streams continuent à jouer.
 
 Le bouton d’agrandissement de la barre étend le stream à toute la fenêtre du navigateur. Les onglets et la barre d’adresse restent visibles. Un second clic restaure la disposition précédente, sans recréer le lecteur ni changer ses réglages audio. Échap permet aussi de revenir lorsque le clavier est actif dans la page.
 
-Après un rechargement, si la grille doit jouer avec du son, un overlay flouté couvre la page. Un clic n’importe où ou une touche réactive les sons prévus par la grille et ferme l’overlay. Les tuiles muettes, les volumes et les pauses restent tels qu’ils étaient enregistrés. L’overlay ne revient plus pendant cette visite.
+Après un rechargement, si la grille doit jouer avec du son, un overlay flouté couvre la page. Un clic n’importe où ou une touche réactive les sons prévus par la grille et ferme l’overlay. Les tuiles muettes, les volumes et les pauses restent tels qu’ils étaient enregistrés. L’overlay ne revient plus pendant cette visite. Firefox refuse le son dans un lecteur que tu n’as jamais cliqué et le met en pause : cette pause n’est pas enregistrée comme un choix, un clic sur la vidéo relance la lecture et le prochain rechargement repart en lecture.
 
 ## Chat du stream
 
-L’icône de chat dans la barre du stream mis en avant ouvre son chat Twitch. Elle est aussi disponible avec une tuile seule. Le chat suit la mise en avant et se ferme temporairement au retour à la grille. Le mode Auto utilise l’espace sous la vidéo quand il reste au moins 420 pixels de hauteur ; sinon, il choisit le placement qui garde la plus grande image. La flèche à côté de l’icône ouvre les options Auto, Top, Bottom, Left et Right. Le chat occupe tout son panneau, sans barre de titre ajoutée.
+L’icône de chat dans la barre du stream en spotlight ouvre son chat Twitch. Elle est aussi disponible avec une tuile seule. Le chat suit le spotlight et se ferme temporairement au retour à la grille. Le mode Auto utilise l’espace sous la vidéo quand il reste au moins 420 pixels de hauteur ; sinon, il choisit le placement qui garde la plus grande image. La flèche à côté de l’icône ouvre les options Auto, Top, Bottom, Left et Right. Choisir une option ouvre le chat à cet endroit sans autre clic. Le chat occupe tout son panneau, sans barre de titre ajoutée.
 
 Le chat latéral s’élargit de 320 à 480 pixels pour utiliser les bandes noires verticales sans réduire davantage la vidéo. Il fonctionne aussi dans le mode agrandi. Son ouverture et sa position sont enregistrées séparément pour les modes connecté et sans compte. Changer sa position ne recharge ni le chat ni le lecteur vidéo. Le lien dans ce menu permet de l’ouvrir sur Twitch, qui gère la connexion pour écrire des messages.
 

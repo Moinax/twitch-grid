@@ -108,8 +108,8 @@ function submitGridForm(event) {
     if (kind==='collaboration') {
       const channels=[...new Map(participants.filter(s=>s.online).map(s=>[s.twitch,s])).values()];
       const main=channels.find(s=>s.twitch===source.twitch) || channels[0];
-      // a multi-stream opens with everyone pinned, each with its own chat, and locked so nobody else joins by accident
-      snapshot={...snapshot,order:channels.map(s=>s.twitch),channels,pins:channels.map(s=>s.twitch),locked:true,muted:Object.fromEntries(channels.map(s=>[s.twitch,s!==main]))};
+      // a multi-stream opens as a plain grid, everyone equal, only the source audible, and locked so nobody else joins by accident
+      snapshot={...snapshot,order:channels.map(s=>s.twitch),channels,locked:true,muted:Object.fromEntries(channels.map(s=>[s.twitch,s!==main]))};
     }
     restored=false;clearTiles();gridStore.create(name,snapshot);restore();renderList();refresh();
   }
