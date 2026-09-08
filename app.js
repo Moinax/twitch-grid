@@ -7,16 +7,44 @@ const collaborationIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill=
 
 // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
 // Small tiles use our controls; the spotlight also reads changes made in the native Twitch player.
-let gridStore = null;
-function paintPlayAll() { $('#playall').setAttribute('aria-pressed', String(allPaused)); }
+let gridStore = null, liveLayoutToRestore = null;
+function isLiveGrid() { return gridStore?.activeId === 'live-follows'; }
+// null keeps the automatic grid's size-dependent default; booleans are manual choices.
+function tilePaused(t) { return t.paused ?? (isLiveGrid() && tiles.size >= 9); }
+function hoverPlayback(t) { return t.hovered && t.channel.online !== false && (allPaused || tilePaused(t)); }   // nothing to preview on an offline channel
+function wantsPlayback(t) { return !document.hidden && !document.body.classList.contains('landing') && $('#audio-overlay').hidden && !showPoster(t) && (!allPaused && !tilePaused(t) || hoverPlayback(t)) && onScreen(t); }
+function syncLiveGrid() {
+  if (!restored || !isLiveGrid()) return;
+  for (const login of liveNotifications.keys()) dismissLiveNotification(login);
+  if (liveLayoutToRestore && !lastFollows) return; // Wait for the first verified list before restoring saved settings.
+  const live = follows.filter(s => s.online);
+  batching = true;
+  if (liveLayoutToRestore) {
+    const snapshot = liveLayoutToRestore;
+    const byLogin = new Map(live.map(s => [s.twitch, s]));
+    for (const login of Array.isArray(snapshot.order) ? [...new Set(snapshot.order)] : []) {
+      if (byLogin.has(login)) restoreChannel(byLogin.get(login), snapshot, true);
+    }
+    focused = tiles.has(snapshot.focused) ? snapshot.focused : null;
+    liveLayoutToRestore = null;
+  }
+  for (const s of live) if (!tiles.has(s.twitch)) add(s, true, 0.5, null, false, 'auto', true);
+  batching = false;
+  for (const login of [...tiles.keys()]) if (!follows.some(s => s.twitch === login)) remove(login, true, true);
+  layout(); renderList();
+}
+// the global button reads as paused when it was pressed, or when every tile ended up paused on its own
+function gridPaused() { const live = [...tiles.values()].filter(t => t.channel.online !== false); return allPaused || (live.length > 0 && live.every(tilePaused)); }
+function paintPlayAll() { $('#playall').setAttribute('aria-pressed', String(gridPaused())); }
 function currentLayout() {
   return { order: [...order], focused, locked, mutedAll, allPaused,
-    channels: order.map(login => { const {twitch,display,profileUrl}=tiles.get(login).channel; return {twitch,display,profileUrl}; }),
+    channels: order.map(login => { const {twitch,display,profileUrl,previewUrl,offlineUrl}=tiles.get(login).channel; return {twitch,display,profileUrl,previewUrl,offlineUrl}; }),
     collapsed: document.body.classList.contains('collapsed'),
-    ...Object.fromEntries(['muted','pinned','volume','paused','chatOpen','chatPosition'].map(key => [key,Object.fromEntries([...tiles].map(([login,t]) => [login,t[key]]))])) };
+    ...Object.fromEntries(['muted','spotlightMuted','volume','paused','chatOpen','chatPosition'].map(key => [key,Object.fromEntries([...tiles].map(([login,t]) => [login,t[key]]))])) };
 }
 function save() {
-  if (!restored) return;
+  if (!restored || isLiveGrid() && liveLayoutToRestore) return;
+  paintPlayAll();
   const snapshot = currentLayout();
   writeStored('tg.layout.' + layoutMode, snapshot);
   if (gridStore && !gridStore.save(snapshot)) notice(tr('Impossible d’enregistrer dans ce navigateur.'));
@@ -26,26 +54,41 @@ function saveCurrentLayout() {
   tiles.forEach(readNativeControls);
   save();
 }
+function restoreChannel(s, snapshot, automatic = false) {
+  const login = s.twitch;
+  // Older layouts stored chat settings once for the entire grid.
+  const perTile = value => value && typeof value === 'object' ? value[login] : value;
+  const position = perTile(snapshot.chatPosition);
+  const chatPosition = position === 'below' ? 'bottom' : ['auto', 'top', 'bottom', 'left', 'right'].includes(position) ? position : 'auto';
+  const paused = snapshot.paused?.[login];
+  add(s, !!mutedAll || (snapshot.muted?.[login] ?? true), snapshot.volume?.[login] ?? 0.5,
+    typeof paused === 'boolean' ? paused : automatic ? null : false,
+    perTile(snapshot.chatOpen) === true, chatPosition, automatic);
+  const before = snapshot.spotlightMuted?.[login];
+  if (typeof before === 'boolean' && tiles.has(login)) tiles.get(login).spotlightMuted = before;   // what the spotlight gives back on the way out
+}
 function restore() {
   if (!layoutMode || restored || !window.Twitch?.Player) return;
   const st = gridStore?.active.layout || readStored('tg.layout.' + layoutMode, {});
   const savedChannels = Array.isArray(st.channels) ? st.channels : [];
   allPaused = !!st.allPaused;
-  // chat settings live per stream; older layouts stored one value for the whole grid
-  const perTile = (value, login) => value && typeof value === 'object' ? value[login] : value;
-  const chatPositionOf = value => value === 'below' ? 'bottom' : ['auto', 'top', 'bottom', 'left', 'right'].includes(value) ? value : 'auto';
   mutedAll = Array.isArray(st.mutedAll) ? st.mutedAll.filter(validLogin) : null;   // a global mute outranks whatever the tiles saved
   batching = true;
-  for (const login of (Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) { const s = streamers.find(x => x.twitch === login) || channel(savedChannels.find(x => x?.twitch === login) || { twitch: login }); if (s) add(s, !!mutedAll || (st.muted?.[login] ?? true), st.volume?.[login] ?? 0.5, !!st.paused?.[login], !!st.pinned?.[login], perTile(st.chatOpen, login) === true, chatPositionOf(perTile(st.chatPosition, login))); }
+  liveLayoutToRestore = isLiveGrid() ? structuredClone(st) : null;
+  for (const login of (!isLiveGrid() && Array.isArray(st.order) ? [...new Set(st.order)].filter(validLogin) : [])) {
+    const s = streamers.find(x => x.twitch === login) || channel(savedChannels.find(x => x?.twitch === login) || { twitch: login });
+    if (s) restoreChannel(s, st);
+  }
   batching = false;
   focused = tiles.has(st.focused) ? st.focused : null;
-  locked = st.locked === true;
+  locked = isLiveGrid() || st.locked === true;
   paintMuteAll();
   paintPlayAll();
   document.body.classList.toggle('collapsed', st.collapsed ?? innerWidth <= 700);
   layout();
   tick();   // right away, not at the first second: a click that lands before it hits the page instead of the video
   restored = true;
+  syncLiveGrid();
   syncChat();
   refreshCollaborations();
   save();
@@ -79,7 +122,7 @@ function loadPlayer() {
 
 // a tile plays only while it is in the viewport and the global toggle is not paused
 function fit(p) {
-  const f = p.firstElementChild;
+  const f = p.querySelector('iframe');   // the embed sits in its own box beside the cover, the iframe is what scales
   if (!f) return;
   if (document.fullscreenElement === f) { f.style.transform = 'none'; return; }
   const s = Math.min(p.clientWidth / f.offsetWidth, p.clientHeight / f.offsetHeight);   // offsetWidth ignores the transform
@@ -260,8 +303,31 @@ const seen = t => t.visible || t.el.classList.contains('big') || expanded === t.
 const onScreen = t => seen(t) || !t.muted;
 // Firefox refuses an audible (re)start in an iframe that was never clicked, and the player then sits paused for good:
 // start muted, always allowed, and the watchdog gives the sound back once it plays (no restart in that)
-function start(t) { if (!t.ready) return; if (!t.muted && t.player.getPlayerState().playback !== 'Playing') applyMuted(t, true); t.player.play(); t.nudgedAt = Date.now(); }
-function sync(t) { clearTimeout(t.timer); t.timer = setTimeout(() => { if (!t.ready || !t.el.isConnected) return; if (allPaused || t.paused || !onScreen(t)) t.player.pause(); else start(t); }, 400); }
+function start(t) {
+  if (!t.ready || !wantsPlayback(t)) return;
+  const wasPreviewing = t.previewing;
+  t.previewing = hoverPlayback(t);
+  if (t.previewing || !t.muted && t.player.getPlayerState().playback !== 'Playing') applyMuted(t, true);
+  else if (wasPreviewing && activated) applyMuted(t, t.muted);
+  t.commandedPlay = t.player.getPlayerState().playback !== 'Playing';
+  t.player.play(); t.nudgedAt = Date.now();
+}
+function sync(t) {
+  mark(t);
+  clearTimeout(t.timer);
+  t.timer = setTimeout(() => {
+    if (!t.el.isConnected) return;
+    if (showPoster(t)) { releasePlayer(t); return; }
+    if (!t.player) mountPlayer(t, !!t.controls);
+    if (!t.ready) return;
+    if (wantsPlayback(t)) start(t);
+    else {
+      t.player.pause();
+      if (t.previewing) t.nativeAudio = {muted:t.player.getMuted(),volume:t.player.getVolume()};
+      t.previewing = false;
+    }
+  }, 400);
+}
 // the player also pauses on its own during some reflows: whatever should be playing gets nudged back every second
 function watchdog(t) {
   if (!t.ready) return;
@@ -270,22 +336,37 @@ function watchdog(t) {
   // isPaused() is false in the Ready/Idle states the player drops into after a resize, so go by the playback state.
   // A live stream takes seconds to (re)start and a play() during that restarts it: nudge at most every 5s
   const st = t.player.getPlayerState().playback;
-  if (!allPaused && !t.paused && onScreen(t) && !t.el.classList.contains('offline') && st !== 'Playing' && st !== 'Buffering' && Date.now() - (t.nudgedAt || 0) > 5000) {
+  if (wantsPlayback(t) && !t.el.classList.contains('offline') && st !== 'Playing' && st !== 'Buffering' && Date.now() - (t.nudgedAt || 0) > 5000) {
     // a play() the player swallowed (seen after a window resize) leaves it stuck until a click inside it: the second
     // nudge pauses first, which is what that click does, then plays again once the teardown had its second
-    if (t.nudged) { const current = t.player; t.player.pause(); setTimeout(() => { if (t.player === current && t.el.isConnected && !allPaused && !t.paused && onScreen(t)) start(t); }, 1000); } else start(t);
+    if (t.nudged) { const current = t.player; t.player.pause(); setTimeout(() => { if (t.player === current && t.el.isConnected && wantsPlayback(t)) start(t); }, 1000); } else start(t);
     t.nudged = true;
   } else if (st === 'Playing') t.nudged = false;
-  if (activated && st === 'Playing' && t.player.getMuted() !== t.muted) t.player.setMuted(t.muted);   // keeps the intent applied once sound is allowed
+  if (activated && st === 'Playing' && t.player.getMuted() !== (hoverPlayback(t) || t.muted)) applyMuted(t, t.muted);   // keeps the intent applied once sound is allowed
   mark(t);
 }
-// loader shown while a tile that should play is not playing: deliberate pauses show Twitch's own frame instead
+// Deliberate pauses show a thumbnail; active playback keeps loading feedback outside the iframe.
 function mark(t) {
-  if (!t.ready) return;
-  const st = t.player.getPlayerState();
-  const want = !allPaused && !t.paused && onScreen(t), playing = st.playback === 'Playing';
-  t.el.classList.toggle('loading', want && !playing);
-  t.el.classList.toggle('partial', !allPaused && !t.paused && !seen(t) && !playing);   // on screen but not enough for the player to start
+  // Paused tiles keep a still image; only an active hover gets the preview loading status.
+  const paused = allPaused || tilePaused(t);
+  t.el.classList.toggle('paused', paused);
+  const state = t.ready ? t.player.getPlayerState().playback : '', playing = state === 'Playing';
+  const offline = t.channel.online === false || t.el.classList.contains('offline');   // known from the status, or reported by the player
+  // Ready for a while yet not starting, or refused outright: the loader gives way to a play button, and the click goes
+  // to the embed, whose own gesture is what Twitch wants before it plays. An offline channel has nothing to start.
+  const stalled = !offline && t.ready && !playing && state !== 'Buffering' && wantsPlayback(t) && (t.playbackBlocked || t.playbackError || Date.now() - (t.readyAt || Date.now()) > 8000);
+  t.el.classList.toggle('stalled', stalled);
+  if (playing) t.hasPlayed = true;
+  // The still stays over the embed until the video actually plays, not only until Twitch reports READY. An offline
+  // channel keeps it for good: Twitch's offline screen is a player with an invisible category link in the middle.
+  t.cover.classList.toggle('gone', !offline && !showPoster(t) && (playing || t.hasPlayed));   // a class, so the still fades instead of vanishing
+  t.el.classList.toggle('player-ready', t.ready);
+  // An offline channel shows its avatar and status over its banner, or over the dark tile when it has none.
+  t.cover.classList.toggle('offline', offline);
+  t.previewStatus.hidden = !(offline || hoverPlayback(t) && !t.hasPlayed);
+  t.previewStatus.querySelector('span').textContent = tr(offline ? 'Hors ligne' : t.playbackError || t.playbackBlocked ? 'Aperçu indisponible' : 'Chargement de l’aperçu…');
+  t.el.classList.toggle('loading', !paused && !offline && onScreen(t) && !playing);   // the offline overlay replaces the loader
+  t.el.classList.toggle('partial', !paused && !seen(t) && !playing);
   updateAudioOverlay();
 }
 
@@ -293,7 +374,7 @@ let audioOverlayFocus = null;
 function updateAudioOverlay() {
   const overlay = $('#audio-overlay');
   const needed = !activated && !allPaused && !mutedAll && [...tiles.values()].some(t =>   // a global mute wants silence, not a prompt
-    !t.paused && !t.muted && t.volume > 0 && t.channel.online !== false &&
+    !tilePaused(t) && !t.muted && t.volume > 0 && t.channel.online !== false &&
     !t.el.classList.contains('offline') && !t.playbackError);
   if (needed === !overlay.hidden) return;
   overlay.hidden = !needed;
@@ -310,26 +391,37 @@ function updateAudioOverlay() {
 function viewers(s) { return s.viewersAmount.number; }
 
 // One temporary, muted player; removing its iframe stops playback and network activity.
-const preview = $('#preview'), previewVideo = preview.querySelector('.player');
-let previewRow = null, previewOnline = null, previewPlayer = null, previewNudgedAt = 0, previewTimer, previewCloseTimer, previewLoadTimer;
+const preview = $('#preview'), previewMessage = preview.querySelector('.preview-message'), previewVideo = preview.querySelector('.player'), previewPoster = preview.querySelector('.stream-poster');
+previewPoster.onerror = () => { previewPoster.hidden = true; };
+let previewRow = null, previewOnline = null, previewPlayer = null, previewReady = false, previewNudgedAt = 0, previewTimer, previewCloseTimer, previewLoadTimer;
 // the embed does not always emit its playing event, and like the tiles it can sit in Ready until nudged with a play():
 // poll the playback state every tick, nudge at most every 5s, and fade the overlay out once it plays
 function markPreview() {
-  if (preview.hidden || !previewPlayer) return;
+  if (preview.hidden || !previewPlayer || !previewReady || document.hidden) return;
   const st = previewPlayer.getPlayerState().playback;
-  if (st === 'Playing') { clearTimeout(previewLoadTimer); preview.classList.add('playing'); return; }
+  if (st === 'Playing') { clearTimeout(previewLoadTimer); preview.classList.add('playing'); preview.classList.remove('preview-failed'); previewMessage.hidden = true; return; }
   if (st !== 'Buffering' && Date.now() - previewNudgedAt > 5000) { previewPlayer.play(); previewNudgedAt = Date.now(); }
 }
+// The card fades out over its still: the player goes at once, the box waits for the transition before it leaves the page.
+let previewFadeTimer;
 function hidePreview() {
   clearTimeout(previewTimer);
   clearTimeout(previewCloseTimer);
   clearTimeout(previewLoadTimer);
   previewRow?.removeAttribute('aria-describedby');
   previewRow = null;
-  preview.hidden = true;
-  preview.classList.remove('playing');
-  previewPlayer = null;
+  preview.classList.remove('in');
+  const player = previewPlayer;
+  previewPlayer = null; previewReady = false;
+  player?.destroy();
   previewVideo.replaceChildren();
+  clearTimeout(previewFadeTimer);
+  previewFadeTimer = setTimeout(() => {
+    if (preview.classList.contains('in')) return;   // shown again meanwhile
+    preview.hidden = true;
+    preview.classList.remove('playing','player-ready','preview-failed');
+    previewMessage.hidden = true;
+  }, 250);
 }
 function positionPreview() {
   if (!previewRow || preview.hidden) return;
@@ -355,43 +447,81 @@ function showPreview(row) {
   previewRow = row;
   previewOnline = s.online;
   previewInfo(s);
+  const src = previewImageURL(s);
+  if (previewPoster.getAttribute('src') !== src) { previewPoster.hidden = !src; if (src) previewPoster.src = src; else previewPoster.removeAttribute('src'); }
   row.setAttribute('aria-describedby', 'preview');
   const status = preview.querySelector('.status'), message = status.querySelector('span');
   status.querySelector('img').src = s.profileUrl;
   message.textContent = tr('Chargement de l’aperçu…');
   status.hidden = false;
-  preview.classList.remove('playing');
+  preview.classList.remove('playing','player-ready','preview-failed');
+  previewMessage.hidden = true;
+  clearTimeout(previewFadeTimer);
   preview.hidden = false;
   positionPreview();
+  void preview.offsetWidth;   // commit the hidden state so the entrance transitions
+  preview.classList.add('in');
   if (!window.Twitch?.Player) { message.textContent = tr('Aperçu indisponible'); return; }
-  const player = new Twitch.Player(previewVideo, { channel: s.twitch, parent: [location.hostname], width: 640, height: 360, autoplay: true, muted: true, controls: false });
+  previewTimer = setTimeout(loadPreview, 300);
+}
+function loadPreview() {
+  const s = streamers.find(s => s.twitch === previewRow?.dataset.login);
+  if (!s || s.online === false || !previewRow.isConnected || preview.hidden || document.hidden || previewPlayer) return;
+  const status = preview.querySelector('.status'), message = status.querySelector('span');
+  const player = new Twitch.Player(previewVideo, { channel: s.twitch, parent: [location.hostname], width: 640, height: 360, autoplay: false, muted: true, controls: false });
   previewPlayer = player; previewNudgedAt = Date.now();
   const frame = previewVideo.querySelector('iframe');
   frame.tabIndex = -1;
   frame.title = tr('Aperçu de {name}', {name:s.display});
   fit(previewVideo);
-  const current = () => previewVideo.firstElementChild === frame;
-  player.addEventListener(Twitch.Player.READY, () => { if (current()) { player.setMuted(true); player.setVolume(0); } });
+  const current = () => previewPlayer === player && !preview.hidden;
+  player.addEventListener(Twitch.Player.READY, () => {
+    if (!current()) return;
+    previewReady = true; preview.classList.add('player-ready');
+    player.setMuted(true); player.setVolume(0);
+    // Leave time for the browser to report the now-uncovered iframe as visible.
+    previewTimer = setTimeout(() => { if (current()) { player.play(); previewNudgedAt = Date.now(); markPreview(); } }, 400);
+  });
   player.addEventListener(Twitch.Player.PLAYING, () => { if (current()) markPreview(); });   // the overlay fades out in CSS
   for (const event of ['offline', 'playbackBlocked', 'error']) player.addEventListener(event, () => {
     if (!current()) return;
     if (event === 'offline') { hidePreview(); return; }
     clearTimeout(previewLoadTimer);
     preview.classList.remove('playing');
+    preview.classList.add('preview-failed');
     status.hidden = false;
     message.textContent = tr('Aperçu indisponible');
+    previewMessage.textContent = message.textContent; previewMessage.hidden = false;
   });
-  previewLoadTimer = setTimeout(() => { if (current()) message.textContent = tr('L’aperçu tarde à démarrer'); }, 12000);
+  previewLoadTimer = setTimeout(() => {
+    if (!current()) return;
+    message.textContent = tr('L’aperçu tarde à démarrer');
+    previewMessage.textContent = message.textContent; previewMessage.hidden = false;
+  }, 12000);
 }
+// A pointer sweeping down the list should not flash a card per row: the first card waits, then follows the pointer at once.
 function queuePreview(row) {
   clearTimeout(previewCloseTimer);
-  if (previewRow === row && !preview.hidden) return;
+  if (previewRow === row && !preview.hidden) { resumePreview(); return; }
+  const open = preview.classList.contains('in');
   hidePreview();
-  previewRow = row;
-  previewTimer = setTimeout(() => showPreview(previewRow), 300);
+  if (open) showPreview(row);
+  else { clearTimeout(previewTimer); previewTimer = setTimeout(() => showPreview(list.querySelector(`[data-login="${CSS.escape(row.dataset.login)}"]`) || row), 250); }   // the list may have re-rendered meanwhile
 }
 function leavePreview() { clearTimeout(previewTimer); clearTimeout(previewCloseTimer); previewCloseTimer = setTimeout(hidePreview, 180); }
-preview.onpointerenter = () => clearTimeout(previewCloseTimer);
+function resumePreview() {
+  clearTimeout(previewCloseTimer);
+  if (preview.hidden) return;
+  clearTimeout(previewTimer);
+  if (!previewPlayer) previewTimer = setTimeout(loadPreview, 300);
+  else if (previewReady) {
+    const player = previewPlayer;
+    previewTimer = setTimeout(() => {
+      if (previewPlayer === player && !preview.hidden && !document.hidden) { player.play(); previewNudgedAt = Date.now(); }
+    }, 400);
+  }
+}
+preview.onpointerenter = resumePreview;
 preview.onpointerleave = leavePreview;
 list.addEventListener('scroll', hidePreview, { passive: true });
 addEventListener('resize', hidePreview);
@@ -402,7 +532,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) hideP
 function toggle(s) {
   // the sidebar fills the grid; a spotlight hands its place to the stream clicked
   if (focused && focused !== s.twitch) { if (tiles.has(s.twitch) || add(s)) focus(s.twitch); }
-  else tiles.has(s.twitch) ? remove(s.twitch) : add(s);
+  else if (tiles.has(s.twitch)) { if (isLiveGrid()) focus(s.twitch); else remove(s.twitch); }
+  else add(s);
   if (innerWidth <= 700) { document.body.classList.add('collapsed'); save(); }
   renderList();
 }
@@ -415,14 +546,15 @@ function trackOnline(t, online) {
   t.offlineTimer = setTimeout(() => {
     t.offlineTimer = null;
     const login = t.el.dataset.login;
-    if (!tiles.has(login) || locked || focused === login) return;
-    if (!t.el.classList.contains('offline') && t.ready && t.player.getPlayerState().playback === 'Playing') return;   // a stale status against a player that plays
-    remove(login); save();
+    if (!tiles.has(login) || (!isLiveGrid() && (locked || focused === login))) return;
+    if (!isLiveGrid() && !t.el.classList.contains('offline') && t.ready && t.player.getPlayerState().playback === 'Playing') return;   // a stale status against a player that plays
+    remove(login, true, true); save();
     notice(tr('{name} est hors ligne, la tuile a été retirée.', { name: t.channel.display }));
   }, 60000);
 }
 function updateTileInfo(t, s) {
   t.channel = s;
+  updatePoster(t);
   if (typeof s.online === 'boolean') trackOnline(t, s.online);
   renderCollaboration(t, s.online === false ? [] : collaborations.get(s.twitch)?.participants || []);
   t.bar.querySelector('.stream-avatar').src = s.profileUrl;
@@ -436,34 +568,39 @@ function updateTileInfo(t, s) {
     field.textContent = value;
     field.hidden = !value;
   }
+  if (t.cover) { t.ppIcon(); mark(t); }   // the offline overlay and the play button follow the status
 }
 
-function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chatOpen = false, chatPosition = 'auto') {
+function add(s, muted = true, volume = 0.5, paused = false, chatOpen = false, chatPosition = 'auto', automatic = false) {
   if (tiles.has(s.twitch)) return true;
-  if (locked && restored) { notice(tr('Grille verrouillée : déverrouille-la pour ajouter un stream.')); return false; }
+  if (locked && restored && !automatic) { notice(tr('Grille verrouillée : déverrouille-la pour ajouter un stream.')); return false; }
   if (!window.Twitch?.Player) { notice(tr('Le lecteur Twitch est indisponible. Recharge la page pour réessayer.')); return false; }
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g><g class="pinned" transform="translate(11 -2) scale(.55)" stroke-width="3.5"><path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9"/></g></svg></button><button title="Spotlight" data-i18n-title="Spotlight" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="12" height="14" rx="1"/><rect x="17" y="5" width="4" height="6" rx="1"/><rect x="17" y="13" width="4" height="6" rx="1"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="drop" data-i18n="Déposer ici">Déposer ici</div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="ctl"><button title="Play/pause" data-i18n-title="Play/pause"></button><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume"><output></output></div>`;
+  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Play/pause" data-i18n-title="Play/pause" aria-label="Play/pause" data-i18n-aria-label="Play/pause" aria-pressed="false" class="pp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="pause"><path d="M8 5v14M16 5v14"/></g><g class="play"><path d="M7 4v16l13-8z" fill="currentColor"/></g></svg></button><span class="snd-wrap"><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><div class="volume"><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume" aria-label="Volume" data-i18n-aria-label="Volume"></div></span><button title="Spotlight" data-i18n-title="Spotlight" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="12" height="14" rx="1"/><rect x="17" y="5" width="4" height="6" rx="1"/><rect x="17" y="13" width="4" height="6" rx="1"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="drop" data-i18n="Déposer ici">Déposer ici</div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="play-hint" aria-hidden="true"><svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg></div>`;
   const [snd, spot, fs, close] = ['.snd', '.spotlight', '.fs', '.close'].map(selector => el.querySelector(selector));
   spot.onclick = e => { e.stopPropagation(); focus(s.twitch); };
   fs.onclick = e => { e.stopPropagation(); setExpanded(expanded === s.twitch ? null : s.twitch); };
   fs.title = tr('Agrandir dans la fenêtre');
   fs.setAttribute('aria-label', fs.title);
   fs.setAttribute('aria-pressed', 'false');
-  const pp = el.querySelector('.ctl button'), vol = el.querySelector('.ctl input'), pct = el.querySelector('.ctl output');
-  const ppIcon = () => pp.textContent = t.paused ? '▶\uFE0E' : '⏸\uFE0E';
-  pp.onclick = e => { e.stopPropagation(); t.paused = !t.paused; ppIcon(); sync(t); mark(t); save(); };
-  vol.value = volume; pct.value = Math.round(volume * 100) + '%';
-  vol.oninput = () => { t.volume = +vol.value; pct.value = Math.round(t.volume * 100) + '%'; t.player.setVolume(t.volume); setMuted(t, false); save(); };
-  // one button cycles the three sound states: muted, on (until the spotlight moves), pinned (until changed here)
-  snd.onclick = e => { e.stopPropagation(); if (t.muted) { t.pinned = false; setMuted(t, false); } else if (!t.pinned) { t.pinned = true; paint(t); } else { t.pinned = false; setMuted(t, true); } save(); };
-  const volumeSound = snd.cloneNode(true);
-  volumeSound.onclick = snd.onclick;
-  vol.before(volumeSound);
+  const pp = el.querySelector('.pp'), vol = el.querySelector('.volume input'), volumeBox = el.querySelector('.volume');
+  // An offline channel has nothing to play or pause: its button steps aside, and the global button leaves it alone.
+  const ppIcon = () => { const paused = allPaused || tilePaused(t), offline = t.channel.online === false; pp.setAttribute('aria-pressed', String(paused)); pp.setAttribute('aria-disabled', String(offline)); pp.title = tr(offline ? 'Hors ligne' : paused ? 'Lecture' : 'Pause'); pp.setAttribute('aria-label', pp.title); };
+  pp.onclick = e => { e.stopPropagation(); if (t.channel.online === false) return; if (allPaused || tilePaused(t)) resumeTile(t); else t.paused = true; ppIcon(); sync(t); mark(t); save(); };
+  vol.value = volume;
+  vol.oninput = () => { t.volume = +vol.value; t.player?.setVolume(t.volume); setMuted(t, false); save(); };
+  // one button, two states: a sound turned on here stays on until turned off here
+  snd.onclick = e => { e.stopPropagation(); if (mutedAll) return; setMuted(t, !t.muted); save(); };
   const bar = el.querySelector('.bar');
-  el.querySelector('.player').onclick = () => { if (!el.classList.contains('big')) focus(s.twitch); };
+  // A click on a paused still resumes it. The spotlight belongs to its header button alone.
+  el.querySelector('.player').onclick = () => { if (allPaused || tilePaused(t)) { resumeTile(t); sync(t); save(); } };
+  // The bar drags to reorder; a press on the volume slider must move the thumb, not the tile: the bar stops being
+  // draggable while the pointer is on the slider, whatever the browser makes of a drag started inside an input.
+  volumeBox.ondragstart = e => { e.preventDefault(); e.stopPropagation(); };
+  volumeBox.onpointerenter = () => { bar.draggable = false; };
+  volumeBox.onpointerleave = () => { bar.draggable = canDrag(s.twitch); };
   // ponytail: reorder via CSS `order` only — moving an iframe in the DOM reloads the player
   bar.ondragstart = e => {
     dragging = s.twitch; document.body.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
@@ -472,10 +609,13 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chat
   el.ondragover = e => { if (!canDrop(s.twitch)) return; e.preventDefault(); el.classList.add('over'); };
   el.ondragleave = e => { if (!el.contains(e.relatedTarget)) el.classList.remove('over'); };
   el.ondrop = e => { e.preventDefault(); if (canDrop(s.twitch)) move(dragging, s.twitch); };
-  close.onclick = e => { e.stopPropagation(); remove(s.twitch); renderList(); };
+  close.disabled = isLiveGrid();
+  close.onclick = e => { e.stopPropagation(); if (isLiveGrid()) return; remove(s.twitch); renderList(); };
   translateTree(el);
   grid.append(el);
-  const t = { el, bar, visible: true, muted, volume, paused, pinned, chatOpen, chatPosition, ready: false, ppIcon, body: el.querySelector('.tile-body'), chat: el.querySelector('.chat'), chatOptions: el.querySelector('.chat-options') };
+  const t = { el, bar, visible: true, muted, volume, paused, chatOpen, chatPosition, ready: false, ppIcon, body: el.querySelector('.tile-body'), chat: el.querySelector('.chat'), chatOptions: el.querySelector('.chat-options') };
+  el.addEventListener('mouseenter', () => { t.hovered = true; sync(t); });
+  el.addEventListener('mouseleave', () => { t.hovered = false; sync(t); });
   t.chat.id = 'chat-' + s.twitch;
   t.chat.setAttribute('aria-label', tr('Chat de {name}', {name:s.display}));
   const chatButton = bar.querySelector('.chat-toggle');
@@ -495,35 +635,99 @@ function add(s, muted = true, volume = 0.5, paused = false, pinned = false, chat
   chatResize.observe(t.body);
   order.push(s.twitch);
   layout();
+  // Animate the header, never an ancestor of a live iframe: opacity blocks Twitch autoplay.
+  if (restored && !matchMedia('(prefers-reduced-motion: reduce)').matches) bar.animate(
+    [{opacity:0,transform:'translateY(-4px)'},{opacity:1,transform:'none'}], {duration:220,easing:'ease-out'});
   return true;
+}
+
+function resumeTile(t) {
+  if (allPaused) {
+    tiles.forEach(other => { if (other !== t && other.channel.online !== false) { other.paused = true; other.ppIcon(); } });
+    allPaused = false;
+  }
+  t.paused = false; t.ppIcon(); paintPlayAll();
+}
+// a still image instead of an idle iframe: paused without a hover
+function showPoster(t) { return (allPaused || tilePaused(t)) && !hoverPlayback(t); }
+function previewImageURL(s) {
+  if (s.online === false) return s.offlineUrl || '';   // the banner the channel set for its offline screen, when it has one
+  const url = s.previewUrl || `https://static-cdn.jtvnw.net/previews-ttv/live_user_${s.twitch}-{width}x{height}.jpg`;
+  return url.replace('{width}', '640').replace('{height}', '360') + (url.includes('?') ? '&' : '?') + 'v=' + Math.floor(Date.now() / 60000);
+}
+function updatePoster(t) {
+  if (!t.cover) {
+    t.cover = document.createElement('div'); t.cover.className = 'preview-cover';
+    t.cover.innerHTML = '<img class="stream-poster" alt="" decoding="async" loading="lazy"><div class="preview-status" hidden><i class="preview-avatar"><img alt=""></i><span></span></div>';
+    t.poster = t.cover.querySelector('.stream-poster');
+    t.previewStatus = t.cover.querySelector('.preview-status');
+    t.poster.onerror = () => { t.poster.hidden = true; };
+  }
+  t.previewStatus.querySelector('img').src = t.channel.profileUrl;
+  if (!t.poster.isConnected || t.cover.classList.contains('gone') || document.hidden) return;
+  const src = previewImageURL(t.channel);
+  if (t.poster.getAttribute('src') === src) return;
+  t.poster.hidden = !src;
+  if (src) t.poster.src = src; else t.poster.removeAttribute('src');
+  t.el.querySelector('.player').style.backgroundImage = src ? `url(${JSON.stringify(src)})` : '';
+}
+function releasePlayer(t) {
+  readNativeControls(t);
+  if (t.ready && t.controls) t.quality = t.player.getQuality?.();
+  const player = t.player;
+  // Invalidate callbacks before destroying the iframe, including delayed READY events.
+  t.player = null; t.ready = false; t.previewing = false; t.hasPlayed = false;
+  clearTimeout(t.timer);
+  player?.destroy();
+  const container = t.el.querySelector('.player');
+  t.cover.classList.remove('gone');
+  if (container.firstElementChild !== t.cover) container.replaceChildren(t.cover);
+  t.el.classList.add('poster-only');
+  updatePoster(t);
+  mark(t);
 }
 
 // Twitch only accepts the controls option when creating an embed. Recreate the changed
 // tile, preserving its settings; all other iframes keep playing.
 function mountPlayer(t, controls) {
+  t.el.classList.toggle('full-player', controls);
+  if (showPoster(t)) {
+    releasePlayer(t);
+    t.controls = controls; t.el.classList.toggle('full-player', controls); return;
+  }
   if (t.player && t.controls === controls) return;
   readNativeControls(t);
   if (t.ready && t.controls) t.quality = t.player.getQuality?.();
   clearTimeout(t.timer);
-  t.player?.destroy();
+  const previousPlayer = t.player; t.player = null; t.ready = false;
+  previousPlayer?.destroy();
   const container = t.el.querySelector('.player');
-  container.replaceChildren();
+  const embed = document.createElement('div'); embed.className = 'player-embed';
+  t.cover.classList.remove('gone');
+  // Keep the cover where it is: moving it in the DOM would restart the loading ring mid-turn.
+  if (t.cover.parentElement === container) { for (const el of [...container.children]) if (el !== t.cover) el.remove(); container.prepend(embed); }
+  else container.replaceChildren(embed, t.cover);
+  updatePoster(t);
+  t.el.classList.remove('poster-only');
   t.ready = false; t.controls = controls; t.hasPlayed = false;
-  t.el.classList.toggle('full-player', controls);
   t.nativeAudio = null; t.pendingMute = null; t.nudged = false;
   t.playbackBlocked = false; t.playbackError = false;
   t.el.classList.remove('offline', 'partial');
-  t.el.classList.toggle('loading', !allPaused && !t.paused);
-  const player = new Twitch.Player(container, {
+  t.el.classList.toggle('loading', !allPaused && !tilePaused(t));
+  t.commandedPlay = wantsPlayback(t);
+  const player = new Twitch.Player(embed, {
     channel: t.el.dataset.login, parent: [location.hostname], width: '100%', height: '100%',
-    muted: true, autoplay: !allPaused && !t.paused, controls
+    muted: true, autoplay: false, controls
   });
   t.player = player;
+  // The cover is outside Twitch's mount node, so iframe initialization cannot remove it.
   container.querySelector('iframe').title = tr('Stream de {name}', {name:t.channel.display});
+  fit(container);   // scaled from the first frame: the 640x360 iframe would spill out of the tile until READY
   const current = () => t.player === player && t.el.isConnected;
   player.addEventListener(Twitch.Player.READY, () => {
     if (!current()) return;
-    t.ready = true;
+    t.ready = true; t.readyAt = Date.now();
+    mark(t);
     fit(container);
     player.setVolume(t.volume);
     t.nativeAudio = { muted: player.getMuted(), volume: t.volume };
@@ -539,36 +743,39 @@ function mountPlayer(t, controls) {
     if (event === 'playing' || event === 'offline' || event === 'error') t.playbackBlocked = false;
     if (event === 'error') t.playbackError = true;
     if (event === 'playing' || event === 'online') t.playbackError = false;
-    if (event === 'playing' && !t.hasPlayed) {
+    if (event === 'playing') {
       t.hasPlayed = true;
       if (activated) applyMuted(t, t.muted);
     }
-    if (controls && (t.hasPlayed || (event === 'play' && t.ready))) {
+    if (controls && !hoverPlayback(t) && !(event === 'pause' && (allPaused || tilePaused(t))) && (t.hasPlayed || (event === 'play' && t.ready))) {
       if (event === 'pause' && !allPaused && onScreen(t) && !t.playbackBlocked) {
         // Firefox answers an unmute in a frame never clicked by pausing the media: blocked playback, not a pause the viewer chose
         if (Date.now() - (t.unmutedAt || 0) < 1000) t.playbackBlocked = true;
         else t.paused = true;
       }
-      if (event === 'play') {
+      if (event === 'play' && !t.commandedPlay) {
         t.paused = false;
         // A native Play resumes this stream even after the global pause.
         if (allPaused) {
-          tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
+          tiles.forEach(other => { if (other !== t && other.channel.online !== false) { other.paused = true; other.ppIcon(); } });
           allPaused = false; paintPlayAll();
         }
       }
       t.ppIcon(); save();
     }
+    if (event === 'play') t.commandedPlay = false;
+    if (event === 'pause' && showPoster(t)) sync(t);
     mark(t);
   });
 }
 function applyMuted(t, value) {
+  value = hoverPlayback(t) || value;
   t.pendingMute = { value, at: Date.now() };
   if (!value) t.unmutedAt = Date.now();
   t.player.setMuted(value);
 }
 function readNativeControls(t) {
-  if (!t.controls || !t.ready || !t.hasPlayed) return;
+  if (!t.controls || !t.ready || !t.hasPlayed || t.previewing) return;
   const audio = { muted: t.player.getMuted(), volume: t.player.getVolume() };
   let changed = false;
   if (t.pendingMute) {
@@ -576,21 +783,41 @@ function readNativeControls(t) {
   } else if (t.nativeAudio && audio.muted !== t.nativeAudio.muted) {
     if (mutedAll && !audio.muted) { setMuted(t, false); return; }   // silenced again: the global mute holds
     t.muted = audio.muted;
-    if (t.muted) t.pinned = false;
     changed = true;
   }
   if (t.nativeAudio && audio.volume !== t.nativeAudio.volume && Number.isFinite(audio.volume)) {
     t.volume = audio.volume; changed = true;
-    t.el.querySelector('.ctl input').value = t.volume;
-    t.el.querySelector('.ctl output').value = Math.round(t.volume * 100) + '%';
+    t.el.querySelector('.volume input').value = t.volume;
   }
   t.nativeAudio = audio;
   if (changed) { paint(t); save(); }
 }
 
-function remove(login, updateLayout = true) {
+const exitingTiles = new Set();
+function animateRemoval(t) {
+  if (!restored || document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const rect = t.el.getBoundingClientRect();
+  if (!rect.width || !rect.height || rect.bottom < 0 || rect.top > innerHeight) return;
+  // Only animate a static copy: destroy the real player and update membership immediately.
+  const copy = t.el.cloneNode(true);
+  copy.removeAttribute('data-login'); copy.removeAttribute('style');
+  copy.classList.add('tile-exit'); copy.inert = true; copy.setAttribute('aria-hidden','true');
+  copy.querySelectorAll('iframe, .chat, .volume, .load, .drop, .chat-menu, .collaboration-menu').forEach(el=>el.remove());
+  copy.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  copy.querySelector('.tile-body').removeAttribute('data-chat-position');
+  copy.querySelector('.player').replaceChildren(t.poster.cloneNode());
+  Object.assign(copy.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',zIndex:'20',pointerEvents:'none'});
+  document.body.append(copy); exitingTiles.add(copy);
+  const finish = () => { copy.remove(); exitingTiles.delete(copy); };
+  copy.animate([{opacity:1,transform:'none'},{opacity:0,transform:'scale(.97)'}],{duration:180,easing:'ease-in'}).finished.then(finish,finish);
+}
+
+function remove(login, updateLayout = true, automatic = false) {
+  if (!tiles.has(login) || (isLiveGrid() && !automatic)) return;
+  if (updateLayout) animateRemoval(tiles.get(login));
   if (expanded === login) setExpanded(null);
-  tiles.get(login).player.destroy();
+  const player = tiles.get(login).player; tiles.get(login).player = null;
+  player?.destroy();
   clearTimeout(tiles.get(login).timer); clearTimeout(tiles.get(login).offlineTimer);
   ro.unobserve(tiles.get(login).el.querySelector('.player'));
   chatResize.unobserve(tiles.get(login).body);
@@ -603,7 +830,9 @@ function remove(login, updateLayout = true) {
 }
 
 function clearTiles() {
-  for (const login of [...tiles.keys()]) remove(login, false);
+  for (const copy of exitingTiles) { copy.getAnimations().forEach(animation=>animation.cancel()); copy.remove(); }
+  exitingTiles.clear();
+  for (const login of [...tiles.keys()]) remove(login, false, true);
   focused = null;
 }
 
@@ -627,15 +856,18 @@ function setMuted(t, m) {
   t.muted = m; if (t.ready) applyMuted(t, m); paint(t);
 }
 function paint(t) {
-  t.el.classList.toggle('loud', !t.muted); t.el.classList.toggle('pin', t.pinned);
+  t.el.classList.toggle('loud', !t.muted);
   const spot = t.el.querySelector('.spotlight'), front = focused === t.el.dataset.login;
   spot.title = tr(front ? 'Revenir à la grille' : 'Spotlight'); spot.setAttribute('aria-label', spot.title); spot.setAttribute('aria-pressed', String(front));
-  const sound = t.muted ? 'muted' : t.pinned ? 'pinned' : 'on';
+  const sound = t.muted ? 'muted' : 'on';
+  // Under the global mute the sound controls step aside; aria-disabled keeps the hover, so the tooltip can say why.
   for (const button of t.el.querySelectorAll('.snd')) {
-    button.title = tr(sound === 'muted' ? 'Allumer le son' : sound === 'on' ? 'Épingler le son' : 'Couper le son');
+    button.title = tr(mutedAll ? 'Son coupé globalement' : t.muted ? 'Allumer le son' : 'Couper le son');
     button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-disabled', String(!!mutedAll));
     button.dataset.sound = sound;
   }
+  t.el.querySelector('.volume input').disabled = !!mutedAll;
 }
 function setExpanded(login) {
   expanded = login;
@@ -655,15 +887,18 @@ function setExpanded(login) {
   }
   syncChat();
 }
-// the spotlight brings the sound along and takes it from the tiles merely on; a pinned sound stays
+// The spotlight turns its sound on and, on the way out, gives back the state the tile had before. Other tiles keep theirs.
 function focus(login) {
   if (expanded) setExpanded(null);
   if (tiles.size < 2) return;
-  const prev = focused;
-  if (prev) readNativeControls(tiles.get(prev));
+  const prev = focused && tiles.get(focused);
+  if (prev) {
+    readNativeControls(prev);
+    if (typeof prev.spotlightMuted === 'boolean') setMuted(prev, prev.spotlightMuted);
+    prev.spotlightMuted = undefined;
+  }
   focused = focused === login ? null : login;
-  for (const [other, o] of tiles) if (other !== focused && !o.pinned && (mutedAll ? mutedAll.includes(other) : !o.muted)) setMuted(o, true);   // the intent counts under a global mute
-  if (focused) setMuted(tiles.get(focused), false);
+  if (focused) { const t = tiles.get(focused); t.spotlightMuted = mutedAll ? mutedAll.includes(focused) ? false : true : t.muted; setMuted(t, false); }   // the intent counts under a global mute
   layout();
 }// every tile but the spotlight drags, and any other tile takes the drop
 const canDrag = login => tiles.size > 1 && login !== expanded && login !== focused;
@@ -687,7 +922,7 @@ function layout() {
   if (batching) return;   // a restore adds every tile first and lays them out once
   renderLanding();
   const n = tiles.size;
-  if (n < 2) focused = null;
+  if (n < 2 && focused) { const t = tiles.get(focused); if (t && typeof t.spotlightMuted === 'boolean') { setMuted(t, t.spotlightMuted); t.spotlightMuted = undefined; } focused = null; }
   const frontOrder = focused ? [focused] : [], front = login => frontOrder.includes(login), count = frontOrder.length;
   const split = count > 0 && count < n;   // the spotlight beside a column of small ones
   if (expanded && n > 1 && !front(expanded)) setExpanded(null);
@@ -696,6 +931,9 @@ function layout() {
   for (const [login, t] of tiles) {
     t.el.classList.toggle('big', front(login));
     t.el.style.order = front(login) ? frontOrder.indexOf(login) : order.indexOf(login);
+    t.ppIcon();
+    t.bar.querySelector('.close').disabled = isLiveGrid();
+    sync(t);
     t.bar.draggable = canDrag(login);
   }
   if (split) {
@@ -737,7 +975,7 @@ function layout() {
     for (const t of tiles.values()) for (const name of ['--x', '--y', '--w', '--h']) t.el.style.removeProperty(name);
     const cols = columnsFor(n, grid.clientWidth || innerWidth, grid.clientHeight || innerHeight), rows = Math.ceil(n / cols) || 1;
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    grid.style.gridTemplateRows = `repeat(${rows}, ${100 / rows}vh)`;
+    grid.style.gridTemplateRows = `repeat(${rows}, calc((100% - ${2 * (rows - 1)}px) / ${rows}))`;   // the gaps come out of the rows, or the last one scrolls by 2px
   }
   // The spotlight and a lone tile always get the full player. Any other tile gets it once wide enough, and its chat wider
   // still, measured on the tile with a margin either way so a window near the line does not flap. A first mount, a role
@@ -775,6 +1013,7 @@ function paintMuteAll() {
   const button = $('#muteall');
   button.setAttribute('aria-pressed', String(!!mutedAll));
   button.title = tr(mutedAll ? 'Réactiver le son' : 'Couper tous les sons'); button.setAttribute('aria-label', button.title);
+  tiles.forEach(paint);
 }
 $('#muteall').onclick = () => {
   tiles.forEach(readNativeControls);
@@ -782,7 +1021,14 @@ $('#muteall').onclick = () => {
   else { const loud = [...tiles].filter(([, t]) => !t.muted).map(([login]) => login); tiles.forEach(t => setMuted(t, true)); mutedAll = loud; }
   paintMuteAll(); save();
 };
-$('#playall').onclick = () => { allPaused = !allPaused; paintPlayAll(); tiles.forEach(t => { sync(t); mark(t); }); save(); };
+$('#playall').onclick = () => {
+  hideTip();
+  // A quick shortcut, not a lock like the global mute: pause stops every tile, play resumes every tile, and each
+  // tile's own button can override it afterwards.
+  allPaused = !gridPaused();
+  tiles.forEach(t => { if (!allPaused && t.channel.online !== false) t.paused = false; t.ppIcon(); });
+  paintPlayAll(); tiles.forEach(sync); save();
+};
 let unloading = false;
 onpagehide = () => { unloading = true; saveCurrentLayout(); };
 // Tooltips: every title shows as a styled tooltip; the attribute moves aside while the pointer or the focus is on the element
@@ -797,10 +1043,18 @@ function showTip(el, delay) {
   tipTarget = el;
   tipTimer = setTimeout(() => {
     if (tipTarget !== el || !el.isConnected) return;
+    const side = el.closest('#side')?.getBoundingClientRect();
+    const contained = side && !document.body.classList.contains('collapsed');
+    tooltip.style.maxWidth = contained ? `${Math.min(320, side.width - 16)}px` : '';
+    tooltip.classList.toggle('sidebar-tip', !!contained);
     tooltip.textContent = el.dataset.tip; tooltip.hidden = false;
     const r = el.getBoundingClientRect(), w = tooltip.offsetWidth, h = tooltip.offsetHeight;
-    const x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8);
-    const y = r.bottom + h + 16 > innerHeight ? r.top - h - 8 : r.bottom + 8;
+    // Keep sidebar tooltips off the video surface when there is room in the sidebar.
+    const right = contained ? side.right : innerWidth;
+    const popover = el.closest('.snd-wrap')?.querySelector('.volume');   // the volume hangs under the sound button: its tooltip goes below the slider
+    const bottom = popover ? popover.getBoundingClientRect().bottom : r.bottom;
+    const x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), right - w - 8);
+    const y = bottom + h + 16 > innerHeight ? r.top - h - 8 : bottom + 8;
     tooltip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     tooltip.classList.add('in');
   }, delay);
@@ -835,7 +1089,7 @@ setInterval(tick, 1000);
 // an unmute pushed after a page click pauses the player and every play() is refused until its own video is clicked.
 // The first gesture restores the requested audio for every player, including players still loading.
 let activated = false;
-function push() { tiles.forEach(t => { if (!t.ready || allPaused || t.paused || (t.controls && t.hasPlayed && !t.playbackBlocked && (t.muted || !t.player.getMuted()))) return; applyMuted(t, t.muted); if (!allPaused && !t.muted && !t.paused) { t.player.play(); t.nudgedAt = Date.now(); } }); }
+function push() { tiles.forEach(t => { if (!t.ready || !wantsPlayback(t) || (t.controls && t.hasPlayed && !t.playbackBlocked && (t.muted || !t.player.getMuted()))) return; applyMuted(t, t.muted); sync(t); }); }
 function activate() { activated = true; updateAudioOverlay(); push(); }
 addEventListener('pointerdown', () => {
   if ($('#audio-overlay').hidden && !activated) activate();
@@ -893,7 +1147,7 @@ function openLiveNotification(login) {
   if (expanded) setExpanded(null);
   if (tiles.size > 1 && focused !== login) focus(login);
   if (allPaused) {
-    tiles.forEach(other => { if (other !== t) { other.paused = true; other.ppIcon(); } });
+    tiles.forEach(other => { if (other !== t && other.channel.online !== false) { other.paused = true; other.ppIcon(); } });
     allPaused = false; paintPlayAll();
   }
   t.paused = false; t.ppIcon(); setMuted(t, false); sync(t); mark(t);
@@ -906,7 +1160,7 @@ function openLiveNotification(login) {
 function updateLiveNotifications(channels) {
   pruneLiveNotifications(channels);
   for (const s of channels) {
-    if (s.online && lastLiveStatus.get(s.twitch) === false && !liveNotifications.has(s.twitch)) {
+    if (!isLiveGrid() && s.online && lastLiveStatus.get(s.twitch) === false && !liveNotifications.has(s.twitch)) {
       const toast = document.createElement('div');
       toast.className = 'live-notification'; toast.dataset.login = s.twitch;
       toast.innerHTML = '<button class="watch"><img alt=""><span><b></b><small data-i18n="Afficher dans la grille">Afficher dans la grille</small></span></button><button class="dismiss" aria-label="Fermer la notification" data-i18n-aria-label="Fermer la notification"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>';
@@ -968,9 +1222,17 @@ function renderList() {
   const active = document.activeElement;
   const keyboardLogin = list.contains(active) ? active.closest('li')?.dataset.login : null;
   const keyboardFavorite = active?.classList.contains('favorite');
+  // Placeholder rows while the first follows or a search are on their way; a status still unknown pulses in its row.
+  const pending = searching || (connected && !lastFollows && refreshInFlight);
+  const rowHeight = 44;   // avatar 28px plus the channel button's padding: the loading rows fill the list down to the fold
+  const skeleton = Array.from({ length: pending ? Math.max(2, Math.ceil((list.clientHeight || 600) / rowHeight) - rows.length) : 0 }, () => {
+    const li = document.createElement('li'); li.className = 'skeleton'; li.setAttribute('aria-hidden', 'true');
+    li.innerHTML = '<span class="channel"><i></i><span class="n"><b></b><small></small></span></span>';
+    return li;
+  });
   list.replaceChildren(...rows.map(s => {
     const li = document.createElement('li'); li.dataset.login = s.twitch;
-    li.className = (s.online === true ? 'live' : s.online === false ? 'off' : '') + (tiles.has(s.twitch) ? ' on' : '');
+    li.className = (s.online === true ? 'live' : s.online === false ? 'off' : '') + (tiles.has(s.twitch) ? ' on' : '') + (s.online == null && refreshInFlight ? ' pending' : '');
     li.innerHTML = '<button class="channel"><img alt="" loading="lazy"><span class="n"><span class="name"></span><div class="g"></div></span><span class="v"></span></button><button class="favorite"><svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></button>';
     li.querySelector('img').src = s.profileUrl;
     li.querySelector('img').title = s.display;   // the collapsed rail shows only the avatar
@@ -1003,7 +1265,7 @@ function renderList() {
     li.onpointerleave = leavePreview;
     play.onfocus = () => queuePreview(li); play.onblur = leavePreview;
     return li;
-  }));
+  }), ...skeleton);
   if (previewRow) {
     const row = [...list.children].find(li => li.dataset.login === previewRow.dataset.login);
     const s = streamers.find(s => s.twitch === previewRow.dataset.login);
@@ -1011,7 +1273,7 @@ function renderList() {
     else { previewRow = row; if (!preview.hidden) { row.setAttribute('aria-describedby', 'preview'); previewInfo(s); positionPreview(); } }
   }
   if (keyboardLogin) [...list.children].find(li => li.dataset.login === keyboardLogin)?.querySelector(keyboardFavorite ? '.favorite' : '.channel').focus({ preventScroll: true });
-  $('#list-empty').hidden = rows.length > 0 || (!q && !connected);
+  $('#list-empty').hidden = rows.length > 0 || pending || (!q && !connected);
   $('#list-empty').textContent = searching ? tr('Recherche en cours…') : q ? tr('Aucun résultat dans cette liste.') : connected ? tr('Tu ne suis encore aucune chaîne.') : '';
   $('#search-actions').hidden = !searchError || connected;
   $('#search-state').hidden = !q;
@@ -1076,6 +1338,7 @@ async function refresh() {
   if (!library || refreshInFlight) return;
   refreshInFlight = true;
   const version = accountVersion, connected = !!library.user;
+  if (!lastFollows || streamers.some(s => s.online == null)) renderList();   // show the rows as loading
   try {
     let nextChannels = connected ? follows : favorites;
     const reloadFollows = connected && Date.now() - lastFollows > 60000;
@@ -1083,13 +1346,14 @@ async function refresh() {
     const logins = [...new Set([...nextChannels, ...order.map(twitch => ({ twitch }))].map(s => s.twitch))];
     const live = await library.live(logins);
     if (version !== accountVersion) return;
-    const update = s => channel({ ...s, profileUrl: library.profiles.get(s.twitch)?.profileUrl || s.profileUrl, online: live.has(s.twitch), game: live.get(s.twitch)?.game_name || '', title: live.get(s.twitch)?.title || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
+    const update = s => channel({ ...s, profileUrl: library.profiles.get(s.twitch)?.profileUrl || s.profileUrl, offlineUrl: library.profiles.get(s.twitch)?.offlineUrl || s.offlineUrl || '', online: live.has(s.twitch), previewUrl: (connected ? live.get(s.twitch)?.thumbnail_url : live.get(s.twitch)?.preview_url) || s.previewUrl || '', game: live.get(s.twitch)?.game_name || '', title: live.get(s.twitch)?.title || '', viewer_count: live.get(s.twitch)?.viewer_count ?? 0 });
     if (connected) follows = nextChannels.map(update);
     else favorites = favorites.map(s => logins.includes(s.twitch) ? update(s) : s);
     results = results.map(s => logins.includes(s.twitch) ? update(s) : s);
     if (reloadFollows) lastFollows = Date.now();
     rebuild(); if (connected || $('#notice').textContent === tr(statusUnavailable)) notice();
     for (const [login, t] of tiles) if (logins.includes(login)) updateTileInfo(t, update(t.channel));
+    syncLiveGrid();
     updateLiveNotifications(connected ? follows : favorites);
     refreshCollaborations();
   } catch (error) {
@@ -1099,6 +1363,7 @@ async function refresh() {
     }
   } finally {
     refreshInFlight = false;
+    if (version === accountVersion && (!lastFollows || streamers.some(s => s.online == null))) renderList();   // loading rows step aside
     if (version !== accountVersion) refresh();
   }
 }
@@ -1156,8 +1421,15 @@ initWorkspace();
 addEventListener('preferenceschange', () => { $('#landing-language').value = preferences.language; splitReveal(); });
 $('#landing-language').value = preferences.language; splitReveal();
 init().catch(handleError);
+function refreshPosters() {
+  if (document.hidden) return;
+  for (const t of tiles.values()) if (t.poster?.isConnected) updatePoster(t);
+}
+setInterval(refreshPosters, 60000);
 setInterval(() => { if (!document.hidden) refresh(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { tiles.forEach(sync); refreshPosters(); refresh(); }
+});
 setInterval(async () => {
   if (!library?.user) return;
   try { await library.validate(); } catch (error) { disconnect(false); notice(error.message); }

@@ -15,6 +15,8 @@ function channel(data) {
   return { twitch, display: data.display || data.broadcaster_name || data.display_name || twitch,
     profileUrl: /^https:\/\//.test(data.profileUrl || data.profile_image_url || data.thumbnail_url || '')
       ? (data.profileUrl || data.profile_image_url || data.thumbnail_url) : 'favicon.svg',
+    previewUrl: /^https:\/\//.test(data.previewUrl || data.preview_url || '') ? (data.previewUrl || data.preview_url) : '',
+    offlineUrl: /^https:\/\//.test(data.offlineUrl || data.offline_image_url || '') ? (data.offlineUrl || data.offline_image_url) : '',
     online: data.online ?? data.is_live ?? null, game: data.game || data.game_name || '', title: data.title || '',
     viewersAmount: { number: data.viewer_count || 0, formatted: data.viewer_count == null ? '' : numberFormat.format(data.viewer_count) } };
 }
@@ -131,7 +133,7 @@ class TwitchLibrary {
       for (const user of profiles.data) {
         const stream = live.get(user.login);
         result.push(channel({ ...user, online: !!stream, game_name: stream?.game_name,
-          title: stream?.title, viewer_count: stream?.viewer_count }));
+          title: stream?.title, previewUrl: stream?.thumbnail_url, viewer_count: stream?.viewer_count }));
       }
     }
     return result;

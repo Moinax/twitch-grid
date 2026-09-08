@@ -1,5 +1,6 @@
 let gridAction = null;
 function gridSummary(item) {
+  if (item.id === 'live-follows') return tr('Grille dynamique');
   const count=item.layout.order?.length || 0;
   const text=item.id===gridStore.activeId?tr('Grille actuelle'):count?tr(count===1?'{count} tuile':'{count} tuiles',{count}):tr('Aucune tuile');
   return item.layout.locked ? text + ' · ' + tr('verrouillée') : text;
@@ -7,7 +8,7 @@ function gridSummary(item) {
 function renderGridLauncher() {
   document.getElementById('current-grid-name').textContent = gridStore ? gridStore.label() : tr('Grille par défaut');
   const lock = document.getElementById('grid-lock');
-  lock.setAttribute('aria-pressed', String(locked)); lock.disabled = !restored;
+  lock.setAttribute('aria-pressed', String(locked)); lock.disabled = !restored || isLiveGrid();
   lock.title = tr(locked ? 'Déverrouiller la grille' : 'Verrouiller la grille'); lock.setAttribute('aria-label', lock.title);
   const menu = document.getElementById('grid-menu-list');
   menu.replaceChildren();
@@ -42,7 +43,7 @@ function renderSavedGrids() {
     for (const [action, label] of [['rename', 'Renommer'],['delete', 'Supprimer']]) {
       const button=row.querySelector('.'+action+'-grid');
       button.title=tr(label); button.setAttribute('aria-label',tr(label)+' '+gridStore.label(item));
-      button.disabled=!restored;
+      button.disabled=!restored || item.id==='live-follows';
       button.onclick=()=>openGridForm(action,item.id);
     }
     list.append(row);
@@ -148,7 +149,7 @@ function initWorkspace() {
   document.getElementById('grids-shortcut').onclick=openGrids;
   document.getElementById('grids-open').onclick=()=>{document.getElementById('grid-switcher').open=false;openGrids();};
   document.getElementById('grid-switcher').ontoggle=e=>{ if (e.target.open) { closeTileMenus(false,e.target); hidePreview(); } };
-  document.getElementById('grid-lock').onclick=()=>{ if (!restored) return; locked=!locked; renderList(); layout(); };
+  document.getElementById('grid-lock').onclick=()=>{ if (!restored || isLiveGrid()) return; locked=!locked; renderList(); layout(); };
   document.getElementById('language-setting').value=preferences.language;
   document.getElementById('theme-setting').value=preferences.theme;
   document.getElementById('language-setting').onchange=e=>setPreference('language',e.target.value);
