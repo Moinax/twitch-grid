@@ -104,13 +104,13 @@ Le projet comprend les fichiers statiques et une fonction Node.js pour la recher
 
 ## Image de partage
 
-Les balises Open Graph et Twitter utilisent une image PNG de 1200 × 630 pixels. Pour modifier la carte, édite `scripts/share-card.html`, puis génère l’image avec :
+Les balises Open Graph et Twitter utilisent une image PNG de 1200 × 630 pixels. La carte est une capture du haut de la landing, mise en page pour ce format par `scripts/render-share-image.cjs`. Après un changement du hero ou de la maquette, régénère l’image avec :
 
 ```sh
 pnpm og:generate
 ```
 
-La commande utilise Chromium de Playwright et écrit `assets/share-card.png`. L’image est versionnée et servie directement, sans génération lors du déploiement.
+La commande lance le serveur local, utilise Chromium de Playwright et écrit `assets/share-card.png`. L’image est versionnée et servie directement, sans génération lors du déploiement.
 
 ## Vérifier
 

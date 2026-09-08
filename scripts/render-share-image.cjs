@@ -1,20 +1,34 @@
+// Screenshots the real landing hero (copy, fonts, app mock) laid out for a 1200 × 630 share card.
 const { chromium } = require('@playwright/test');
-const { mkdir } = require('node:fs/promises');
+const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
+
+const port = 8768;
+const card = `
+  #landing .island, #landing .eyebrow, #landing .cta, #landing .proof, #landing .skip { display: none; }
+  #landing, #landing * { animation: none !important; }
+  #landing { overflow: hidden; }
+  #landing .hero { padding: 56px 24px 0; }
+  #landing .hero::before { mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent); -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent); }
+  #landing h1 { margin-top: 0; font-size: 72px; }
+  #landing .lead { max-width: 880px; margin-top: 16px; font-size: 22px; line-height: 32px; }
+  #landing .mock { margin-top: 40px; }
+`;
 
 async function render() {
+  const server = spawn(process.execPath, ['server.cjs', String(port)], { cwd: path.join(__dirname, '..'), stdio: 'ignore' });
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
-    await page.goto(pathToFileURL(path.join(__dirname, 'share-card.html')).href);
-    await page.evaluate(() => document.fonts.ready);
+    const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, colorScheme: 'dark' });
+    await page.goto(`http://localhost:${port}/`, { waitUntil: 'networkidle' });
+    await page.addStyleTag({ content: card });
+    await page.evaluate(() => { document.body.classList.add('landing'); return document.fonts.ready; });
     const output = path.join(__dirname, '../assets/share-card.png');
-    await mkdir(path.dirname(output), { recursive: true });
     await page.screenshot({ path: output });
     console.log(output);
   } finally {
     await browser.close();
+    server.kill();
   }
 }
 
