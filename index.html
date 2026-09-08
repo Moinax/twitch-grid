@@ -31,7 +31,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap">
 <script src="preferences.js"></script>
 <style>
-  :root { --side: 22vw; --bar: 34px; --foot: 32px; --bg: #181818; --panel: #1f1f1f; --raised: #272727; --line: #313131; --fg: #efeff1; --dim: #adadb8; --accent: #9147ff; --accent-soft: #9147ff26; --live: #eb0400; --ease: cubic-bezier(0.32, 0.72, 0, 1); }
+  :root { --side: 22vw; --bar: 34px; --bg: #181818; --panel: #1f1f1f; --raised: #272727; --line: #313131; --fg: #efeff1; --dim: #adadb8; --accent: #9147ff; --accent-soft: #9147ff26; --live: #eb0400; --ease: cubic-bezier(0.32, 0.72, 0, 1); }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; background: var(--bg); color: var(--fg); font: 500 14px/20px Manrope, system-ui, sans-serif; overflow: hidden; }
   button, input, select { font: inherit; }
@@ -97,21 +97,14 @@
   #list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   #tooltip { position: fixed; top: 0; left: 0; z-index: 50; max-width: 320px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--fg); font-size: 12px; line-height: 16px; font-weight: 600; text-wrap: pretty; box-shadow: 0 8px 24px #18181880; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
   #tooltip.in { opacity: 1; }
-  #tooltip.sidebar-tip, [data-theme] #tooltip.sidebar-tip { box-shadow: none; }
-  #preview { position: fixed; z-index: 10; width: 402px; max-width: calc(100vw - 16px); overflow: hidden; border: 1px solid #9147ff66; border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px #181818cc; animation: preview-in .3s var(--ease); }
-  @keyframes preview-in { from { transform: translateY(-6px); } }
-  #preview .video { position: relative; height: 300px; background: #000; }
+  #preview { position: fixed; z-index: 10; width: 362px; max-width: calc(100vw - 16px); overflow: hidden; border: 1px solid #9147ff66; border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px #181818cc; animation: menu-in .3s var(--ease); }
+  #preview .video { position: relative; aspect-ratio: 16 / 9; background: #000; }
   #preview .player { position: absolute; inset: 0; pointer-events: none; }
-  #preview iframe { position: absolute; width: 100%; height: 100%; border: 0; }
-  .preview-cover { position: absolute; inset: 0; z-index: 1; background: #000; pointer-events: none; transition: opacity .3s var(--ease), visibility .3s var(--ease); }
-  .preview-status { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #18181888; backdrop-filter: blur(2px); color: #efeff1; font-size: 12px; text-shadow: 0 1px 4px #000; }
-  .preview-status img { width: 56px; height: 56px; border-radius: 50%; }
-  #preview.player-ready .preview-cover { display: none; }
-  #preview .playback-loading { display: none; }
-  #preview.player-ready:not(.playing):not(.preview-failed) .playback-loading { display: inline-block; }
+  #preview iframe { position: absolute; width: 640px; height: 360px; transform-origin: 0 0; border: 0; }
+  #preview .status { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: var(--bg); color: var(--dim); transition: opacity .7s var(--ease), visibility .7s var(--ease); }
+  #preview.playing .status { opacity: 0; visibility: hidden; }
   #preview .status[hidden] { display: none; }
   #preview .status img { width: 56px; height: 56px; border-radius: 50%; }
-  #preview .preview-message { margin-top: 6px; color: var(--dim); font-size: 12px; }
   #preview .info { padding: 10px 12px; }
   #preview .heading { display: flex; align-items: center; gap: 12px; }
   #preview .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -152,10 +145,10 @@
   #empty .gh svg { fill: currentColor; }
   @keyframes float { 50% { transform: translateY(-8px); } }
   .tile { position: relative; display: flex; flex-direction: column; background: #000; min-width: 0; min-height: 0; }
-  /* Draw the frame outside the video instead of covering the iframe with a pseudo-element. */
-  .tile { outline: 1px solid var(--line); transition: outline-color .2s var(--ease); }
+  /* a frame around bar + video reads as one card even when the player letterboxes; an overlay, the iframe would hide an outline */
+  .tile::after { content: ''; position: absolute; inset: 0; z-index: 2; border: 1px solid var(--line); pointer-events: none; transition: border-color .2s var(--ease); }
   /* every grid tile lights up under the pointer, whatever player it carries; the spotlight and a lone tile have nowhere to go */
-  #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover { outline-color: var(--accent); }
+  #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover::after { border-color: var(--accent); }
   #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar { background: var(--raised); }
   #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar b { color: #fff; }
   body.dragging iframe { pointer-events: none; }
@@ -170,21 +163,23 @@
   .tile .bar b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
   .tile .bar span { color: var(--dim); font-variant-numeric: tabular-nums; }
   .tile .bar button { border: 0; background: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 0 6px; height: 28px; border-radius: 4px; transition: color .2s var(--ease), background-color .2s var(--ease), transform .2s var(--ease); }
-  .tile .bar button:hover:not(:disabled) { color: var(--fg); }
-  .tile .bar button:disabled { opacity: .3; cursor: default; }
+  .tile .bar button:hover { color: var(--fg); }
   .tile .stream-avatar { flex: none; width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
   .tile:not(.full-player) .chat-toggle { display: none; }
   .tile .chat-toggle[aria-expanded="true"] { color: #fff; background: #ffffff26; }
   .tile .bar > button, .tile .viewers { flex: none; }
-  .tile .stream-info { min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; }
-  .tile .stream-info span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .tile .stream-category { flex: 0 1 auto; max-width: 35%; color: #d6baff; font-weight: 600; }
-  .tile .stream-title { flex: 1; color: var(--fg); }
+  .tile .stream-info { min-width: 0; font-size: 12px; line-height: 16px; }
+  .tile .stream-info .stream-category { color: #d6baff; font-weight: 600; }
+  .tile .stream-info .stream-title { color: var(--fg); }
   .tile.full-player .bar:has(.stream-info:not([hidden])) b { flex: 0 1 auto; max-width: 20%; }
-  .tile.full-player .stream-info { flex: 1; }
-  /* the footer of a simplified tile: the metadata at rest, the controls under the pointer, never over the iframe */
-  .tile:not(.full-player) .stream-info { position: absolute; left: 8px; right: 8px; bottom: 0; height: var(--foot); pointer-events: none; transition: opacity .3s var(--ease), visibility .3s var(--ease); }
-  .tile:not(.full-player):is(:hover, :focus-within) .stream-info { visibility: hidden; opacity: 0; }
+  .tile.full-player .stream-info { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .tile.full-player .stream-info span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tile.full-player .stream-category { flex: 0 1 auto; max-width: 35%; }
+  .tile.full-player .stream-title { flex: 1; }
+  .tile:not(.full-player) .stream-info { position: absolute; top: calc(var(--bar) + 8px); left: 8px; right: 8px; z-index: 3; padding: 8px 12px; border: 1px solid #ffffff22; border-radius: 8px; background: #1f1f1fbf; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); pointer-events: none; visibility: hidden; opacity: 0; transform: translateY(-4px); transition: opacity .3s var(--ease), visibility .3s var(--ease), transform .3s var(--ease); }
+  .tile:not(.full-player):hover .stream-info { visibility: visible; opacity: 1; transform: none; }
+  .tile:not(.full-player) .stream-category { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-bottom: 2px; }
+  .tile:not(.full-player) .stream-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
   #grid.single .spotlight, .tile:not(.full-player) .fs { display: none; }   /* a single player has nothing to come in front of */
   .tile .bar .spotlight[aria-pressed="true"] { color: #bf94ff; }
   #grid.single .bar, .tile .bar[draggable="false"] { cursor: default; }
@@ -194,8 +189,8 @@
   #update { position: fixed; bottom: 24px; left: calc(50% + var(--sb) / 2); transform: translateX(-50%);   /* centred on the grid, not the window */ z-index: 5; padding: 8px 16px; border-radius: 9999px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-weight: 600; cursor: pointer; animation: toast-in .5s var(--ease); transition: background-color .2s var(--ease); }
   #update:hover { background: #9147ff66; }
   @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
-  .tile .ctl { position: absolute; right: 8px; bottom: 3px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 9999px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 12px; line-height: 16px; opacity: .7; transition: opacity .2s var(--ease); }
-  .tile.full-player:not(.paused) .ctl { display: none; }
+  .tile .ctl { position: absolute; right: 12px; bottom: 12px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 9999px; background: #9147ff40; backdrop-filter: blur(10px); border: 1px solid #ffffff22; color: var(--fg); font-size: 12px; line-height: 16px; opacity: .7; transition: opacity .2s var(--ease); }
+  .tile.full-player .ctl { display: none; }
   .tile.full-player .load { display: none; }
   .tile .ctl:hover { opacity: 1; }
   .tile .ctl button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
@@ -222,15 +217,9 @@
   .live-notification small { display: block; margin-top: 2px; color: #d6baff; font-size: 12px; line-height: 16px; }
   .live-notification .dismiss { flex: none; display: flex; padding: 8px; margin-right: 4px; color: var(--dim); }
   .tile:not(.pin) .snd .pinned { display: none; }   /* the pin glyph: the sound survives leaving the spotlight */
-  .stream-poster { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
-  .player-embed { position: absolute; inset: 0; background: #000; }
-  .tile.poster-only .player { cursor: pointer; }
-  .tile .player { flex: 1; min-height: 0; position: relative; background-size: contain; background-repeat: no-repeat; background-position: center; }
+  .tile .player { flex: 1; min-height: 0; position: relative; }
   .tile-body { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .tile-body > .player { min-width: 0; }
-  /* simplified and paused tiles keep a footer under the video, reserved at all times: a hover never resizes the iframe,
-     which would restart the stream, or push it under Twitch's 300px */
-  .tile:is(:not(.full-player), .paused) .tile-body { padding-bottom: var(--foot); }
   .tile-body[data-chat-position="right"] { grid-template-columns: minmax(0, 1fr) var(--chat-width); }
   .tile-body[data-chat-position="left"] { grid-template-columns: var(--chat-width) minmax(0, 1fr); }
   .tile-body[data-chat-position="left"] > .chat { grid-column: 1; grid-row: 1; }
@@ -278,8 +267,6 @@
   /* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
   .tile .load { position: absolute; inset: var(--bar) 0 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #181818d9; backdrop-filter: blur(20px); color: var(--fg); font-weight: 700; font-size: 16px; line-height: 24px; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
   .tile.loading .load { opacity: 1; }
-  .tile.player-ready .load, .tile.poster-only .load { display: none; }
-  .playback-loading { flex: none; display: inline-block; width: 12px; height: 12px; border: 2px solid #9147ff44; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   .tile .load i { width: 36px; height: 36px; border: 3px solid #9147ff33; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   .tile .load small { font-weight: 600; font-size: 12px; line-height: 16px; letter-spacing: .04em; color: var(--dim); }
   .tile.offline .load i, .tile:not(.offline) .load small { display: none; }
@@ -290,12 +277,15 @@
   .tile.partial:not(.offline) .load b { display: none; }
   .tile.partial:not(.offline) .load .more { display: block; position: sticky; top: 16px; bottom: 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  /* Simplified players delegate clicks to the tile without placing a layer over the iframe. */
-  .tile:not(.full-player) .player { cursor: pointer; }
-  .tile:not(.full-player) .player iframe { pointer-events: none; }
-  .tile .player iframe { border: 0; position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
-  .tile .player iframe:fullscreen { left: 0 !important; top: 0 !important; width: 100vw !important; height: 100vh !important; }
-  #grid { --cols: 1; }   /* --side and --tile-h come from layout(), which holds the side tiles at the player minimum */
+  /* a click on the video lands inside the iframe: on thumbnails a transparent layer catches it for the spotlight instead */
+  .tile:not(.full-player) .player::after { content: ""; position: absolute; inset: 0; cursor: pointer; }
+  /* players render at two fixed sizes and are scaled to the tile with a transform: the Twitch player restarts its
+     stream whenever its box grows (quality switch), and a transform is not a resize. ponytail: 720p on the spotlight
+     whatever the screen; bump the big size if a 4K spotlight ever matters */
+  .tile .player iframe { position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; display: block; }
+  .tile.full-player .player iframe, .tile:fullscreen .player iframe { width: 1280px; height: 720px; }
+  .tile .player iframe:fullscreen { transform: none !important; width: 100vw; height: 100vh; }
+  #grid { --cols: 1; --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar)); }
   #grid.focused { grid-template-columns: 1fr repeat(var(--cols), calc(var(--side) / var(--cols))); grid-auto-rows: var(--tile-h); }
   #grid.focused::before { content: ""; grid-column: 1; grid-row: 1 / -1; }   /* holds the first column so the small tiles flow into the side ones */
   #grid.focused.below::before { grid-column: 1 / -1; grid-row: 1; }   /* portrait: holds the first row, the small tiles flow underneath */
@@ -439,6 +429,7 @@
   [data-theme="light"] #grid:not(.single) .tile:where(:not(.big)):hover .bar b { color: var(--fg); }
   [data-theme="light"] .tile.loud .snd { color: #7734d8; }
   [data-theme="light"] .tile .ctl { color: #fff; }
+  [data-theme="light"] .tile:not(.full-player) .stream-info { background: #ffffffed; }
   [data-theme="light"] #audio-overlay { background: #ffffff22; color: var(--fg); }
   [data-theme="light"] #audio-overlay p { color: var(--fg); }
   [data-theme="light"] #audio-overlay h2, [data-theme="light"] #audio-overlay p { text-shadow: 0 1px 10px #fff; }
@@ -772,8 +763,8 @@
 </aside>
 <div id="tooltip" role="tooltip" hidden></div>
 <div id="preview" role="tooltip" hidden>
-  <div class="video"><div class="player"></div><div class="preview-cover"><img class="stream-poster" alt="" decoding="async"><div class="status preview-status"><img alt=""><span></span></div></div></div>
-  <div class="info"><div class="heading"><b class="name"></b><i class="playback-loading" role="status" aria-label="Chargement de l’aperçu…" data-i18n-aria-label="Chargement de l’aperçu…"></i><span class="viewers" hidden></span></div><div class="category" hidden></div><div class="stream-title" hidden></div><p class="preview-message" role="status" hidden></p></div>
+  <div class="video"><div class="player"></div><div class="status"><img alt=""><span></span></div></div>
+  <div class="info"><div class="heading"><b class="name"></b><span class="viewers" hidden></span></div><div class="category" hidden></div><div class="stream-title" hidden></div></div>
 </div>
 <main id="main">
   <div id="grid"></div>

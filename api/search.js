@@ -62,7 +62,7 @@ async function streams(logins) {
 }
 function userChannel(user, stream) {
   return { broadcaster_login: user.login, display_name: user.display_name,
-    thumbnail_url: user.profile_image_url, preview_url: stream?.thumbnail_url || '', is_live: !!stream,
+    thumbnail_url: user.profile_image_url, is_live: !!stream,
     game_name: stream?.game_name || '', title: stream?.title || '', viewer_count: stream?.viewer_count || 0 };
 }
 async function lookup(logins) {
