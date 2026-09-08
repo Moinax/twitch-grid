@@ -104,7 +104,7 @@ Le projet comprend les fichiers statiques et une fonction Node.js pour la recher
 
 ## Image de partage
 
-Les balises Open Graph et Twitter utilisent une image PNG de 1200 × 630 pixels. La carte est une capture du haut de la landing, mise en page pour ce format par `scripts/render-share-image.cjs`. Après un changement du hero ou de la maquette, régénère l’image avec :
+Les balises Open Graph et Twitter utilisent une image PNG de 1200 × 630 pixels. La carte est une capture du haut de la landing en anglais, mise en page pour ce format par `scripts/render-share-image.cjs`. Les balises de partage sont en anglais elles aussi, car les robots des réseaux ne voient pas le choix de langue de la page. Après un changement du hero ou de la maquette, régénère l’image avec :
 
 ```sh
 pnpm og:generate

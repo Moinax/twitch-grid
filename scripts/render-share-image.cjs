@@ -1,4 +1,5 @@
-// Screenshots the real landing hero (copy, fonts, app mock) laid out for a 1200 × 630 share card.
+// Screenshots the real landing hero (copy, fonts, app mock) in English, laid out for a 1200 × 630 share card.
+// The share tags in index.html are English too: crawlers never run the in-page language switch.
 const { chromium } = require('@playwright/test');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
@@ -20,6 +21,7 @@ async function render() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, colorScheme: 'dark' });
+    await page.addInitScript(() => localStorage.setItem('tg.preferences', JSON.stringify({ language: 'en', theme: 'dark' })));
     await page.goto(`http://localhost:${port}/`, { waitUntil: 'networkidle' });
     await page.addStyleTag({ content: card });
     await page.evaluate(() => { document.body.classList.add('landing'); return document.fonts.ready; });
