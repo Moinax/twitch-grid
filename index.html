@@ -59,7 +59,6 @@
   body.collapsed #list li { padding: 0 3px 0 0; justify-content: center; }
   body.collapsed #list .channel { flex: none; position: relative; padding: 4px 0; }
   body.collapsed #list img { width: 32px; height: 32px; }
-  body.collapsed #list li.live .channel::after { content: ""; position: absolute; right: -2px; bottom: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 2px var(--panel); }
   body.collapsed #list .n, body.collapsed #list .v, body.collapsed #list .favorite { display: none; }
   .row { display: flex; align-items: center; gap: 8px; }
   .row img { display: block; border-radius: 4px; }
@@ -685,7 +684,7 @@
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><h3 data-i18n="">Grille verrouillée</h3><p data-i18n="">Verrouille la grille pour qu’aucun stream ne s’ajoute par erreur. Un stream terminé quitte la grille après une minute.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span><h3 data-i18n="">Agrandir</h3><p data-i18n="">Étends le stream en spotlight à toute la fenêtre du navigateur. Échap pour revenir.</p></article>
         <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><h3 data-i18n="">Trois langues, deux thèmes</h3><p data-i18n="">Français, anglais, néerlandais. Clair, sombre ou selon le système, sans recharger les vidéos.</p></article>
-        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span><h3 data-i18n="">Sidebar en rail</h3><p data-i18n="">Repliée, la liste devient un rail d’avatars, directs marqués en rouge. Le survol ouvre un aperçu du stream avec son titre et sa catégorie.</p></article>
+        <article class="card"><span class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span><h3 data-i18n="">Sidebar en rail</h3><p data-i18n="">Repliée, la liste devient un rail d’avatars, chaînes hors ligne estompées. Le survol ouvre un aperçu du stream avec son titre et sa catégorie.</p></article>
       </div>
     </section>
 
