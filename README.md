@@ -52,6 +52,12 @@ Le bouton d’agrandissement de la barre étend le stream à toute la fenêtre d
 
 Après un rechargement, si la grille doit jouer avec du son, un overlay flouté couvre la page. Un clic n’importe où ou une touche réactive les sons prévus par la grille et ferme l’overlay. Les tuiles muettes, les volumes et les pauses restent tels qu’ils étaient enregistrés. L’overlay ne revient plus pendant cette visite. Firefox refuse le son dans un lecteur que tu n’as jamais cliqué et le met en pause : cette pause n’est pas enregistrée comme un choix, un clic sur la vidéo relance la lecture et le prochain rechargement repart en lecture.
 
+## Taille minimale des lecteurs
+
+Twitch ne lance la lecture automatique que dans un lecteur d’au moins 400 × 300 pixels, visible et jamais recouvert. La grille ne réduit donc jamais une tuile sous cette taille : elle limite le nombre de colonnes, garde des lignes assez hautes et fait défiler le reste. Quand plusieurs dispositions sont possibles, elle préfère celle qui tient entièrement à l’écran. Seules les tuiles visibles chargent leur lecteur ; les autres affichent une image du stream et démarrent en arrivant à l’écran. Une tuile en pause garde aussi son image, et son survol lance un aperçu muet dans la tuile.
+
+Sur les tuiles simplifiées et les tuiles en pause, la catégorie, le titre et les commandes occupent un pied de tuile sous la vidéo, jamais par-dessus. Une fenêtre trop étroite pour un seul lecteur, sur téléphone par exemple, garde les images.
+
 ## Chat du stream
 
 L’icône de chat dans la barre du stream en spotlight ouvre son chat Twitch. Elle est aussi disponible avec une tuile seule. Le chat suit le spotlight et se ferme temporairement au retour à la grille. Le mode Auto utilise l’espace sous la vidéo quand il reste au moins 420 pixels de hauteur ; sinon, il choisit le placement qui garde la plus grande image. La flèche à côté de l’icône ouvre les options Auto, Top, Bottom, Left et Right. Choisir une option ouvre le chat à cet endroit sans autre clic. Le chat occupe tout son panneau, sans barre de titre ajoutée.

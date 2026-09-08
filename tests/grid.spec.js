@@ -17,6 +17,9 @@ const mockPlayer = `window.Twitch = { Player: class {
 }};`;
 async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
+  // The mock player's src-less iframes are same-origin documents where every init script below runs again and would
+  // reset the storage the app just saved. Real Twitch frames are cross-origin: shadow the storage inside child frames.
+  await page.addInitScript(() => { if (window !== window.top) { const noop = { getItem: () => null, setItem() {}, removeItem() {}, clear() {}, key: () => null, length: 0 }; for (const name of ['localStorage', 'sessionStorage']) Object.defineProperty(window, name, { value: noop, configurable: true }); } });
   if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
@@ -266,7 +269,8 @@ test('a slow Twitch player script does not block account setup or overwrite the 
   await expect(page.locator('#list [data-login="altair"]')).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual(['altair']);
   await pendingPlayer.fulfill({contentType:'text/javascript',body:mockPlayer});
-  await expect(page.locator('#grid [data-login="altair"] iframe')).toBeVisible();
+  await expect(page.locator('#grid [data-login="altair"]')).toHaveClass(/poster-only/);
+  await expect(page.locator('#grid [data-login="altair"] iframe')).toHaveCount(0);
   expect(await page.evaluate(() => tiles.get('altair').paused)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -314,7 +318,7 @@ test('saved favorites load their status without login and refresh after a stream
   await page.clock.install(); await page.goto('/');
   await expect(page.locator('[data-login="altair"] .g')).toHaveText('Hors ligne');
   await expect(page.locator('[data-login="altair"]')).toHaveClass(/off/);
-  await expect(page.locator('[data-login="live"] .g')).toHaveText('En direct · Art');
+  await expect(page.locator('[data-login="live"] .g')).toHaveText('Art');
   expect(batches).toEqual([['altair', 'live']]);
   online = false;
   await page.clock.fastForward(31000);
@@ -371,16 +375,21 @@ test('one tile has native controls without spotlight and switches back after add
   expect(bounds.width).toBeCloseTo(gridBounds.width, 0);
   await page.evaluate(() => { const p = tiles.get('one').player; p.pause(); p.setVolume(0.25); p.setMuted(true); p.setQuality('720p60'); });
   await page.locator('#list [data-login="two"] .channel').click();
-  await expect(page.locator('#grid iframe[data-controls="false"]')).toHaveCount(2);
+  await expect(page.locator('#grid iframe[data-controls="false"]')).toHaveCount(1);
+  await expect(one).toHaveClass(/poster-only/);
   await page.clock.runFor(1000);
   expect(await page.evaluate(() => ({ paused:tiles.get('one').paused, volume:tiles.get('one').volume, muted:tiles.get('one').muted })))
     .toEqual({paused:true,volume:0.25,muted:true});
   await page.locator('#grid [data-login="two"] .close').click();
-  await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(one).toHaveClass(/full-player/);
+  await page.locator('#q').hover();
   await page.clock.runFor(1000);
-  expect(await page.evaluate(() => ({ paused:tiles.get('one').player.paused, quality:tiles.get('one').player.getQuality() })))
+  expect(await page.evaluate(() => ({ paused:tiles.get('one').paused, quality:tiles.get('one').quality })))
     .toEqual({paused:true,quality:'720p60'});
   await page.reload();
+  await expect(one).toHaveClass(/poster-only/);
+  await one.locator('.player').click();
+  await page.clock.runFor(1000);
   await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   await one.locator('.close').click();
@@ -443,6 +452,7 @@ test('the spotlight button and a click on a small tile bring one stream in front
 test('tiles drag onto any other tile: sliding within the grid order, or taking the spotlight when dropped on it', async ({ page }) => {
   const errors = await setup(page);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four'], focused: 'one' })));
+  await page.setViewportSize({ width: 1600, height: 1120 });   // a landscape box with three side tiles at the player minimum, no scrolling
   await page.goto('/');
   const tile = login => page.locator(`#grid [data-login="${login}"]`);
   const state = () => page.evaluate(() => ({ order, focused }));
@@ -474,7 +484,7 @@ test('tiles drag onto any other tile: sliding within the grid order, or taking t
 test('a portrait grid keeps the small tiles in a strip under the front row', async ({ page }) => {
   const errors = await setup(page);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'], focused: 'one', collapsed: true })));
-  await page.setViewportSize({ width: 640, height: 1100 });
+  await page.setViewportSize({ width: 900, height: 1100 });   // two players across under the front row
   await page.goto('/');
   const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]'), three = page.locator('#grid [data-login="three"]');
   await expect(page.locator('#grid')).toHaveClass(/below/);
@@ -575,6 +585,7 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   await expect(volume).toBeVisible();
   await expect(one.locator('.ctl output')).toBeVisible();
   await expect(two.locator('.ctl input')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => !!tiles.get('one').ready)).toBe(true);
   await volume.focus();
   await volume.press('ArrowRight');
   await expect(volume).toHaveValue('0.55');
@@ -583,7 +594,7 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   expect(await page.evaluate(() => {
     const t=tiles.get('one');
     return {muted:t.muted,playerMuted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.paused,otherMuted:tiles.get('two').muted};
-  })).toEqual({muted:false,playerMuted:false,volume:0.55,paused:true,otherMuted:true});
+  })).toEqual({muted:false,playerMuted:true,volume:0.55,paused:true,otherMuted:true});
   await page.locator('#q').focus();
   await page.locator('#q').hover();
   await expect(one.locator('.ctl')).toBeHidden();
@@ -652,27 +663,30 @@ test('native pause, volume and mute survive the watchdog and returning to the gr
   await favorite(page, 'two'); await page.locator('#list [data-login="two"] .channel').click();
   await page.locator('#grid [data-login="one"] .player').click();
   await page.clock.runFor(2500);
+  await page.locator('#q').hover();
   await page.evaluate(() => {
     const player = tiles.get('one').player;
     player.pause(); player.setVolume(0.25); player.setMuted(true); player.setQuality('720p60');
   });
   await page.clock.runFor(6000);
   expect(await page.evaluate(() => {
-    const t = tiles.get('one'); return { paused:t.paused, muted:t.muted, volume:t.volume, playing:!t.player.paused };
+    const t = tiles.get('one'); return { paused:t.paused, muted:t.muted, volume:t.volume, playing:!!t.player && !t.player.paused };
   })).toEqual({ paused:true, muted:true, volume:0.25, playing:false });
   await page.locator('#grid .big .spotlight').click();
+  await page.locator('#q').hover();
   await page.clock.runFor(1000);
   await expect(page.locator('#grid [data-login="one"] .ctl input')).toHaveValue('0.25');
-  expect(await page.evaluate(() => tiles.get('one').player.paused)).toBe(true);
+  expect(await page.evaluate(() => tiles.get('one').player)).toBeNull();
   await page.locator('#grid [data-login="one"] .player').click(); await page.clock.runFor(1000);
   expect(await page.evaluate(() => tiles.get('one').player.getQuality())).toBe('720p60');
   expect(errors).toEqual([]);
 });
-test('native Play resumes a spotlight restored in a paused state', async ({ page }) => {
+test('Play on a poster resumes a spotlight restored in a paused state', async ({ page }) => {
   await setup(page); await page.clock.install();
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one',allPaused:true,paused:{one:true}})));
   await page.goto('/'); await page.clock.runFor(1000);
-  await page.evaluate(() => tiles.get('one').player.play());
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  await page.locator('#grid [data-login="one"] .player').click();
   await page.clock.runFor(6000);
   expect(await page.evaluate(() => ({ allPaused, one:tiles.get('one').paused, two:tiles.get('two').paused, playing:!tiles.get('one').player.paused })))
     .toEqual({allPaused:false,one:false,two:true,playing:true});
@@ -760,7 +774,7 @@ test('guest search renders API results and saves a favorite without authenticati
   await page.route('https://example.com/altair.png', route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg"/>'}));
   await page.locator('#q').fill('altair');
   await expect(page.locator('#list li')).toHaveCount(2);
-  await expect(page.locator('#list [data-login="altair"] .g')).toHaveText('En direct · Art');
+  await expect(page.locator('#list [data-login="altair"] .g')).toHaveText('Art');
   await expect(page.locator('#list [data-login="altair"] img')).toHaveAttribute('src','https://example.com/altair.png');
   await expect(page.getByText('Rechercher sur Twitch ↗')).toHaveCount(0);
   await expect(page.locator('#search-state')).toHaveText('2 chaînes trouvées');
@@ -818,10 +832,9 @@ for (const connected of [false, true]) test(`stream metadata follows focus, hove
   await expect(big.locator('.stream-title')).toHaveText(title);
   await expect(big.locator('.stream-info img')).toHaveCount(0);
   await expect(big.locator('.stream-info')).toBeVisible();
-  await expect(small.locator('.stream-info')).toBeHidden();
-  await small.locator('.player').hover();
   await expect(small.locator('.stream-info')).toBeVisible();
-  await expect(small.locator('.stream-info')).toHaveCSS('backdrop-filter', 'blur(12px)');
+  await small.locator('.player').hover();
+  await expect(small.locator('.stream-info')).toBeHidden();
   await page.locator('#toggle').hover();
   await expect(small.locator('.stream-info')).toBeHidden();
   await page.evaluate(() => { window.metadataPlayer = tiles.get('one').player; });
@@ -848,7 +861,7 @@ for (const single of [true, false]) test(`expand ${single ? 'single' : 'focused'
   await page.goto('/');
   const tile = page.locator('#grid [data-login="one"]'), button = tile.locator('.fs');
   await expect(button).toBeVisible();
-  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.ready))).toBe(true);
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.ready || showPoster(t)))).toBe(true);
   const before = await tile.boundingBox();
   const focusedBefore = await page.evaluate(() => focused);
   await page.evaluate(() => {
@@ -954,6 +967,7 @@ for (const connected of [false, true]) test(`live notifications track transition
 
 for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture}`, async ({ page }) => {
   const errors=await setup(page); await page.clock.install();
+  await page.setViewportSize({width:2560,height:1440});
   await page.route('**/api/search?**',r=>r.fulfill({json:{data:['one','two','muted','paused'].map(broadcaster_login=>({broadcaster_login,is_live:true}))}}));
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({
     order:['one','two','muted','paused'],focused:'one',muted:{one:false,two:false,muted:true,paused:false},
@@ -970,8 +984,8 @@ for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio o
   else await page.keyboard.press('Space');
   await page.clock.runFor(2500);
   await expect(overlay).toBeHidden();
-  expect(await page.evaluate(()=>[...tiles.values()].map(t=>({muted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.player.paused}))))
-    .toEqual([{muted:false,volume:0.3,paused:false},{muted:false,volume:0.7,paused:false},{muted:true,volume:0.4,paused:false},{muted:true,volume:0.6,paused:true}]);
+  expect(await page.evaluate(()=>[...tiles.values()].map(t=>t.player?({muted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.player.paused}):null)))
+    .toEqual([{muted:false,volume:0.3,paused:false},{muted:false,volume:0.7,paused:false},{muted:true,volume:0.4,paused:false},null]);
   expect(await page.evaluate(()=>focused)).toBe('one');
   expect(await page.evaluate(()=>[...tiles.values()].every((t,i)=>t.player===window.audioPlayers[i]))).toBe(true);
   await page.evaluate(()=>tiles.get('one').player.emit('playbackBlocked'));
@@ -1067,7 +1081,7 @@ test('chat uses vertical letterboxing, follows spotlight and preserves players w
   await one.locator('.spotlight').click();   // back to a plain grid: at 950px each, both tiles keep the full player and their own chat
   await expect(page.locator('#grid .player iframe[data-controls="true"]')).toHaveCount(2);
   await expect(page.locator('.chat iframe')).toHaveCount(2);
-  await page.setViewportSize({width:1200,height:650});   // stacked 517px videos: simplified players, the chats fold away and remember they were open
+  await page.setViewportSize({width:850,height:1150});   // stacked 550px videos: simplified players, the chats fold away and remember they were open
   await expect(page.locator('.chat iframe')).toHaveCount(0);
   await one.locator('.spotlight').click();
   await expect(one.locator('.chat')).toBeVisible();
@@ -1129,9 +1143,13 @@ test('chat reserves enough height for messages and Auto avoids a cramped bottom 
     await expect(body).toHaveAttribute('data-chat-position',position);
     await expect.poll(async()=>Math.round((await chat.boundingBox()).height)).toBe(420);
   }
+  await page.mouse.move(0,0);
   await page.setViewportSize({width:1800,height:400});
   const bounds=await body.boundingBox();
-  await expect.poll(async()=>Math.round((await chat.boundingBox()).height)).toBe(Math.round(bounds.height-90));
+  await expect.poll(async()=>{
+    const footer=await body.evaluate(el=>parseFloat(getComputedStyle(el).paddingBottom));
+    return Math.round((await chat.boundingBox()).height + footer + 90);
+  }).toBe(Math.round(bounds.height));
   const panel=await chat.boundingBox();
   expect(panel.y+panel.height).toBeLessThanOrEqual(400);
   expect((await page.locator('#grid .player').boundingBox()).height).toBeGreaterThanOrEqual(90);
@@ -1182,7 +1200,8 @@ test('chat layout is stored per mode, works with a single mobile tile, and avata
   await page.setViewportSize({width:390,height:844});
   await page.locator('#toggle').click();
   await expect(page.locator('#grid .tile-body')).toHaveAttribute('data-chat-position','bottom');
-  const video=await page.locator('#grid .player iframe').boundingBox(),chat=await page.locator('.chat').boundingBox();
+  await expect(page.locator('#grid .player iframe')).toHaveCount(0); // A mobile window cannot hold a 400px embed.
+  const video=await page.locator('#grid .player').boundingBox(),chat=await page.locator('.chat').boundingBox();
   expect(chat.y).toBeCloseTo(video.y+video.height,0);
   expect(chat.x+chat.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.layout.connected')).chatPosition)).toEqual({live:'top'});
@@ -1314,6 +1333,7 @@ async function openGridManager(page) {
 }
 test('named grids migrate, copy without reloading players, rename, switch and delete safely',async({page})=>{
   const errors=await setup(page);await mockChat(page);
+  await page.setViewportSize({width:1600,height:1000});
   await page.addInitScript(()=>{
     if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',chatOpen:true,chatPosition:'left',volume:{one:0.25},paused:{two:true}}));
   });
@@ -1485,7 +1505,7 @@ test('a pause right after our own unmute counts as blocked playback, never as a 
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], focused: 'one', muted: { one: false, two: true } })));
   await page.goto('/');
   await expect(page.locator('#audio-overlay')).toBeVisible();
-  await page.evaluate(() => { for (const t of tiles.values()) t.player.play(); });
+  await page.evaluate(() => { for (const t of tiles.values()) t.player?.play(); });
   await page.locator('#audio-overlay button').click();
   await expect(page.locator('#audio-overlay')).toBeHidden();
   await page.evaluate(() => tiles.get('one').player.emit('pause'));
@@ -1502,6 +1522,7 @@ test('a pause right after our own unmute counts as blocked playback, never as a 
 
 test('a stream that ends takes its tile away after a minute unless pinned, locked or back online', async ({ page }) => {
   const errors = await setup(page); await page.clock.install();
+  await page.setViewportSize({width:2560,height:1440});
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four'], focused: 'one' })));
   await page.goto('/'); await page.clock.runFor(1000);
   await expect(page.locator('#grid .tile')).toHaveCount(4);
@@ -1531,34 +1552,501 @@ test('wide enough videos get the full player and wide enough tiles the chat, wit
   await page.goto('/');
   const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]');
   // two tiles side by side across 1352px: 676px videos, full players without a spotlight
-  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);
+  await expect(page.locator('#grid .tile.full-player')).toHaveCount(2);
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   // stacked at 1102px the videos shrink to 579px: under the entry line but above the keep line, the full players stay
   await page.setViewportSize({ width: 1150, height: 720 });
   await page.waitForTimeout(600);
-  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);
+  await expect(page.locator('#grid .tile.full-player')).toHaveCount(2);
   // 526px videos: the simplified players come back once the resize settles
   await page.setViewportSize({ width: 1100, height: 600 });
-  await expect(page.locator('#grid iframe[data-controls="false"]')).toHaveCount(2);
+  await expect(page.locator('#grid .tile:not(.full-player)')).toHaveCount(2);
   await page.setViewportSize({ width: 1400, height: 720 });
-  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);
+  await expect(page.locator('#grid .tile.full-player')).toHaveCount(2);
   // the spotlight always has the full player and, at 696px wide, its chat
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.locator('#toggle').click();
-  await expect(page.locator('#grid iframe[data-controls="true"]')).toHaveCount(2);   // stacked at 579px: kept by the margin
+  await expect(page.locator('#grid .tile.full-player')).toHaveCount(2);   // stacked at 579px: kept by the margin
   await one.locator('.spotlight').click();
-  await expect(one.locator('.player iframe')).toHaveAttribute('data-controls', 'true');
-  await expect(two.locator('.player iframe')).toHaveAttribute('data-controls', 'false');
+  await expect(one).toHaveClass(/full-player/);
+  await expect(two).not.toHaveClass(/full-player/);
+  await expect(two.locator('.player iframe')).toHaveAttribute('data-controls', 'false');   // the side column holds a player at the Twitch minimum
   await expect(one.locator('.chat-toggle')).toBeVisible();
   await expect(one.locator('.chat iframe')).toHaveCount(1);
   // a lone tile on a narrow window keeps the full player but loses the chat until the sidebar folds away
   await two.locator('.close').click();
   await page.setViewportSize({ width: 850, height: 600 });
-  await expect(one.locator('.player iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(one).toHaveClass(/full-player/);
   await expect(one.locator('.chat-toggle')).toBeHidden();
   await expect(one.locator('.chat iframe')).toHaveCount(0);
   await page.locator('#toggle').click();
   await expect(one.locator('.chat-toggle')).toBeVisible();
   await expect(one.locator('.chat iframe')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('paused tiles preview muted on hover and retain their pause and audio intent', async ({ page }) => {
+  const errors = await setup(page); await page.goto('/');
+  await page.evaluate(() => { add(channel({twitch:'preview'}), false, 0.5, true); });
+  const tile = page.locator('#grid .tile');
+  await tile.hover();
+  await expect.poll(() => page.evaluate(() => { const t=tiles.get('preview'); return [t.player?.paused,t.player?.muted,t.paused,t.muted]; })).toEqual([false,true,true,false]);
+  await page.locator('#q').hover();
+  await expect.poll(() => page.evaluate(() => tiles.get('preview').player)).toBeNull();
+  await page.evaluate(() => { const t=tiles.get('preview'); t.paused=false; allPaused=true; sync(t); });
+  await tile.hover();
+  await expect.poll(() => page.evaluate(() => { const t=tiles.get('preview'); return [t.player?.paused,t.player?.muted,allPaused,t.paused]; })).toEqual([false,true,true,false]);
+  await page.locator('#q').hover();
+  await expect.poll(() => page.evaluate(() => tiles.get('preview').player)).toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test('live follows grid locks membership, pauses at nine and removes offline tiles after sixty seconds', async ({ page }) => {
+  const errors = await setup(page,true); await api(page);
+  await page.addInitScript(() => sessionStorage.setItem('tg.oauth', JSON.stringify({state:'expected',at:Date.now()})));
+  await page.goto('/#access_token=fake-token&state=expected');
+  await expect(page.locator('#disconnect')).toBeVisible();
+  await expect(page.locator('#grid-menu-list [data-grid-id="live-follows"] small')).toHaveText('Grille dynamique');
+  await page.evaluate(() => switchNamedGrid('live-follows'));
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await expect(page.locator('#grid-lock')).toBeDisabled();
+  await expect(page.locator('#grid .close')).toBeDisabled();
+  await page.locator('#list [data-login="live"] .channel').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await page.evaluate(() => remove('live'));
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await page.evaluate(() => {
+    follows=Array.from({length:9},(_,i)=>channel({twitch:'live'+i,online:true})); syncLiveGrid();
+  });
+  await expect(page.locator('#grid .tile')).toHaveCount(9);
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>tilePaused(t) && !t.player))).toBe(true);
+  await expect(page.locator('#playall')).toHaveAttribute('aria-pressed','true');
+  await page.setViewportSize({width:2200,height:1500});
+  await page.locator('#playall').click();
+  await expect(page.locator('#playall')).toHaveAttribute('aria-pressed','false');
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>!tilePaused(t) && t.player && !t.player.paused))).toBe(true);
+  await page.locator('#playall').click();
+  await expect(page.locator('#playall')).toHaveAttribute('aria-pressed','true');
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>!t.player))).toBe(true);
+  await page.locator('#playall').click();
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>t.player && !t.player.paused))).toBe(true);
+  await page.clock.install();
+  await page.evaluate(() => {
+    lastLiveStatus.set('live0',false); updateLiveNotifications(follows);
+    const t=tiles.get('live0'); t.channel.online=false; trackOnline(t,false);
+  });
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  // Keep network polling from replacing the fixture during the grace period.
+  await page.evaluate(() => { refreshInFlight=true; });
+  await page.clock.fastForward(59000);
+  await expect(page.locator('#grid .tile')).toHaveCount(9);
+  await page.clock.fastForward(1000);
+  await expect(page.locator('#grid .tile')).toHaveCount(8);
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>!tilePaused(t)))).toBe(true);
+  await page.evaluate(() => switchNamedGrid('default'));
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('paused tiles never flash a loader during readiness, buffering or hover previews', async ({ page }) => {
+  await setup(page); await page.clock.install(); await page.goto('/');
+  await page.evaluate(() => {
+    add(channel({twitch:'one'}),true,0.5,true);
+    add(channel({twitch:'two'}),true,0.5,true);
+    for (const t of tiles.values()) {
+      t.ready=false;
+      t.el.classList.add('loading');
+      mark(t);
+    }
+  });
+  await expect(page.locator('#grid .loading')).toHaveCount(0);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  await page.locator('#grid [data-login="one"]').hover();
+  await page.clock.runFor(1000);
+  await page.evaluate(() => { tiles.get('one').player.getPlayerState=()=>({playback:'Buffering'}); });
+  for (let i=0;i<4;i++) {
+    await page.clock.runFor(3000);
+    await expect(page.locator('#grid .loading')).toHaveCount(0);
+  }
+  await page.evaluate(() => {
+    allPaused=true;
+    for (const t of tiles.values()) { t.paused=false; sync(t); }
+  });
+  await page.clock.runFor(3000);
+  await expect(page.locator('#grid .loading')).toHaveCount(0);
+  await page.locator('#q').hover();
+  await page.evaluate(() => { allPaused=false; tiles.forEach(sync); });
+  await expect(page.locator('#grid .loading')).toHaveCount(2);
+});
+
+for (const connected of [false,true]) test(`paused ${connected?'automatic follows':'guest'} grid loads thumbnails without constructing players`, async ({page}) => {
+  const errors=await setup(page,connected);
+  const channels=Array.from({length:9},(_,i)=>({twitch:'poster'+i,display:'Poster '+i}));
+  const thumbnail=login=>`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-{width}x{height}.jpg`;
+  await page.route('https://static-cdn.jtvnw.net/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#7040a0"/></svg>'}));
+  await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('constructor(el, options) {','constructor(el, options) { (window.createdPlayers ||= []).push(this);')}));
+  if(connected) {
+    await api(page);
+    await page.route('https://api.twitch.tv/helix/channels/followed?**',r=>r.fulfill({json:{data:channels.map(s=>({broadcaster_login:s.twitch,broadcaster_name:s.display})),pagination:{}}}));
+    await page.route('https://api.twitch.tv/helix/streams?**',r=>r.fulfill({json:{data:channels.map(s=>({user_login:s.twitch,thumbnail_url:thumbnail(s.twitch),game_name:'Art',title:'Live painting'}))}}));
+  } else {
+    await page.route('**/api/search?login=**',r=>r.fulfill({json:{data:channels.map(s=>({broadcaster_login:s.twitch,is_live:true,thumbnail_url:'https://example.com/avatar.png',preview_url:thumbnail(s.twitch),game_name:'Art',title:'Live painting'}))}}));
+  }
+  await page.addInitScript(({connected,channels})=>{
+    if(connected) {
+      sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+      localStorage.setItem('tg.grids.connected',JSON.stringify({activeId:'live-follows',items:[{id:'default',layout:{order:[]}},{id:'live-follows',layout:{order:[],locked:true}}]}));
+    } else {
+      localStorage.setItem('tg.favorites',JSON.stringify(channels));
+      localStorage.setItem('tg.layout.guest',JSON.stringify({order:channels.map(s=>s.twitch),allPaused:true,volume:{poster0:0.25}}));
+    }
+  },{connected,channels});
+  await page.clock.install(); await page.goto('/');
+  const first=page.locator('#grid [data-login="poster0"]');
+  await expect(page.locator('#grid .stream-poster')).toHaveCount(9);
+  await expect(first.locator('img.stream-poster')).toHaveAttribute('src',/live_user_poster0-640x360\.jpg\?v=\d+/);
+  await expect.poll(()=>first.locator('img.stream-poster').evaluate(img=>img.naturalWidth)).toBe(640);
+  await page.clock.runFor(3000);
+  expect(await page.evaluate(()=>window.createdPlayers?.length || 0)).toBe(0);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  const original=await first.locator('img.stream-poster').getAttribute('src');
+  await page.evaluate(()=>refresh());
+  await expect(first.locator('img.stream-poster')).toHaveAttribute('src',original);
+  await first.hover(); await page.clock.runFor(1200);
+  await expect(page.locator('#grid iframe')).toHaveCount(1);
+  expect(await page.evaluate(()=>({muted:tiles.get('poster0').player.getMuted(),playing:!tiles.get('poster0').player.paused}))).toEqual({muted:true,playing:true});
+  await page.locator('#q').hover(); await page.clock.runFor(1000);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.createdPlayers.every(p=>p.destroyed))).toBe(true);
+  await page.evaluate(()=>{refreshInFlight=true;});
+  await page.clock.fastForward(61000);
+  await expect(first.locator('img.stream-poster')).not.toHaveAttribute('src',original);
+  expect(await page.evaluate(()=>window.createdPlayers.length)).toBe(1);
+  await page.locator('#playall').click(); await page.clock.runFor(1500);
+  // Nine tiles at the player minimum overflow this window: the rows on screen play, the rows that scroll keep their stills.
+  await expect.poll(()=>page.evaluate(()=>[...tiles.values()].every(t=>!!t.player===onScreen(t)))).toBe(true);
+  expect(await page.evaluate(()=>[...tiles.values()].filter(t=>t.player).length)).toBeLessThan(9);
+  await page.setViewportSize({width:2200,height:1500}); await page.clock.runFor(1500);
+  await expect(page.locator('#grid iframe')).toHaveCount(9);
+  expect(await page.evaluate(()=>tiles.get('poster0').volume)).toBe(connected?0.5:0.25);
+  await page.locator('#playall').click(); await page.clock.runFor(1000);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.createdPlayers.every(p=>p.destroyed))).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('leaving a hover before Twitch is ready discards the embed and its late callbacks',async({page})=>{
+  const errors=await setup(page);
+  await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('if (!this.destroyed) callback();','callback();').replace('}, 0);','}, 2000);')}));
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],allPaused:true})));
+  await page.clock.install(); await page.goto('/');
+  await expect(page.locator('#grid .poster-only')).toHaveCount(1);
+  await page.locator('#grid .tile').hover(); await page.clock.runFor(500);
+  await expect(page.locator('#grid iframe')).toHaveCount(1);
+  await page.locator('#q').hover(); await page.clock.runFor(500);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  await page.clock.runFor(3000);
+  expect(await page.evaluate(()=>({ready:tiles.get('one').ready,player:tiles.get('one').player,allPaused}))).toEqual({ready:false,player:null,allPaused:true});
+  expect(errors).toEqual([]);
+});
+
+for (const reducedMotion of ['no-preference','reduce']) test(`tile animations preserve player lifecycle with motion ${reducedMotion}`,async({page})=>{
+  const errors=await setup(page); await page.emulateMedia({reducedMotion}); await page.goto('/');
+  await page.evaluate(()=>{
+    add(channel({twitch:'one',online:true}));
+    window.enterAnimations=tiles.get('one').bar.getAnimations().length;
+  });
+  expect(await page.evaluate(()=>window.enterAnimations)).toBe(reducedMotion==='reduce'?0:1);
+  await expect.poll(()=>page.evaluate(()=>tiles.get('one').bar.getAnimations().length)).toBe(0);
+  const result=await page.evaluate(()=>{
+    const player=tiles.get('one').player;
+    remove('one');
+    return {destroyed:player.destroyed,tiles:tiles.size,exits:document.querySelectorAll('.tile-exit').length,exitFrames:document.querySelectorAll('.tile-exit iframe').length};
+  });
+  expect(result).toEqual({destroyed:true,tiles:0,exits:reducedMotion==='reduce'?0:1,exitFrames:0});
+  await expect(page.locator('.tile-exit')).toHaveCount(0);
+  // A grid switch must also clear any exit animation already in progress.
+  await page.evaluate(()=>{add(channel({twitch:'two'}));remove('two');clearTiles();});
+  await expect(page.locator('.tile-exit')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('preview image refresh sleeps in background tabs and catches up without loading a player',async({page})=>{
+  const errors=await setup(page);
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],allPaused:true})));
+  await page.clock.install();await page.goto('/');
+  const poster=page.locator('#grid .stream-poster');
+  await expect(poster).toHaveAttribute('src',/live_user_one/);
+  const original=await poster.getAttribute('src');
+  await page.evaluate(()=>{refreshInFlight=true;Object.defineProperty(document,'hidden',{configurable:true,value:true});});
+  await page.clock.fastForward(61000);
+  await expect(poster).toHaveAttribute('src',original);
+  await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+  await expect(poster).not.toHaveAttribute('src',original);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('tile and sidebar hovers reveal the iframe at READY and keep loading feedback outside it',async({page})=>{
+  const errors=await setup(page);
+  // Simulate the SDK replacing its mount contents at READY, then buffering without a first frame.
+  const bufferingPlayer=mockPlayer
+    .replace('this.options = options;', 'this.host = el; this.options = options;')
+    .replace('if (!this.destroyed) callback();', 'if (!this.destroyed) { this.host.replaceChildren(this.frame); callback(); }')
+    .replace('}, 0);','}, 1000);')
+    .replace("playback: this.paused ?", "playback: this.buffering ? 'Buffering' : this.paused ?")
+    .replace(/play\(\) \{ if \(this.paused\) \{[^\n]+?\} \}/, 'play() { this.buffering = true; }');
+  await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:bufferingPlayer}));
+  await page.route('https://static-cdn.jtvnw.net/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#7040a0"/></svg>'}));
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true,title:'Live painting',game_name:'Art'}]}}));
+  await page.addInitScript(()=>{
+    localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'one'}]));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],allPaused:true}));
+  });
+  await page.clock.install();await page.goto('/');
+  const tile=page.locator('#grid .tile'), cover=tile.locator('.preview-cover');
+  await expect.poll(()=>cover.locator('.stream-poster').evaluate(img=>img.naturalWidth)).toBe(640);
+  await page.clock.pauseAt(await page.evaluate(()=>Date.now()));
+  await expect(cover.locator('.preview-status')).toBeHidden();
+  await tile.hover();
+  await expect(cover.locator('.preview-status')).toBeVisible();
+  await page.clock.runFor(500);
+  await expect(tile.locator('.player-embed iframe')).toHaveCount(1);
+  await expect(cover).toBeVisible();
+  await page.clock.runFor(1500);
+  await expect(cover).toBeHidden();
+  await expect(tile.locator('.bar .playback-loading')).toBeVisible();
+  await page.evaluate(()=>{const p=tiles.get('one').player;p.buffering=false;p.paused=false;p.emit('playing');});
+  await expect(cover).toBeHidden();
+  await page.locator('#q').hover();await page.clock.runFor(500);
+  await expect(tile.locator('iframe')).toHaveCount(0);
+  await expect(cover).toBeVisible();
+  await expect(cover.locator('.preview-status')).toBeHidden();
+
+  await page.locator('#list [data-login="one"]').hover();
+  const sidebarCover=page.locator('#preview .preview-cover');
+  await expect(sidebarCover.locator('.stream-poster')).toBeVisible();
+  await expect(sidebarCover.locator('.status')).toHaveText('Chargement de l’aperçu…');
+  await expect(page.locator('#preview iframe')).toHaveCount(0);
+  await page.clock.runFor(350);
+  await expect(page.locator('#preview iframe')).toHaveCount(1);
+  await page.clock.runFor(1500);
+  await expect(sidebarCover).toBeHidden();
+  await expect(page.locator('#preview .info .playback-loading')).toBeVisible();
+  await expect(sidebarCover.locator('.stream-poster')).toHaveAttribute('src',await cover.locator('.stream-poster').getAttribute('src'));
+  await page.evaluate(()=>{previewPlayer.buffering=false;previewPlayer.paused=false;previewPlayer.emit('playing');});
+  await expect(page.locator('#preview')).toHaveClass(/playing/);
+  await expect(sidebarCover).toBeHidden();
+  await page.locator('#q').hover();await page.clock.runFor(500);
+  await expect(page.locator('#preview')).toBeHidden();
+  await expect(page.locator('#preview iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('a brief sidebar hover shows a still image without loading an embed',async({page})=>{
+  const errors=await setup(page);
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
+  await page.addInitScript(()=>localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'one'}])));
+  await page.clock.install();await page.goto('/');
+  await expect(page.locator('#list .live')).toHaveCount(1);
+  await page.clock.pauseAt(await page.evaluate(()=>Date.now()));
+  await page.locator('#list .live').hover();
+  await expect(page.locator('#preview')).toBeVisible();
+  await expect(page.locator('#preview .stream-poster')).toHaveAttribute('src',/live_user_one/);
+  await expect(page.locator('#preview iframe')).toHaveCount(0);
+  await page.clock.runFor(100);await page.locator('#q').hover();await page.clock.runFor(500);
+  await expect(page.locator('#preview')).toBeHidden();
+  await expect(page.locator('#preview iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('Chromium considers tile and sidebar iframes visible when playback starts',async({page})=>{
+  const errors=await setup(page);
+  const visibilityPlayer=mockPlayer.replace(/play\(\) \{ if \(this.paused\) \{[^\n]+?\} \}/, `play() {
+    if (!this.paused || this.checkingVisibility) return;
+    this.checkingVisibility = true;
+    const observer = new IntersectionObserver(([entry]) => {
+      observer.disconnect(); this.checkingVisibility = false;
+      if (this.destroyed) return;
+      (window.visibilityChecks ||= []).push({channel:this.options.channel,visible:entry.isVisible});
+      if (!entry.isVisible) return;
+      this.paused = false; this.emit('play'); this.emit('playing');
+    }, {trackVisibility:true,delay:100});
+    observer.observe(this.frame);
+  }`);
+  await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:visibilityPlayer}));
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:['one','two','three'].map(broadcaster_login=>({broadcaster_login,is_live:true,game_name:'Art',title:'Live painting'}))}}));
+  await page.addInitScript(()=>{
+    localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'one'},{twitch:'two'},{twitch:'three'}]));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],allPaused:true}));
+  });
+  await page.goto('/');
+  await expect(page.locator('#grid .poster-only')).toHaveCount(2);
+  // Hovered simplified tile: neither the preview, the toolbar nor metadata may obscure its video.
+  await page.locator('#grid [data-login="one"]').hover();
+  await expect.poll(()=>page.evaluate(()=>tiles.get('one').player?.paused)).toBe(false);
+  await page.locator('#q').hover();
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  // The floating sidebar preview must pass the same browser visibility check.
+  await page.locator('#list [data-login="three"]').hover();
+  await expect.poll(()=>page.evaluate(()=>previewPlayer?.paused)).toBe(false);
+  await page.locator('#q').hover();await expect(page.locator('#preview')).toBeHidden();
+  // Newly added, unpaused streams must not start inside an opacity animation.
+  await page.locator('#playall').click();
+  await expect.poll(()=>page.evaluate(()=>({states:[...tiles].map(([login,t])=>[login,t.player?.paused]),checks:window.visibilityChecks.filter(c=>!c.visible)}))).toEqual({states:[['one',false],['two',false]],checks:[]});
+  await page.evaluate(()=>add(channel({twitch:'three',online:true})));
+  await expect.poll(()=>page.evaluate(()=>tiles.get('three').player?.paused)).toBe(false);
+  expect(await page.evaluate(()=>window.visibilityChecks)).not.toHaveLength(0);
+  expect(await page.evaluate(()=>window.visibilityChecks.filter(check=>!check.visible))).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+async function liveSetup(page, count=9) {
+  await setup(page,true); await api(page);
+  const data=Array.from({length:count},(_,i)=>({broadcaster_login:'live'+i,broadcaster_name:'Live '+i}));
+  await page.route('https://api.twitch.tv/helix/channels/followed?**',r=>r.fulfill({json:{data,pagination:{}}}));
+  await page.route('https://api.twitch.tv/helix/streams?**',r=>r.fulfill({json:{data:data.map(s=>({user_login:s.broadcaster_login}))}}));
+  await page.addInitScript(()=>{
+    sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    localStorage.setItem('tg.grids.connected',JSON.stringify({activeId:'live-follows',items:[{id:'default',layout:{order:[]}},{id:'live-follows',layout:{order:[],locked:true}}]}));
+  });
+  await page.clock.install(); await page.goto('/');
+  await expect(page.locator('#grid .tile')).toHaveCount(count);
+  await page.evaluate(()=>{refreshInFlight=true;});
+}
+test('dynamic grid preserves manual settings on return',async({page})=>{
+  await liveSetup(page);
+  await page.locator('#playall').click(); await page.clock.runFor(1500);
+  await page.evaluate(()=>{const t=tiles.get('live0');t.volume=.25;t.pinned=true;move('live0','live2');save();window.before=currentLayout();switchNamedGrid('default');switchNamedGrid('live-follows');});
+  await page.clock.runFor(1500);
+  const result=await page.evaluate(()=>({before:{order:window.before.order,paused:window.before.paused.live0,volume:window.before.volume.live0,pinned:window.before.pinned.live0},after:{order,paused:tilePaused(tiles.get('live0')),volume:tiles.get('live0').volume,pinned:tiles.get('live0').pinned}}));
+  expect(result.after).toEqual(result.before);
+});
+test('sidebar rapid return loads embed',async({page})=>{
+  await setup(page); await page.clock.install();await page.goto('/');
+  await page.evaluate(()=>{favorites=[channel({twitch:'live',online:true})];rebuild();});
+  await page.locator('#list [data-login="live"]').dispatchEvent('pointerenter',{pointerType:'mouse'});
+  await page.clock.runFor(100);
+  await page.locator('#list [data-login="live"]').dispatchEvent('pointerleave',{pointerType:'mouse'});
+  await page.clock.runFor(50);
+  await page.locator('#list [data-login="live"]').dispatchEvent('pointerenter',{pointerType:'mouse'});
+  await page.clock.runFor(2000);
+  await expect(page.locator('#preview iframe')).toHaveCount(1);
+});
+test('native player resumes after READY in hidden document',async({page})=>{
+  await setup(page);await page.clock.install();await page.goto('/');
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});add(channel({twitch:'live',online:true}));});
+  await page.clock.runFor(1500);
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});document.dispatchEvent(new Event('visibilitychange'));});
+  await page.clock.runFor(10000);
+  expect(await page.evaluate(()=>tiles.get('live').player.paused)).toBe(false);
+});
+test('sidebar errors remain visible after READY',async({page})=>{
+  await setup(page);await page.clock.install();await page.goto('/');
+  await page.evaluate(()=>{favorites=[channel({twitch:'live',online:true})];rebuild();queuePreview(document.querySelector('#list [data-login="live"]'));});
+  await page.clock.runFor(1000);
+  await page.evaluate(()=>{previewPlayer.getPlayerState=()=>({playback:'Paused'});previewPlayer.emit('error');});
+  await expect(page.locator('#preview .status')).toContainText('Aperçu indisponible');
+  await expect(page.locator('#preview .preview-message')).toBeVisible();
+});
+
+test('a live grid of nine pauses to still images and a hover previews a 400 by 300 player inside the tile',async({page})=>{
+  await liveSetup(page);
+  const tile=page.locator('#grid [data-login="live0"]');
+  await page.clock.runFor(1200);
+  await expect(page.locator('#grid .player iframe')).toHaveCount(0);
+  const before=await tile.boundingBox();
+  await tile.locator('.player').hover();await page.clock.runFor(1200);
+  const frame=tile.locator('.player iframe');
+  await expect(frame).toBeVisible();
+  const dimensions=await frame.evaluate(el=>({width:el.clientWidth,height:el.clientHeight}));
+  expect(dimensions.width).toBeGreaterThanOrEqual(400);expect(dimensions.height).toBeGreaterThanOrEqual(300);
+  expect(await tile.boundingBox()).toEqual(before);
+  const visible=await frame.evaluate(el=>new Promise(resolve=>{
+    const observer=new IntersectionObserver(([entry])=>{observer.disconnect();resolve(entry.isVisible);},{trackVisibility:true,delay:100});
+    observer.observe(el);
+  }));
+  expect(visible).toBe(true);
+  expect(await page.evaluate(()=>({paused:tiles.get('live0').player.paused,muted:tiles.get('live0').player.getMuted()}))).toEqual({paused:false,muted:true});
+  await tile.locator('.player').click();await page.clock.runFor(1500);
+  await expect(tile).toHaveClass(/big/);
+  await page.locator('#q').hover();await page.clock.runFor(1000);
+  await expect(frame).toBeVisible();
+  expect(await page.evaluate(()=>tiles.get('live0').player.paused)).toBe(false);
+  await page.locator('#grid .big .spotlight').click();
+  await page.locator('#q').hover();await page.clock.runFor(1000);
+  await expect(page.locator('#grid .player iframe')).toHaveCount(1);   // resumed by the click, live0 keeps playing in its tile
+  expect(await page.evaluate(()=>tiles.get('live0').player.paused)).toBe(false);
+});
+
+test('a narrow window retains still previews instead of mounting undersized embeds',async({page})=>{
+  await setup(page);await page.setViewportSize({width:390,height:844});await page.clock.install();await page.goto('/');
+  await page.evaluate(()=>{
+    favorites=[channel({twitch:'live',online:true})];rebuild();add(favorites[0]);
+    queuePreview(document.querySelector('#list [data-login="live"]'));
+  });
+  await page.clock.runFor(1500);
+  await expect(page.locator('#grid .player iframe, #preview iframe')).toHaveCount(0);
+  await expect(page.locator('#preview .status')).toContainText('Agrandis la fenêtre');
+  await expect(page.locator('#grid .preview-cover')).toBeVisible();
+});
+
+test('live grid restores saved settings after a delayed first status fetch and excludes offline follows',async({page})=>{
+  await setup(page,true);await api(page);
+  await page.addInitScript(()=>{
+    sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    localStorage.setItem('tg.grids.connected',JSON.stringify({activeId:'live-follows',items:[{id:'live-follows',layout:{order:['offline','live'],volume:{live:.2},paused:{live:true},pinned:{live:true},focused:'live'}}]}));
+  });
+  let respond;
+  await page.route('https://api.twitch.tv/helix/streams?**',r=>{respond=()=>r.fulfill({json:{data:[{user_login:'live'}]}});});
+  await page.goto('/');
+  await expect.poll(()=>!!respond).toBe(true);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.grids.connected')).items[0].layout.volume.live)).toBe(.2);
+  await respond();
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  expect(await page.evaluate(()=>({order,volume:tiles.get('live').volume,paused:tiles.get('live').paused,pinned:tiles.get('live').pinned}))).toEqual({order:['live'],volume:.2,paused:true,pinned:true});
+});
+
+test('a slow preview reports its timeout outside the iframe and clears it when playback recovers',async({page})=>{
+  await setup(page);
+  const buffering=mockPlayer.replace(/play\(\) \{ if \(this.paused\) \{[^\n]+?\} \}/,'play() {}');
+  await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:buffering}));
+  await page.clock.install();await page.goto('/');
+  await page.evaluate(()=>{favorites=[channel({twitch:'live',online:true})];rebuild();queuePreview(document.querySelector('#list [data-login="live"]'));});
+  await page.clock.runFor(13000);
+  await expect(page.locator('#preview .preview-cover')).toBeHidden();
+  await expect(page.locator('#preview .preview-message')).toHaveText('L’aperçu tarde à démarrer');
+  await expect(page.locator('#preview .preview-message')).toBeVisible();
+  await page.evaluate(()=>{previewPlayer.paused=false;previewPlayer.emit('playing');});
+  await expect(page.locator('#preview .preview-message')).toBeHidden();
+  await expect(page.locator('#preview .playback-loading')).toBeHidden();
+});
+
+test('tiles never shrink under the Twitch minimum: hovering keeps the player in place and dense grids scroll',async({page})=>{
+  const errors=await setup(page);
+  await page.setViewportSize({width:1280,height:768});
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two']})));
+  await page.clock.install();await page.goto('/');await page.clock.runFor(1500);
+  const tile=page.locator('#grid [data-login="one"]'), measure=()=>page.evaluate(()=>{
+    const t=tiles.get('one'),frame=t.el.querySelector('.player iframe'),tile=t.el.getBoundingClientRect(),box=frame.getBoundingClientRect();
+    return {samePlayer:t.player===window.inlinePlayer,width:frame.clientWidth,height:frame.clientHeight,inside:box.left>=tile.left&&box.right<=tile.right&&box.top>=tile.top&&box.bottom<=tile.bottom};
+  });
+  await page.evaluate(()=>{window.inlinePlayer=tiles.get('one').player;});
+  const before=await tile.boundingBox(), rest=await measure();
+  expect(rest.width).toBeGreaterThanOrEqual(400);expect(rest.height).toBeGreaterThanOrEqual(300);expect(rest.inside).toBe(true);
+  await tile.locator('.player').hover();await page.clock.runFor(2000);
+  expect(await measure()).toEqual({...rest,samePlayer:true});
+  expect(await tile.boundingBox()).toEqual(before);
+  await expect(tile.locator('.ctl')).toBeVisible();
+  await page.locator('#q').hover();await page.clock.runFor(1000);
+  expect(await measure()).toEqual({...rest,samePlayer:true});
+  // Nine tiles on this window: two columns of at least 400px, rows tall enough for a 300px player, the rest scrolls.
+  await page.evaluate(()=>{for(let i=3;i<=9;i++)add(channel({twitch:'tile'+i}));});
+  await page.clock.runFor(1500);
+  const sizes=await page.evaluate(()=>[...tiles.values()].map(t=>({w:t.el.clientWidth,h:t.el.clientHeight,small:!!t.smallPlayer})));
+  expect(sizes.every(s=>s.w>=400&&s.h>=366&&!s.small)).toBe(true);
+  expect(await page.evaluate(()=>getComputedStyle(grid).gridTemplateColumns.split(' ').length)).toBe(2);
+  expect(await page.evaluate(()=>grid.scrollHeight>grid.clientHeight)).toBe(true);
   expect(errors).toEqual([]);
 });

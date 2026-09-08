@@ -1,5 +1,8 @@
 // Preferences apply before the first paint; channel names and stream titles are never translated.
 const translations = {
+  'Agrandis la fenêtre pour lire cet aperçu.':['Enlarge the window to play this preview.','Vergroot het venster om dit voorbeeld af te spelen.'],
+  'Grille dynamique':['Dynamic grid','Dynamisch raster'],
+  'Follows en direct':['Live follows','Gevolgde livekanalen'],
   'Langue':['Language','Taal'], 'Thème':['Theme','Thema'], 'Clair':['Light','Licht'], 'Sombre':['Dark','Donker'],
   'Fermer':['Close','Sluiten'], 'Annuler':['Cancel','Annuleren'], 'Enregistrer':['Save','Opslaan'],
   'Grilles':['Grids','Rasters'], 'Grille par défaut':['Default grid','Standaardraster'],
