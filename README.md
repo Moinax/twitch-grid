@@ -6,7 +6,14 @@ Site : https://twitch.moinax.com
 
 ## Réglages et grilles
 
-La roue dentée ouvre les réglages de langue, français, anglais ou néerlandais, et de thème, système, clair ou sombre. Ces préférences sont communes aux modes connecté et sans compte, enregistrées dans le navigateur et appliquées sans recharger les vidéos. Le thème système suit les changements du système d’exploitation. Les lecteurs et le chat intégrés restent des interfaces Twitch ; leur langue dépend de Twitch.
+Le bas de la sidebar contient les réglages de langue, français, anglais ou néerlandais, et de thème, système, clair ou sombre. Ces préférences sont communes aux modes connecté et sans compte, enregistrées dans le navigateur et appliquées sans recharger les vidéos. Le thème système suit les changements du système d’exploitation. Les lecteurs et le chat intégrés restent des interfaces Twitch ; leur langue dépend de Twitch.
+
+The validated rendering is now the default in every browser. The video rendering selector offers the current version and the previous version for comparison. An explicit selection remains saved in that browser. Switching versions preserves the channels, layout, spotlight, pauses, audio settings and open chats while recreating the video players.
+
+The current rendering centers the iframe and placeholder at 16:9 without CSS scaling. Tile backgrounds follow the theme. Offline channels show their banner and avatar without mounting a player. Loading and offline placeholders sit below the embed. Tooltips are disabled, and the horizontal volume control appears only on hover within the header. A pause stops the player immediately; hovering does not restart a paused spotlight, expanded player or single tile.
+
+Dragging uses pointer capture and changes CSS order without moving the iframe nodes. Only the hovered drop destination displays an overlay. A compact placeholder copy follows the pointer and avoids the spotlight when space allows. Escape cancels the drag. The existing tile dimensions remain unchanged, so small tiles may still fall below Twitch's documented minimum of 400 × 300. Browser tests cover the app with simulated players; live playback also requires checks against Twitch.
+
 
 Le bouton au-dessus de la recherche ouvre les grilles nommées. Chaque mode conserve sa propre collection et sa dernière grille active. L’ancienne grille devient automatiquement la grille par défaut. Chaque modification est enregistrée dans la grille active, y compris les tuiles, leur ordre, le son, les pauses, le spotlight et le chat.
 
@@ -56,7 +63,7 @@ Une tuile en pause, globale ou individuelle, garde une image du stream, rafraîc
 
 Le bouton d’agrandissement de la barre étend le stream à toute la fenêtre du navigateur. Les onglets et la barre d’adresse restent visibles. Un second clic restaure la disposition précédente, sans recréer le lecteur ni changer ses réglages audio. Échap permet aussi de revenir lorsque le clavier est actif dans la page.
 
-Après un rechargement, si la grille doit jouer avec du son, un overlay flouté couvre la page. Un clic n’importe où ou une touche réactive les sons prévus par la grille et ferme l’overlay. Les tuiles muettes, les volumes et les pauses restent tels qu’ils étaient enregistrés. L’overlay ne revient plus pendant cette visite. Firefox refuse le son dans un lecteur que tu n’as jamais cliqué et le met en pause : cette pause n’est pas enregistrée comme un choix, un clic sur la vidéo relance la lecture et le prochain rechargement repart en lecture.
+After a reload, both rendering modes show the audio activation screen when the saved grid requests sound. A click or keypress closes it before playback starts and restores the requested audio, preserving volumes, muted tiles, and pauses. Tile sound icons reflect the current player mute state, including during startup or a refused unmute, while saved audio intent remains intact. The activation screen does not return during that visit. If Firefox refuses audio and pauses a player that has not received a click, the app does not save that pause as a user choice; clicking inside the video can resume playback.
 
 ## Chat du stream
 

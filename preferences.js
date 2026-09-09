@@ -2,6 +2,10 @@
 const translations = {
   'Grille dynamique':['Dynamic grid','Dynamisch raster'],
   'Follows en direct':['Live follows','Gevolgde livekanalen'],
+  'Rendu vidéo':['Video rendering','Videoweergave'],
+  'Version actuelle':['Current version','Huidige versie'], 'Version précédente':['Previous version','Vorige versie'],
+  'Chargement du lecteur…':['Loading player…','Speler laden…'],
+  'Cliquer dans le lecteur pour réessayer':['Click inside the player to try again','Klik in de speler om opnieuw te proberen'],
   'Langue':['Language','Taal'], 'Thème':['Theme','Thema'], 'Clair':['Light','Licht'], 'Sombre':['Dark','Donker'],
   'Fermer':['Close','Sluiten'], 'Annuler':['Cancel','Annuleren'], 'Enregistrer':['Save','Opslaan'],
   'Grilles':['Grids','Rasters'], 'Grille par défaut':['Default grid','Standaardraster'],
@@ -173,7 +177,8 @@ const translations = {
 };
 let preferences;
 try { preferences = JSON.parse(localStorage.getItem('tg.preferences')) || {}; } catch { preferences = {}; }
-preferences = { language: ['fr','en','nl'].includes(preferences.language) ? preferences.language : 'fr', theme: ['system','light','dark'].includes(preferences.theme) ? preferences.theme : 'system' };
+const preferenceValues = { language: ['fr','en','nl'], theme: ['system','light','dark'], playerRendering: ['trial-1','current'] };
+preferences = Object.fromEntries(Object.entries(preferenceValues).map(([key, values]) => [key, values.includes(preferences[key]) ? preferences[key] : values[0]]));
 function tr(key, values = {}) {
   const text = preferences.language === 'fr' ? key : translations[key]?.[preferences.language === 'en' ? 0 : 1] || key;
   return text.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
@@ -196,6 +201,7 @@ function relocalizeMessage(value) {
 const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 function applyPreferences() {
   document.documentElement.lang = preferences.language;
+  document.documentElement.dataset.playerRendering = preferences.playerRendering;
   document.documentElement.dataset.theme = preferences.theme === 'system' ? systemTheme.matches ? 'dark' : 'light' : preferences.theme;
   document.documentElement.style.colorScheme = document.documentElement.dataset.theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', document.documentElement.dataset.theme === 'dark' ? '#181818' : '#f4f4f7');
@@ -203,7 +209,7 @@ function applyPreferences() {
 applyPreferences();
 systemTheme.addEventListener('change', () => { if (preferences.theme === 'system') { applyPreferences(); dispatchEvent(new Event('preferenceschange')); } });
 function setPreference(key, value) {
-  if (!(key === 'language' ? ['fr','en','nl'] : ['system','light','dark']).includes(value)) return;
+  if (!preferenceValues[key]?.includes(value)) return;
   preferences[key] = value;
   try { localStorage.setItem('tg.preferences', JSON.stringify(preferences)); } catch { /* Preferences still work for this visit. */ }
   applyPreferences(); dispatchEvent(new Event('preferenceschange'));

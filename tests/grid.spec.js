@@ -17,6 +17,8 @@ const mockPlayer = `window.Twitch = { Player: class {
 }};`;
 async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
+  // Keep legacy behavior tests explicit; production defaults are covered separately.
+  await page.addInitScript(() => { if (!localStorage.getItem('tg.preferences')) localStorage.setItem('tg.preferences', JSON.stringify({playerRendering:'current'})); });
   if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
@@ -455,14 +457,20 @@ test('tiles drag onto any other tile: sliding within the grid order, or taking t
   expect(await page.evaluate(() => [...tiles].map(([login, t]) => [login, t.bar.draggable]))).toEqual([['one', false], ['two', true], ['three', true], ['four', true]]);
   await expect(tile('one').locator('.bar')).toHaveCSS('cursor', 'default');
   await expect(tile('two').locator('.bar')).toHaveCSS('cursor', 'grab');
-  // every other tile shows a drop zone, brighter under the cursor, the spotlight included
-  await page.evaluate(() => tiles.get('two').bar.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })));
+  // Only the hovered destination shows a drop overlay.
+  const source = await tile('two').locator('.bar').boundingBox(), target = await tile('four').boundingBox();
+  await page.mouse.move(source.x+12,source.y+16);
+  await page.mouse.down();
+  await page.mouse.move(source.x+28,source.y+16,{steps:4});
   await expect(page.locator('body')).toHaveClass(/dragging/);
-  await expect(tile('four').locator('.drop')).toBeVisible(); await expect(tile('four').locator('.drop')).toHaveText('Déposer ici');
-  await expect(tile('one').locator('.drop')).toBeVisible(); await expect(tile('two').locator('.drop')).toBeHidden();
-  await page.evaluate(() => tiles.get('four').el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })));
+  await expect(page.locator('#grid .drop:visible')).toHaveCount(0);
+  await expect(tile('two')).toHaveCSS('opacity','1');
+  await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:8});
   await expect(tile('four')).toHaveClass(/over/);
-  await page.evaluate(() => document.dispatchEvent(new DragEvent('dragend', { bubbles: true })));
+  await expect(tile('four').locator('.drop')).toBeVisible();
+  await expect(page.locator('#grid .drop:visible')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
   await expect(page.locator('.drop-target')).toHaveCount(0);
   // the tile slides: after the target going down, before it going up
   await tile('two').locator('.bar').dragTo(tile('four'));
@@ -477,6 +485,119 @@ test('tiles drag onto any other tile: sliding within the grid order, or taking t
   expect(await page.evaluate(() => Object.fromEntries([...tiles].map(([login, t]) => [login, +t.el.style.order])))).toEqual({ one: 0, two: 1, three: 2, four: 0 });
   expect(errors).toEqual([]);
 });
+for (const rendering of ['current', 'trial-1']) test(`drops over cross-origin stalled players reorder tiles and change spotlight in ${rendering}`, async ({page}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({width:1700,height:1100});
+  await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('el.appendChild(this.frame);', "this.frame.src = 'https://player.twitch.tv/?drag-target=1'; el.appendChild(this.frame);")}));
+  await page.route('https://player.twitch.tv/?drag-target=1', r => r.fulfill({contentType:'text/html',body:'<body style="margin:0;background:#222;color:white">Player</body>'}));
+  await page.route('**/api/search?**', r => r.fulfill({json:{data:['one','two','three','four'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
+  await page.addInitScript(rendering => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:rendering}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two','three','four'],focused:'one'}));
+  }, rendering);
+  await page.goto('/');
+  const tile = login => page.locator(`#grid [data-login="${login}"]`);
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.hasPlayed))).toBe(true);
+  for (const login of ['one','four']) {
+    await expect(tile(login).frameLocator('.player iframe').locator('body')).toHaveText('Player');
+    await page.evaluate(login => { const t=tiles.get(login); t.player.paused=true; t.player.emit('playbackBlocked'); }, login);
+    await expect(tile(login)).toHaveClass(/stalled/);
+    await expect(tile(login).locator('.player iframe')).toHaveCSS('pointer-events','auto');
+  }
+  async function dropOverPlayer(from, to) {
+    const source = await tile(from).locator('.bar').boundingBox(), target = await tile(to).locator('.player').boundingBox();
+    await page.mouse.move(source.x+12,source.y+16);
+    await page.mouse.down();
+    // Cross the threshold before moving over the embedded document.
+    await page.mouse.move(source.x+28,source.y+16,{steps:4});
+    await expect(page.locator('body')).toHaveClass(/dragging/);
+    await expect(page.locator('#grid .drop:visible')).toHaveCount(0);
+    await expect(tile(from)).toHaveCSS('opacity','1');
+    await expect(page.locator('.drag-ghost')).toBeVisible();
+    await expect(page.locator('.drag-ghost .bar > b')).toHaveText(await tile(from).locator('.bar > b').innerText());
+    await expect(page.locator('.drag-ghost iframe')).toHaveCount(0);
+    await expect(page.locator('.drag-ghost .drag-poster')).toHaveAttribute('src',new RegExp('live_user_' + from));
+    const miniature = await page.locator('.drag-ghost').boundingBox(), preview = await page.locator('.drag-preview').boundingBox();
+    expect(miniature.width).toBeLessThanOrEqual(200);
+    expect(preview.width / preview.height).toBeCloseTo(16/9, 1);
+    const spotlight = await page.locator('#grid .tile.big').boundingBox();
+    expect(miniature.x).toBeGreaterThanOrEqual(spotlight.x + spotlight.width);
+
+    await expect(tile(to).locator('.player iframe')).toHaveCSS('pointer-events','none');
+    await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:8});
+    await expect(tile(to).locator('.drop')).toBeVisible();
+    await expect(page.locator('#grid .drop:visible')).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator('#grid .drop:visible')).toHaveCount(0);
+    await expect(page.locator('.drag-ghost')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => dragging)).toBe(null);
+    await expect(page.locator('body')).not.toHaveClass(/dragging/);
+  }
+  await dropOverPlayer('two','four');
+  expect(await page.evaluate(() => order)).toEqual(['one','three','four','two']);
+  await expect(tile('four').locator('.player iframe')).toHaveCSS('pointer-events','auto');
+  await dropOverPlayer('two','three');
+  expect(await page.evaluate(() => order)).toEqual(['one','two','three','four']);
+  await dropOverPlayer('four','one');
+  expect(await page.evaluate(() => focused)).toBe('four');
+  await dropOverPlayer('one','four');
+  expect(await page.evaluate(() => focused)).toBe('one');
+  await dropOverPlayer('three','four');
+  expect(await page.evaluate(() => order)).toEqual(['one','two','four','three']);
+  await dropOverPlayer('two','one');
+  expect(await page.evaluate(() => focused)).toBe('two');
+  await dropOverPlayer('three','four');
+  expect(await page.evaluate(() => ({dragging,order}))).toEqual({dragging:null,order:['one','two','three','four']});
+  await expect(page.locator('.over, .drop-target, .dragged')).toHaveCount(0);
+  await dropOverPlayer('four','three');
+  expect(await page.evaluate(() => order)).toEqual(['one','two','four','three']);
+  // Cancelling a drag must leave the spotlight and the next drop intact.
+  const source = await tile('four').locator('.bar').boundingBox();
+  await page.mouse.move(source.x+12,source.y+16);
+  await page.mouse.down();
+  await page.mouse.move(source.x+28,source.y+16,{steps:4});
+  await expect(page.locator('body')).toHaveClass(/dragging/);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  expect(await page.evaluate(() => focused)).toBe('two');
+  await expect(page.locator('body')).not.toHaveClass(/dragging/);
+  await dropOverPlayer('four','three');
+  expect(await page.evaluate(() => order)).toEqual(['one','two','three','four']);
+  await expect(page.locator('body')).not.toHaveClass(/dragging/);
+  await expect(page.locator('.drop-target')).toHaveCount(0);
+  await expect(tile('two').locator('.player iframe')).toHaveCSS('pointer-events','auto');
+  await expect(page.locator('#grid .drop:visible')).toHaveCount(0);
+  // Releasing over the sidebar cancels; the next drag still crosses the iframe.
+  const outsideSource = await tile('four').locator('.bar').boundingBox();
+  await page.mouse.move(outsideSource.x+12,outsideSource.y+16);
+  await page.mouse.down();
+  await page.mouse.move(20,200,{steps:8});
+  await page.mouse.up();
+  expect(await page.evaluate(() => ({dragging,order}))).toEqual({dragging:null,order:['one','two','three','four']});
+  await dropOverPlayer('four','three');
+  expect(await page.evaluate(() => order)).toEqual(['one','two','four','three']);
+  expect(errors).toEqual([]);
+});
+
+test('a pointer drag scrolls the tile column and stops scrolling when cancelled', async ({page}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({width:1280,height:720});
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two','three','four','five','six','seven','eight','nine','ten','eleven'],focused:'one'})));
+  await page.goto('/');
+  const source = await page.locator('#grid [data-login="two"] .bar').boundingBox();
+  const box = await page.locator('#grid').boundingBox();
+  await page.mouse.move(source.x+12,source.y+16);
+  await page.mouse.down();
+  await page.mouse.move(box.x+box.width-30,box.y+box.height-10,{steps:8});
+  await expect.poll(() => page.evaluate(() => grid.scrollTop)).toBeGreaterThan(100);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  const top = await page.evaluate(() => grid.scrollTop);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => ({top:grid.scrollTop,dragging,focused}))).toEqual({top,dragging:null,focused:'one'});
+  expect(errors).toEqual([]);
+});
+
 test('a portrait grid keeps the small tiles in a strip under the front row', async ({ page }) => {
   const errors = await setup(page);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'], focused: 'one', collapsed: true })));
@@ -625,10 +746,54 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   // a press on the slider moves the thumb, never the tile: the bar's drag is cancelled from inside the popover
   expect(await volume.evaluate(el=>{const e=new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:new DataTransfer()});el.dispatchEvent(e);return {cancelled:e.defaultPrevented,dragging};})).toEqual({cancelled:true,dragging:null});
   await page.reload();
+  await expect(one.locator('.snd')).toHaveAttribute('data-sound','muted');
+  await page.locator('#audio-overlay button').click();
   await expect(one).toHaveClass(/loud/);
   await expect(volume).toHaveValue('0.55');
   expect(errors).toEqual([]);
 });
+for (const rendering of ['current', 'trial-1']) test(`zero volume mutes and unmute restores an audible level in ${rendering}`, async ({page}) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?**', r => r.fulfill({json:{data:['one','two'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
+  await page.addInitScript(rendering => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:rendering}));
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],paused:{two:true}}));
+  }, rendering);
+  await page.goto('/');
+  const tile = page.locator('#grid [data-login="one"]'), sound = tile.locator('.snd'), volume = tile.locator('.volume input');
+  const state = () => page.evaluate(() => {
+    const t = tiles.get('one');
+    return {muted:t.muted,volume:t.volume,playerMuted:t.player?.getMuted(),playerVolume:t.player?.getVolume()};
+  });
+  await expect.poll(() => page.evaluate(() => tiles.get('one')?.ready)).toBe(true);
+  await sound.hover();
+  await expect(volume).toBeVisible();
+  await volume.press('Home');
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await expect.poll(state).toEqual({muted:true,volume:0,playerMuted:true,playerVolume:0});
+  await sound.click();
+  await expect(volume).toHaveValue('0.5');
+  await expect.poll(state).toEqual({muted:false,volume:0.5,playerMuted:false,playerVolume:0.5});
+  await volume.press('ArrowDown'); await volume.press('ArrowDown');
+  await expect(volume).toHaveValue('0.4');
+  await sound.click();
+  await expect.poll(state).toEqual({muted:true,volume:0.4,playerMuted:true,playerVolume:0.4});
+  await page.reload();
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await expect(volume).toHaveValue('0.4');
+  await expect.poll(() => page.evaluate(() => tiles.get('one')?.ready)).toBe(true);
+  await sound.click();
+  await expect.poll(state).toEqual({muted:false,volume:0.4,playerMuted:false,playerVolume:0.4});
+  await sound.hover(); await volume.press('Home');
+  await page.reload();
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await expect(volume).toHaveValue('0');
+  await sound.click();
+  await expect(volume).toHaveValue('0.5');
+  await expect.poll(state).toEqual({muted:false,volume:0.5,playerMuted:false,playerVolume:0.5});
+  expect(errors).toEqual([]);
+});
+
 test('the sound button toggles muted and on; the spotlight turns the sound on and gives back the state it found', async ({ page }) => {
   const errors=await setup(page);
   await page.addInitScript(() => {
@@ -660,6 +825,8 @@ test('the sound button toggles muted and on; the spotlight turns the sound on an
   expect(await state()).toEqual({one:false,two:true});
   await page.reload();
   expect(await state()).toEqual({one:false,two:true});
+  await expect(header).toHaveAttribute('data-sound','muted');
+  await page.keyboard.press('Enter');
   await expect(header).toHaveAttribute('data-sound','on');
   expect(errors).toEqual([]);
 });
@@ -975,8 +1142,9 @@ for (const connected of [false, true]) test(`live notifications track transition
 });
 
 
-for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture}`, async ({ page }) => {
+for (const rendering of ['current', 'trial-1']) for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture} in ${rendering}`, async ({ page }) => {
   const errors=await setup(page); await page.clock.install();
+  await page.addInitScript(rendering => localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:rendering})), rendering);
   await page.setViewportSize({width:2560,height:1440});
   await page.route('**/api/search?**',r=>r.fulfill({json:{data:['one','two','muted','paused'].map(broadcaster_login=>({broadcaster_login,is_live:true}))}}));
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({
@@ -988,12 +1156,17 @@ for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio o
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveCSS('backdrop-filter','blur(14px)');
   expect(await overlay.boundingBox()).toEqual({x:0,y:0,...page.viewportSize()});
+  await expect(page.locator('#grid .snd[data-sound="on"]')).toHaveCount(0);
+  expect(await page.evaluate(() => tiles.get('one').muted)).toBe(false);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).muted.one)).toBe(false);
   await page.evaluate(()=>{window.audioPlayers=[...tiles.values()].map(t=>t.player);});
   if(gesture==='background') await page.mouse.click(4,4);
   else if(gesture==='button') await overlay.locator('button').click();
   else await page.keyboard.press('Space');
   await page.clock.runFor(2500);
   await expect(overlay).toBeHidden();
+  await expect(page.locator('#grid .snd[data-sound="on"]')).toHaveCount(2);
+  if (rendering === 'trial-1') await expect(page.locator('#grid .load').first()).toBeHidden();
   expect(await page.evaluate(()=>[...tiles.values()].map(t=>t.player?({muted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.player.paused}):null)))
     .toEqual([{muted:false,volume:0.3,paused:false},{muted:false,volume:0.7,paused:false},{muted:true,volume:0.4,paused:false},null]);
   expect(await page.evaluate(()=>focused)).toBe('one');
@@ -1001,6 +1174,30 @@ for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio o
   await page.evaluate(()=>tiles.get('one').player.emit('playbackBlocked'));
   await page.clock.runFor(2500);
   await expect(overlay).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('the sound icon stays muted when the player refuses unmute without overwriting saved intent', async ({page}) => {
+  const errors = await setup(page); await page.clock.install();
+  await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('setMuted(value) { this.muted = value; }','setMuted(value) { if (value || !window.refuseUnmute) this.muted = value; }')}));
+  await page.route('**/api/search?**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
+  await page.addInitScript(() => {
+    window.refuseUnmute = true;
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],muted:{one:false}}));
+  });
+  await page.goto('/'); await page.clock.runFor(1500);
+  const sound = page.locator('#grid .snd'), overlay = page.locator('#audio-overlay');
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await overlay.locator('button').click(); await page.clock.runFor(3500);
+  await expect(overlay).toBeHidden();
+  await expect(sound).toHaveAttribute('data-sound','muted');
+  await expect(sound).toHaveAttribute('aria-label','Allumer le son');
+  expect(await page.evaluate(() => ({intent:tiles.get('one').muted,saved:JSON.parse(localStorage.getItem('tg.layout.guest')).muted.one}))).toEqual({intent:false,saved:false});
+  await page.evaluate(() => { window.refuseUnmute = false; });
+  await sound.click();
+  await expect(sound).toHaveAttribute('data-sound','on');
+  expect(await page.evaluate(() => tiles.get('one').muted)).toBe(false);
   expect(errors).toEqual([]);
 });
 
@@ -1795,7 +1992,8 @@ test('preview image refresh sleeps in background tabs and catches up without loa
   expect(errors).toEqual([]);
 });
 
-test('tile and sidebar hovers reveal the iframe at READY and keep loading feedback outside it',async({page})=>{
+for (const rendering of ['current', 'trial-1']) test(`tile and sidebar loading covers follow the ${rendering} rendering mode`,async({page,browserName})=>{
+  await page.addInitScript(rendering => localStorage.setItem('tg.preferences', JSON.stringify({playerRendering:rendering,theme:'light'})), rendering);
   const errors=await setup(page);
   // Simulate the SDK replacing its mount contents at READY, then buffering without a first frame.
   const bufferingPlayer=mockPlayer
@@ -1809,10 +2007,10 @@ test('tile and sidebar hovers reveal the iframe at READY and keep loading feedba
   await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true,title:'Live painting',game_name:'Art'}]}}));
   await page.addInitScript(()=>{
     localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'one'}]));
-    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],allPaused:true}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],allPaused:true}));
   });
   await page.clock.install();await page.goto('/');
-  const tile=page.locator('#grid .tile'), cover=tile.locator('.preview-cover');
+  const tile=page.locator('#grid [data-login="one"]'), cover=tile.locator('.preview-cover');
   await expect.poll(()=>cover.locator('.stream-poster').evaluate(img=>img.naturalWidth)).toBe(640);
   await page.clock.pauseAt((await page.evaluate(()=>Date.now())) + 1000);
   await expect(cover.locator('.preview-status')).toBeHidden();
@@ -1821,9 +2019,28 @@ test('tile and sidebar hovers reveal the iframe at READY and keep loading feedba
   await page.clock.runFor(500);
   await expect(tile.locator('.player-embed iframe')).toHaveCount(1);
   await expect(cover).toBeVisible();
+  if (rendering === 'trial-1') await expect(tile.locator('iframe')).toBeVisible();
   await page.clock.runFor(1500);
-  await expect(cover).toBeVisible();   // READY is not a frame: the still stays until the video plays
-  await expect(tile.locator('.bar .playback-loading')).toHaveCount(0);   // no spinner in the header while the player loads
+  if (rendering === 'current') await expect(cover).toBeVisible();
+  else {
+    await expect(cover).toBeVisible();
+    // Clicks reach the embed layer; simplified players delegate them to the tile.
+    expect(await tile.locator('iframe').evaluate(frame => {
+      const box=frame.getBoundingClientRect();
+      return frame.parentElement.contains(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2));
+    })).toBe(true);
+    await expect(tile.locator('iframe')).toHaveCSS('color-scheme', 'normal');
+    await expect(tile.locator('iframe')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(tile.locator('.player')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await expect(tile.locator('.bar .playback-status')).toBeVisible();
+    await expect(tile.locator('.load')).toBeHidden();
+    await expect(tile.locator('iframe')).toHaveCSS('transform', 'none');
+    await expect(tile.locator('iframe')).toBeVisible();
+    if (browserName === 'chromium') expect(await tile.locator('iframe').evaluate(frame => new Promise(resolve => {
+      const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve(entry.isVisible); }, {trackVisibility:true,delay:100});
+      observer.observe(frame);
+    }))).toBe(true);
+  }
   await page.evaluate(()=>{const p=tiles.get('one').player;p.buffering=false;p.paused=false;p.emit('playing');});
   await expect(cover).toBeHidden();
   await page.locator('#q').hover();await page.clock.runFor(500);
@@ -1839,9 +2056,17 @@ test('tile and sidebar hovers reveal the iframe at READY and keep loading feedba
   await expect(page.locator('#preview iframe')).toHaveCount(0);
   await page.clock.runFor(350);
   await expect(page.locator('#preview iframe')).toHaveCount(1);
+  await expect(sidebarCover).toBeVisible();
+  if (rendering === 'trial-1') await expect(page.locator('#preview iframe')).toBeVisible();
   await page.clock.runFor(1500);
-  await expect(sidebarCover).toBeVisible();   // like the tiles: READY is not a frame
-  await expect(page.locator('#preview .playback-loading')).toHaveCount(0);
+  if (rendering === 'current') await expect(sidebarCover).toBeVisible();
+  else {
+    await expect(sidebarCover).toBeVisible();
+    await expect(page.locator('#preview .player')).toHaveCSS('z-index','2');
+    await expect(page.locator('#preview .preview-message')).toHaveText('Chargement de l’aperçu…');
+    await expect(page.locator('#preview iframe')).toHaveCSS('transform', 'none');
+    await expect(page.locator('#preview iframe')).toBeVisible();
+  }
   await expect(sidebarCover.locator('.stream-poster')).toHaveAttribute('src',await cover.locator('.stream-poster').getAttribute('src'));
   await page.evaluate(()=>{previewPlayer.buffering=false;previewPlayer.paused=false;previewPlayer.emit('playing');});
   await expect(page.locator('#preview')).toHaveClass(/playing/);
@@ -1849,6 +2074,268 @@ test('tile and sidebar hovers reveal the iframe at READY and keep loading feedba
   await page.locator('#q').hover();await page.clock.runFor(500);
   await expect(page.locator('#preview')).toBeHidden();
   await expect(page.locator('#preview iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+for (const presentation of ['spotlight', 'single', 'expanded']) test(`trial pause stops the ${presentation} and keeps its still centered without overlays`, async ({page}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({width:1100,height:1100});
+  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two'].map(login => ({broadcaster_login:login,is_live:true}))}}));
+  await page.route('https://static-cdn.jtvnw.net/**', r => r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="purple"/></svg>'}));
+  await page.addInitScript(presentation => {
+    localStorage.setItem('tg.preferences', JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'one'},{twitch:'two'}]));
+    localStorage.setItem('tg.layout.guest', JSON.stringify({order:presentation === 'single' ? ['one'] : ['one','two'],
+      focused:presentation === 'spotlight' ? 'one' : null, muted:{one:false,two:true}, volume:{one:0.3,two:0.7}}));
+  }, presentation);
+  await page.clock.install(); await page.goto('/');
+  const tile = page.locator('#grid [data-login="one"]'), video = tile.locator('.player');
+  await expect(video.locator('iframe')).toHaveCount(1);
+  await page.locator('#audio-overlay button').click();
+  await expect(page.locator('#audio-overlay')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => tiles.get('one').hasPlayed)).toBe(true);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+  await page.evaluate(() => window.pausedPlayer = tiles.get('one').player);
+  await page.locator('#playall').click();
+  if (presentation === 'expanded') await tile.locator('.fs').click();
+  // Return over the spotlight before the old 400ms sync delay could expire.
+  await video.hover();
+  await expect(video.locator('iframe')).toHaveCount(0);
+  expect(await page.evaluate(() => window.pausedPlayer.destroyed)).toBe(true);
+  await page.clock.runFor(2000);
+  await expect(video.locator('iframe')).toHaveCount(0);
+  await expect(tile.locator('.preview-status')).toBeHidden();
+  await expect(tile.locator('.load')).toBeHidden();
+  await expect(tile.locator('.play-hint')).toBeHidden();
+  const poster = video.locator('.stream-poster');
+  await expect(poster).toBeVisible();
+  for (const size of [{width:1100,height:1100},{width:1500,height:800}]) {
+    await page.setViewportSize(size); await page.clock.runFor(100);
+    await expect(async () => {
+      const {image,box} = await poster.evaluate(img => ({image:img.getBoundingClientRect().toJSON(),box:img.closest('.player').getBoundingClientRect().toJSON()}));
+      expect(image.width / image.height).toBeCloseTo(16/9,2);
+      expect(image.x + image.width / 2).toBeCloseTo(box.x + box.width / 2,0);
+      expect(image.y + image.height / 2).toBeCloseTo(box.y + box.height / 2,0);
+      expect(image.width).toBeLessThanOrEqual(box.width + 1);
+      expect(image.height).toBeLessThanOrEqual(box.height + 1);
+    }).toPass();
+  }
+  await video.click(); await page.clock.runFor(1500);
+  await expect(video.locator('iframe')).toHaveCount(1);
+  await expect(tile.locator('.preview-cover')).toBeHidden();
+  expect(await page.evaluate(() => ({allPaused,paused:tiles.get('one').paused,muted:tiles.get('one').muted,volume:tiles.get('one').volume})))
+    .toEqual({allPaused:false,paused:false,muted:false,volume:0.3});
+  if (presentation !== 'single') await expect(page.locator('#grid [data-login="two"] .player iframe')).toHaveCount(0);
+  await tile.locator('.pp').click(); await video.hover(); await page.clock.runFor(1500);
+  await expect(video.locator('iframe')).toHaveCount(0);
+  await tile.locator('.pp').click(); await page.clock.runFor(1500);
+  // A pause issued by the native player must also remain paused under the pointer.
+  await page.evaluate(() => { const t=tiles.get('one'); t.unmutedAt=0; t.player.pause(); });
+  await page.clock.runFor(1500);
+  await expect(video.locator('iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('trial iframe stays centered at 16:9 and only resizes when its video area changes', async ({page}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({width:1700,height:1400});
+  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
+  await page.route('https://www.twitch.tv/embed/*/chat?**', r => r.fulfill({body:'Chat'}));
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',muted:{one:true,two:true},paused:{two:true}}));
+  });
+  await page.goto('/');
+  const tile = page.locator('#grid [data-login="one"]'), player = tile.locator('.player'), frame = player.locator('iframe');
+  await expect.poll(() => page.evaluate(() => tiles.get('one')?.hasPlayed)).toBe(true);
+  await page.evaluate(() => { window.originalFrame = tiles.get('one').el.querySelector('.player iframe'); });
+  async function expectCentered() {
+    await expect.poll(async () => {
+      const f=await frame.boundingBox(),p=await player.boundingBox();
+      return Math.abs(f.width/f.height - 16/9) + Math.abs(f.x+f.width/2-p.x-p.width/2) + Math.abs(f.y+f.height/2-p.y-p.height/2);
+    }).toBeLessThan(1);
+    const f=await frame.boundingBox(),p=await player.boundingBox();
+    expect(f.width/f.height).toBeCloseTo(16/9,2);
+    expect(f.width).toBeCloseTo(Math.min(p.width,p.height*16/9),0);
+    expect(f.height).toBeLessThanOrEqual(p.height+1);
+    await expect(frame).toHaveCSS('transform','none');
+    return f;
+  }
+  const tall = await expectCentered();
+  const before = await frame.evaluate(f => ({width:f.contentWindow.innerWidth,height:f.contentWindow.innerHeight}));
+  await page.setViewportSize({width:1700,height:1100});
+  await expect.poll(async () => (await frame.boundingBox()).y).not.toBe(tall.y);
+  const shorter = await expectCentered();
+  expect(shorter.width).toBe(tall.width); expect(shorter.height).toBe(tall.height);
+  expect(shorter.y).not.toBe(tall.y);
+  expect(await frame.evaluate(f => ({width:f.contentWindow.innerWidth,height:f.contentWindow.innerHeight}))).toEqual(before);
+  await page.setViewportSize({width:1700,height:500});
+  await expect.poll(async () => (await frame.boundingBox()).width).toBeLessThan(tall.width);
+  const wide = await expectCentered();
+  expect(wide.width).toBeLessThan(tall.width);
+  await tile.locator('.chat-toggle').click();
+  await expect(tile.locator('.chat iframe')).toHaveCount(1);
+  await expectCentered();
+  expect(await frame.evaluate(f => f === window.originalFrame)).toBe(true);
+  await tile.locator('.chat-toggle').click();
+  const playing = await expectCentered();
+  await tile.locator('.pp').click();
+  await expect(frame).toHaveCount(0);
+  const poster = await player.locator('.stream-poster').boundingBox();
+  expect(poster.x).toBeCloseTo(playing.x,0); expect(poster.y).toBeCloseTo(playing.y,0);
+  expect(poster.width).toBeCloseTo(playing.width,0); expect(poster.height).toBeCloseTo(playing.height,0);
+  expect(errors).toEqual([]);
+});
+
+test('trial side tiles remain fully visible at fractional sizes and resume after a global pause', async ({page, browserName}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({width:1671,height:1100});
+  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two','three'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two','three'],focused:'one',muted:{one:true,two:true,three:true}}));
+  });
+  await page.goto('/');
+  // Headless Chromium uses overlay scrollbars; reserve their width to also cover desktop scrollbars.
+  await page.addStyleTag({content:'#grid { scrollbar-gutter: stable; }'});
+  await page.evaluate(() => layout());
+  const frames = page.locator('#grid .tile:not(.big) .player iframe');
+  await expect(frames).toHaveCount(2);
+  for (const width of [1671,1670,1707,1710]) {
+    await page.setViewportSize({width,height:1100});
+    await expect(async () => {
+      for (const frame of await frames.all()) {
+        const bounds = await frame.evaluate(f => {
+          const iframe = f.getBoundingClientRect(), container = f.closest('.player').getBoundingClientRect();
+          const spotlight = document.querySelector('#grid .tile.big').getBoundingClientRect();
+          return {overflow:Math.max(container.left-iframe.left,container.top-iframe.top,iframe.right-container.right,iframe.bottom-container.bottom),overlap:spotlight.right-container.left,ratio:iframe.width/iframe.height};
+        });
+        expect(bounds.overflow).toBeLessThan(0.001);   // Firefox DOMRect arithmetic has floating-point noise.
+        expect(bounds.overlap).toBeLessThanOrEqual(0);
+        expect(bounds.ratio).toBeCloseTo(16/9,3);
+      }
+    }).toPass();
+    if (browserName === 'chromium') for (const frame of await frames.all()) {
+      expect(await frame.evaluate(f => new Promise(resolve => {
+        const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve({visible:entry.isVisible,ratio:entry.intersectionRatio}); }, {trackVisibility:true,delay:100});
+        observer.observe(f);
+      }))).toEqual({visible:true,ratio:1});
+    }
+  }
+  await page.locator('#playall').click();
+  await expect(page.locator('#grid .player iframe')).toHaveCount(0);
+  await page.locator('#playall').click();
+  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.hasPlayed && !tilePaused(t)))).toBe(true);
+  await expect(frames).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test('trial volume only opens on hover and tooltips cannot cover the player', async ({page, browserName}) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],muted:{one:true}}));
+  });
+  await page.goto('/');
+  const tile = page.locator('#grid .tile'), sound = tile.locator('.snd'), volume = tile.locator('.volume');
+  await expect.poll(() => page.evaluate(() => tiles.get('one')?.hasPlayed)).toBe(true);
+  await expect(page.locator('[title]:not(iframe)')).toHaveCount(0);
+  await expect(tile.locator('iframe')).toHaveAttribute('title','Stream de one');
+  await sound.hover(); await page.waitForTimeout(600);
+  await expect(volume).toBeVisible();
+  await expect(page.locator('#tooltip')).toBeHidden();
+  await sound.click();
+  await expect(sound).toHaveAttribute('aria-label','Couper le son');
+  await expect(sound).not.toHaveAttribute('title');
+  await volume.locator('input').hover();
+  await expect(volume).toBeVisible();
+  if (browserName === 'chromium') expect(await tile.locator('iframe').evaluate(frame => new Promise(resolve => {
+    const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve(entry.isVisible); }, {trackVisibility:true,delay:100});
+    observer.observe(frame);
+  }))).toBe(true);
+  await page.locator('#q').hover();
+  await expect(sound).toBeFocused();
+  await expect(volume).toBeHidden();
+  await sound.focus();
+  await expect(volume).toBeHidden();
+  await expect(page.locator('#tooltip')).toBeHidden();
+  await page.locator('#language-setting').selectOption('en');
+  await expect(sound).toHaveAttribute('aria-label','Mute');
+  await expect(page.locator('[title]:not(iframe)')).toHaveCount(0);
+  await page.locator('#player-rendering-setting').selectOption('current');
+  await sound.hover();
+  await expect(page.locator('#tooltip')).toBeVisible();
+  await page.locator('#player-rendering-setting').selectOption('trial-1');
+  await expect(page.locator('#tooltip')).toBeHidden();
+  await expect(page.locator('[title]:not(iframe)')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('rendering switch preserves the workspace, replaces video frames and persists after reload', async ({page, browserName}) => {
+  const errors = await setup(page);
+  await page.setViewportSize({width:1600,height:1000});
+  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two'].map(login => ({broadcaster_login:login,is_live:true,game_name:'Art',title:'Live painting'}))}}));
+  await page.route('https://www.twitch.tv/embed/*/chat?**', r => r.fulfill({body:'Chat'}));
+  await page.addInitScript(() => {
+    if (localStorage.getItem('tg.favorites')) return;
+    localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'one'},{twitch:'two'}]));
+    localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one',collapsed:false,
+      muted:{one:true,two:true},volume:{one:0.25,two:0.7},paused:{one:false,two:true},chatOpen:{one:true}}));
+  });
+  await page.goto('/');
+  const one = page.locator('#grid [data-login="one"]'), selector = page.locator('#player-rendering-setting');
+  await expect(selector).toHaveValue('current');
+  await expect(one.locator('.player iframe')).toHaveCount(1);
+  await expect(one.locator('.chat iframe')).toHaveCount(1);
+  await expect(one.locator('.preview-cover')).toBeHidden();
+  await page.evaluate(() => {
+    window.beforeRendering = JSON.stringify(currentLayout());
+    window.oldVideo = tiles.get('one').player;
+    window.oldChat = tiles.get('one').chat.querySelector('iframe');
+    window.oldBounds = tiles.get('one').el.getBoundingClientRect().toJSON();
+  });
+  await selector.selectOption('trial-1');
+  await expect(one.locator('.player iframe')).toHaveCSS('transform','none');
+  await expect(one.locator('.preview-cover')).toBeHidden();
+  expect(await page.evaluate(() => ({layout:JSON.stringify(currentLayout()) === window.beforeRendering,
+    replaced:window.oldVideo.destroyed && tiles.get('one').player !== window.oldVideo,
+    chat:tiles.get('one').chat.querySelector('iframe') === window.oldChat,
+    bounds:JSON.stringify(tiles.get('one').el.getBoundingClientRect().toJSON()) === JSON.stringify(window.oldBounds)})))
+    .toEqual({layout:true,replaced:true,chat:true,bounds:true});
+  const frame = await one.locator('.player iframe').boundingBox(), box = await one.locator('.player').boundingBox();
+  expect(frame.width).toBeCloseTo(Math.min(box.width,box.height*16/9),0);
+  expect(frame.height).toBeCloseTo(frame.width*9/16,0);
+  expect(frame.x+frame.width/2).toBeCloseTo(box.x+box.width/2,0);
+  expect(frame.y+frame.height/2).toBeCloseTo(box.y+box.height/2,0);
+  if (browserName === 'chromium') {
+    // Exercise browser visibility, independently of the mocked Twitch playback events.
+    expect(await one.locator('.player iframe').evaluate(frame => new Promise(resolve => {
+      const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve(entry.isVisible); }, {trackVisibility:true,delay:100});
+      observer.observe(frame);
+    }))).toBe(true);
+  }
+  await expect(one.locator('.volume')).toBeHidden();
+  await one.locator('.snd').hover();
+  await expect(one.locator('.volume')).toBeVisible();
+  await expect(one.locator('.volume input')).toHaveCSS('writing-mode','horizontal-tb');
+  const volume = await one.locator('.volume').boundingBox(), header = await one.locator('.bar').boundingBox();
+  expect(volume.width).toBeGreaterThan(volume.height);
+  expect(volume.y).toBeGreaterThanOrEqual(header.y);
+  expect(volume.y + volume.height).toBeLessThanOrEqual(header.y + header.height);
+  await selector.hover();
+  await expect(one.locator('.volume')).toBeHidden();
+  await selector.selectOption('current');
+  await expect(one.locator('.player iframe')).not.toHaveCSS('transform','none');
+  await expect(one.locator('.player iframe')).toHaveCSS('width','1280px');
+  expect(await page.evaluate(() => JSON.stringify(currentLayout()) === window.beforeRendering)).toBe(true);
+  await selector.selectOption('trial-1');
+  await page.reload();
+  await expect(selector).toHaveValue('trial-1');
+  await expect(one.locator('.player iframe')).toHaveCSS('transform','none');
+  await expect(page.locator('#grid [data-login="two"]')).toHaveClass(/poster-only/);
+  expect(await page.evaluate(() => ({order,focused,volume:tiles.get('one').volume,paused:tiles.get('two').paused})))
+    .toEqual({order:['one','two'],focused:'one',volume:0.25,paused:true});
   expect(errors).toEqual([]);
 });
 
@@ -1953,6 +2440,86 @@ test('a slow preview reports its timeout outside the iframe and clears it when p
 });
 
 
+test('trial reload waits for status and never mounts confirmed offline channels', async ({page}) => {
+  const errors = await setup(page);
+  const banner = 'https://static-cdn.jtvnw.net/offline-banner.png', avatar = 'https://static-cdn.jtvnw.net/avatar.png';
+  await page.route('https://static-cdn.jtvnw.net/**', r => r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="purple"/></svg>'}));
+  await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('this.options = options;', '(window.mountedChannels ||= []).push(options.channel); this.options = options;')}));
+  let releaseStatus;
+  const status = new Promise(resolve => { releaseStatus = resolve; });
+  await page.route('**/api/search?login=**', async r => {
+    await status;
+    await r.fulfill({json:{data:[{broadcaster_login:'offline',is_live:false,offline_image_url:banner,thumbnail_url:avatar},{broadcaster_login:'live',is_live:true}]}});
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['offline','live'],muted:{offline:true,live:true}}));
+  });
+  await page.goto('/');
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await page.waitForTimeout(600);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  expect(await page.evaluate(() => window.mountedChannels || [])).toEqual([]);
+  releaseStatus();
+  const offline = page.locator('#grid [data-login="offline"]');
+  await expect(offline.locator('.preview-status')).toBeVisible();
+  await expect(offline.locator('.preview-status span')).toHaveText('Hors ligne');
+  await expect(offline.locator('.preview-avatar img')).toHaveAttribute('src',avatar);
+  await expect(offline.locator('.stream-poster')).toHaveAttribute('src',banner);
+  await expect(page.locator('#grid [data-login="live"] iframe')).toHaveCount(1);
+  expect(await page.evaluate(() => window.mountedChannels)).not.toContain('offline');
+  await offline.hover(); await page.locator('#playall').click(); await page.locator('#playall').click();
+  await page.reload();
+  await expect(page.locator('#grid [data-login="live"] iframe')).toHaveCount(1);
+  await expect(offline.locator('iframe')).toHaveCount(0);
+  await expect(offline.locator('.preview-status')).toBeVisible();
+  expect(await page.evaluate(() => window.mountedChannels)).not.toContain('offline');
+  expect(errors).toEqual([]);
+});
+
+test('trial offline transitions release the embed and resume when the channel returns', async ({page}) => {
+  const errors = await setup(page);
+  let online = true;
+  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:online,offline_image_url:'https://static-cdn.jtvnw.net/offline.png'}]}}));
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],locked:true,volume:{one:0.3},muted:{one:true}}));
+  });
+  await page.goto('/');
+  const tile = page.locator('#grid .tile');
+  await expect.poll(() => page.evaluate(() => tiles.get('one')?.hasPlayed)).toBe(true);
+  await page.evaluate(() => { window.previousPlayer = tiles.get('one').player; previousPlayer.emit('offline'); });
+  await expect(tile.locator('iframe')).toHaveCount(0);
+  expect(await page.evaluate(() => previousPlayer.destroyed)).toBe(true);
+  await expect(tile.locator('.preview-status')).toBeVisible();
+  await expect(tile.locator('.preview-status span')).toHaveText('Hors ligne');
+  await page.evaluate(() => refresh());
+  await expect(tile.locator('iframe')).toHaveCount(1);
+  online = false;
+  await page.evaluate(() => refresh());
+  await expect(tile.locator('iframe')).toHaveCount(0);
+  // Going offline must not turn the user's playback preference into a manual pause.
+  expect(await page.evaluate(() => ({paused:tiles.get('one').paused,volume:tiles.get('one').volume,muted:tiles.get('one').muted})))
+    .toEqual({paused:false,volume:0.3,muted:true});
+  online = true;
+  await page.evaluate(() => refresh());
+  await expect(tile.locator('iframe')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('trial failed status lookup lets the unknown channel try its embed', async ({page}) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?login=**', r => r.fulfill({status:503,json:{error:'Unavailable'}}));
+  await page.addInitScript(() => {
+    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
+    localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one']}));
+  });
+  await page.goto('/');
+  await expect(page.locator('#grid iframe')).toHaveCount(1);
+  expect(await page.evaluate(() => tiles.get('one').channel.online)).toBe(null);
+  expect(errors).toEqual([]);
+});
+
 test('offline tiles show the channel banner when it has one, or an offline overlay instead of a black box',async({page})=>{
   const errors=await setup(page);
   const banner='https://static-cdn.jtvnw.net/jtv_user_pictures/banner-channel_offline_image-1920x1080.png';
@@ -2055,4 +2622,12 @@ test('the global play and pause button is a shortcut every tile can override',as
   await expect(two).toHaveAttribute('aria-pressed','true');
   await expect(button).toHaveAttribute('aria-pressed','false');
   expect(errors).toEqual([]);
+});
+
+test('the validated rendering is the default for every browser', async ({page}) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.removeItem('tg.preferences'));
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-player-rendering','trial-1');
+  await expect(page.locator('#player-rendering-setting')).toHaveValue('trial-1');
 });
