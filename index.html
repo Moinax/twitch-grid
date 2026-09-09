@@ -122,15 +122,12 @@
   #list .v { color: var(--dim); font-variant-numeric: tabular-nums; }
   #list li.live .v::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--live); margin-right: 5px; }
   #list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  #tooltip { position: fixed; top: 0; left: 0; z-index: 50; max-width: 320px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); color: var(--fg); font-size: 12px; line-height: 16px; font-weight: 600; text-wrap: pretty; box-shadow: 0 8px 24px #18181880; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
-  #tooltip.in { opacity: 1; }
-  #tooltip.sidebar-tip, [data-theme] #tooltip.sidebar-tip { box-shadow: none; }
   #preview { position: fixed; z-index: 10; width: 362px; max-width: calc(100vw - 16px); overflow: hidden; border: 1px solid #9147ff66; border-radius: 12px; background: var(--panel); box-shadow: 0 12px 40px #181818cc; opacity: 0; transform: translateY(-8px) scale(.98); transition: opacity .25s var(--ease), transform .35s var(--ease); }
   #preview.in { opacity: 1; transform: none; }
   #preview:not(.in) { pointer-events: none; }   /* a fading card must not catch the pointer and come back */
   #preview .video { position: relative; aspect-ratio: 16 / 9; background: var(--video-bg); }
   #preview .player { position: absolute; inset: 0; pointer-events: none; }
-  #preview iframe { position: absolute; width: 640px; height: 360px; transform-origin: 0 0; border: 0; }
+  #preview iframe { position: absolute; width: 100%; height: 100%; border: 0; }
   .preview-cover { position: absolute; inset: 0; z-index: 1; background: var(--video-bg); pointer-events: none; transition: opacity .3s var(--ease), visibility .3s var(--ease); }
   .preview-cover.gone { opacity: 0; visibility: hidden; }
   .preview-status { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #18181888; backdrop-filter: blur(2px); color: var(--fg); font-size: 12px; line-height: 16px; text-shadow: 0 1px 4px #000; }
@@ -232,10 +229,7 @@
   .tile.full-player .stream-info span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .tile.full-player .stream-category { flex: 0 1 auto; max-width: 35%; }
   .tile.full-player .stream-title { flex: 1; }
-  .tile:not(.full-player) .stream-info { position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 3; padding: 8px 12px; border: 1px solid #ffffff22; border-radius: 8px; background: #1f1f1fbf; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); pointer-events: none; visibility: hidden; opacity: 0; transform: translateY(4px); transition: opacity .3s var(--ease), visibility .3s var(--ease), transform .3s var(--ease); }
   /* over a still image the metadata shows at rest and steps aside for the hover preview; over a player it comes with the pointer */
-  .tile:not(.full-player):not(.paused):hover .stream-info,
-  .tile:not(.full-player).paused:not(:hover) .stream-info { visibility: visible; opacity: 1; transform: none; }
   .tile:not(.full-player) .stream-category, .tile:not(.full-player) .stream-title { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .tile:not(.full-player) .stream-category { margin-bottom: 2px; }
   #grid.single .spotlight, .tile:not(.full-player) .fs { display: none; }   /* a single player has nothing to come in front of */
@@ -267,12 +261,11 @@
   .live-notification small { display: block; margin-top: 2px; color: #d6baff; font-size: 12px; line-height: 16px; }
   .live-notification .dismiss { flex: none; display: flex; padding: 8px; margin-right: 4px; color: var(--dim); }
   .tile .bar .pp[aria-pressed="true"] .pause, .tile .bar .pp[aria-pressed="false"] .play { display: none; }
-  /* the volume hangs under the sound button while the pointer or the focus is on it: a vertical slider and its value */
+  /* The volume stays in the header and opens only on hover. */
   .snd-wrap { position: relative; flex: none; display: flex; }
-  .tile .volume { position: absolute; top: 100%; right: 2px; z-index: 6; display: flex; align-items: center; width: 24px; padding: 8px 0; border-radius: 9999px; background: #1f1f1fb3; backdrop-filter: blur(12px); border: 1px solid #ffffff10; cursor: default; -webkit-user-drag: none; visibility: hidden; opacity: 0; transform: translateY(-4px); transition: opacity .2s var(--ease), visibility .2s var(--ease), transform .2s var(--ease); }
-  .snd-wrap:hover .volume, .snd-wrap:focus-within .volume { visibility: visible; opacity: 1; transform: none; }
-  /* a thin vertical track with a round thumb, the max at the top */
-  .tile .volume input { appearance: none; -webkit-appearance: none; writing-mode: vertical-lr; direction: rtl; width: 3px; height: 72px; margin: 0 auto; border-radius: 2px; background: #ffffff33; cursor: pointer; }
+
+  /* A thin track with a round thumb. */
+  .tile .volume input { appearance: none; -webkit-appearance: none; writing-mode: horizontal-tb; direction: ltr; width: 72px; height: 3px; margin: 0 auto; border-radius: 2px; background: #ffffff33; cursor: pointer; }
   .tile .volume input::-webkit-slider-thumb { appearance: none; -webkit-appearance: none; width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--accent); }
   .tile .volume input::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--accent); }
   .tile .volume input:focus-visible { outline: none; }
@@ -329,56 +322,35 @@
   .tile .collaboration-menu .add-collaboration:hover:not(:disabled) { background: #a66aff; }
   .chat iframe { flex: 1; min-height: 0; width: 100%; border: 0; }
   /* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
-  .tile .load { position: absolute; inset: var(--bar) 0 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #181818d9; backdrop-filter: blur(20px); color: var(--fg); font-weight: 700; font-size: 16px; line-height: 24px; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
-  .tile.loading .load { opacity: 1; pointer-events: auto; }   /* a click on the loader lands nowhere */
   /* a player that will not start: the loader fades away, a play button shows, and the click reaches the embed */
-  .tile.stalled .load { opacity: 0; pointer-events: none; }
   .tile.stalled .tile-body .player iframe { pointer-events: auto; }   /* outranks the simplified players rule below */
-  .tile .play-hint { position: absolute; inset: var(--bar) 0 0; z-index: 2; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease); }
-  .tile .play-hint svg { width: 64px; height: 64px; padding: 16px 16px 16px 20px;   /* the triangle sits 2px right of centre to read centred */ border-radius: 50%; background: #9147ffcc; color: #fff; box-shadow: 0 12px 32px #181818a6; }
-  .tile.stalled .play-hint { opacity: 1; }
-  .tile .load i { width: 36px; height: 36px; border: 3px solid #9147ff33; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
-  .tile .load small { font-weight: 600; font-size: 12px; line-height: 16px; letter-spacing: .04em; color: var(--dim); }
-  .tile.offline .load i, .tile:not(.offline) .load small { display: none; }
-  .tile .load .more { display: none; }
-  .tile.partial .load { opacity: 1; }
-  .tile.partial:not(.offline) .load i { display: none; }
   /* sticky against the grid's scrollport: the message stays in the visible slice, whichever edge cuts the tile */
-  .tile.partial:not(.offline) .load b { display: none; }
-  .tile.partial:not(.offline) .load .more { display: block; position: sticky; top: 16px; bottom: 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   /* Simplified players keep their pointer events off the iframe: the video is not a button. */
   .tile:not(.full-player) .player iframe { pointer-events: none; }
-  /* players render at two fixed sizes and are scaled to the tile with a transform: the Twitch player restarts its
-     stream whenever its box grows (quality switch), and a transform is not a resize. ponytail: 720p on the spotlight
-     whatever the screen; bump the big size if a 4K spotlight ever matters */
-  .tile .player iframe { position: absolute; left: 0; top: 0; width: 640px; height: 360px; transform-origin: 0 0; border: 0; display: block; }
-  .tile.full-player .player iframe, .tile:fullscreen .player iframe { width: 1280px; height: 720px; }
+  .tile .player iframe { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; display: block; }
   .tile .player iframe:fullscreen { transform: none !important; width: 100vw; height: 100vh; }
   /* The image and loading status stay below the embed, including before READY. */
-  [data-player-rendering="trial-1"] .tile .player iframe,
-  [data-player-rendering="trial-1"] #preview iframe { width: 100%; height: 100%; color-scheme: normal; background: var(--video-bg); }
+  .tile .player iframe,
+  #preview iframe { width: 100%; height: 100%; color-scheme: normal; background: var(--video-bg); }
   /* Match Twitch's document color scheme: forcing dark makes its initially transparent canvas paint white. */
-  [data-player-rendering="trial-1"] .player-embed,
-  [data-player-rendering="trial-1"] #preview .player { z-index: 2; background: transparent; }
-  [data-player-rendering="trial-1"] .preview-cover { pointer-events: none; }
-  [data-player-rendering="trial-1"] .preview-cover .preview-status { color: #eee; }
-  [data-player-rendering="trial-1"] .tile .load,
-  [data-player-rendering="trial-1"] .tile .play-hint { display: none; }
-  [data-player-rendering="trial-1"] #preview { transform: none; transition: none; }
-  [data-player-rendering="trial-1"] .tile:not(.full-player) .stream-info { position: static; flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; visibility: visible; opacity: 1; transform: none; transition: none; }
-  [data-player-rendering="trial-1"] .tile:not(.full-player) .stream-info[hidden] { display: none; }
-  [data-player-rendering="trial-1"] .tile:not(.full-player) .bar:has(.stream-info:not([hidden])) b { flex: 0 1 auto; max-width: 20%; }
-  [data-player-rendering="trial-1"] .tile:not(.full-player) .stream-category { flex: 0 1 auto; max-width: 35%; margin-bottom: 0; }
-  [data-player-rendering="trial-1"] .tile:not(.full-player) .stream-title { flex: 1; }
+  .player-embed,
+  #preview .player { z-index: 2; background: transparent; }
+  .preview-cover { pointer-events: none; }
+  .preview-cover .preview-status { color: #eee; }
+  #preview { transform: none; transition: none; }
+  .tile:not(.full-player) .stream-info { position: static; flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; visibility: visible; opacity: 1; transform: none; transition: none; }
+  .tile:not(.full-player) .stream-info[hidden] { display: none; }
+  .tile:not(.full-player) .bar:has(.stream-info:not([hidden])) b { flex: 0 1 auto; max-width: 20%; }
+  .tile:not(.full-player) .stream-category { flex: 0 1 auto; max-width: 35%; margin-bottom: 0; }
+  .tile:not(.full-player) .stream-title { flex: 1; }
   .playback-status { flex: none; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1.1s linear infinite; }
   .playback-status.blocked { height: 20px; border: 0; color: var(--accent); text-align: center; animation: none; }
   .playback-status[hidden] { display: none; }
   /* Keep volume inside the header and close it immediately when the pointer leaves, even after a click. */
-  [data-player-rendering="trial-1"] .tile .volume { top: 50%; right: 100%; width: 88px; height: 24px; padding: 0 8px; background: var(--panel); backdrop-filter: none; transform: translateY(-50%); transition: none; visibility: hidden; opacity: 0; }
-  [data-player-rendering="trial-1"] .tile .snd-wrap:hover .volume { visibility: visible; opacity: 1; }
-  [data-player-rendering="trial-1"] .tile .volume input { writing-mode: horizontal-tb; direction: ltr; width: 72px; height: 3px; }
-  [data-player-rendering="trial-1"] #tooltip { display: none; }
+  .tile .volume { position: absolute; z-index: 6; display: flex; align-items: center; border-radius: 9999px; border: 1px solid #ffffff10; top: 50%; right: 100%; width: 88px; height: 24px; padding: 0 8px; background: var(--panel); backdrop-filter: none; transform: translateY(-50%); transition: none; visibility: hidden; opacity: 0; }
+  .tile .snd-wrap:hover .volume { visibility: visible; opacity: 1; }
+  .tile .volume input { writing-mode: horizontal-tb; direction: ltr; width: 72px; height: 3px; }
   #grid { --cols: 1; --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar)); }
   #grid.focused { grid-template-columns: 1fr repeat(var(--cols), calc(var(--side) / var(--cols))); grid-auto-rows: var(--tile-h); }
   #grid.focused::before { content: ""; grid-column: 1; grid-row: 1 / -1; }   /* holds the first column so the small tiles flow into the side ones */
@@ -461,7 +433,6 @@
   .grid-menu #grids-open { width: 100%; margin-top: 8px; padding: 8px 12px; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 4px 4px; background: none; color: var(--dim); text-align: left; cursor: pointer; transition: color .2s var(--ease), background-color .2s var(--ease); }
   .grid-menu #grids-open:hover { color: var(--fg); background: #ffffff0a; }
   #preferences { display: flex; flex-wrap: wrap; gap: 8px; }
-  #preferences .rendering-setting { flex: 1 0 100%; }
   #preferences label { flex: 1; display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--dim); }
   #preferences svg { flex: none; }
   #preferences select { flex: 1; min-width: 0; padding: 4px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); font-size: 12px; line-height: 16px; transition: border-color .2s var(--ease); }
@@ -519,7 +490,6 @@
   [data-theme="light"] #empty h1 { background-image: linear-gradient(90deg, #000, #666); }
   [data-theme="light"] #empty .gh { box-shadow: 0 6px 22px #20202714; }
   [data-theme="light"] #preview { box-shadow: 0 12px 40px #20202733; }
-  [data-theme="light"] #tooltip { box-shadow: 0 8px 24px #20202726; }
   [data-theme="light"] .live-notification { background: #ffffffe6; box-shadow: 0 6px 24px #20202726; }
   [data-theme="light"] .live-notification small { color: #7734d8; }
   [data-theme="light"] #grid:not(.single) .tile:where(:not(.big)):hover .bar b { color: var(--fg); }
@@ -853,9 +823,8 @@
   </header>
   <ul id="list" aria-label="Streamers" data-i18n-aria-label="Streamers"></ul>
   <p id="list-empty"></p>
-  <footer><div id="preferences"><label title="Langue" data-i18n-title="Langue"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><select id="language-setting" aria-label="Langue" data-i18n-aria-label="Langue"><option value="fr">FR</option><option value="en">EN</option><option value="nl">NL</option></select></label><label title="Thème" data-i18n-title="Thème"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18A9 9 0 0 0 12 3z" fill="currentColor" stroke="none"/></svg><select id="theme-setting" aria-label="Thème" data-i18n-aria-label="Thème"><option value="system">Auto</option><option value="light" data-i18n="Clair">Clair</option><option value="dark" data-i18n="Sombre">Sombre</option></select></label><label class="rendering-setting"><span data-i18n="Rendu vidéo">Rendu vidéo</span><select id="player-rendering-setting" aria-label="Rendu vidéo" data-i18n-aria-label="Rendu vidéo"><option value="trial-1" data-i18n="Version actuelle">Current version</option><option value="current" data-i18n="Version précédente">Previous version</option></select></label></div></footer>
+  <footer><div id="preferences"><label title="Langue" data-i18n-title="Langue"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><select id="language-setting" aria-label="Langue" data-i18n-aria-label="Langue"><option value="fr">FR</option><option value="en">EN</option><option value="nl">NL</option></select></label><label title="Thème" data-i18n-title="Thème"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18A9 9 0 0 0 12 3z" fill="currentColor" stroke="none"/></svg><select id="theme-setting" aria-label="Thème" data-i18n-aria-label="Thème"><option value="system">Auto</option><option value="light" data-i18n="Clair">Clair</option><option value="dark" data-i18n="Sombre">Sombre</option></select></label></div></footer>
 </aside>
-<div id="tooltip" role="tooltip" hidden></div>
 <div id="preview" role="tooltip" hidden>
   <div class="video"><div class="player"></div><div class="preview-cover"><img class="stream-poster" alt="" decoding="async"><div class="status preview-status"><i class="preview-avatar"><img alt=""></i><span></span></div></div></div>
   <div class="info"><div class="heading"><b class="name"></b><span class="viewers" hidden></span></div><div class="category" hidden></div><div class="stream-title" hidden></div><p class="preview-message" role="status" hidden></p></div>

@@ -17,21 +17,22 @@ const mockPlayer = `window.Twitch = { Player: class {
 }};`;
 async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  // Keep legacy behavior tests explicit; production defaults are covered separately.
-  await page.addInitScript(() => { if (!localStorage.getItem('tg.preferences')) localStorage.setItem('tg.preferences', JSON.stringify({playerRendering:'current'})); });
   if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
     const params = new URL(route.request().url()).searchParams;
     if (params.has('collaboration')) return route.fulfill({json:{data:[]}});
-    if (params.has('login')) return route.fulfill({json:{data:params.getAll('login').map(login => ({broadcaster_login:login,is_live:false}))}});
+    if (params.has('login')) return route.fulfill({json:{data:params.getAll('login').map(login => ({broadcaster_login:login,is_live:true}))}});
     const login = params.get('q').toLowerCase();
-    return route.fulfill({json:{data:[{broadcaster_login:login,display_name:login,is_live:false,game_name:'',thumbnail_url:''}]}});
+    return route.fulfill({json:{data:[{broadcaster_login:login,display_name:login,is_live:true,game_name:'',thumbnail_url:''}]}});
   });
   await page.route('**/config.json', r => r.fulfill({ json: { twitchClientId: connected ? 'test-client' : '' } }));
   await page.route('**/_vercel/**', r => r.fulfill({ body: '' }));
   await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '' }));
   return errors;
+}
+async function readyPlayers(page) {
+  await expect.poll(() => page.evaluate(() => restored && !refreshInFlight && [...tiles.values()].every(t => showPoster(t) || t.ready))).toBe(true);
 }
 async function favorite(page, login) {
   await page.locator('#q').fill(login);
@@ -372,7 +373,7 @@ test('one tile has native controls without spotlight and switches back after add
   expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer)).toBe(true);
   const bounds = await one.boundingBox(), gridBounds = await page.locator('#grid').boundingBox();
   expect(bounds.width).toBeCloseTo(gridBounds.width, 0);
-  await page.evaluate(() => { const p = tiles.get('one').player; p.pause(); p.setVolume(0.25); p.setMuted(true); p.setQuality('720p60'); });
+  await page.evaluate(() => { const p = tiles.get('one').player; p.setVolume(0.25); p.setMuted(true); p.setQuality('720p60'); p.pause(); });
   await page.locator('#list [data-login="two"] .channel').click();
   await expect(page.locator('#grid iframe[data-controls="false"]')).toHaveCount(1);
   await expect(one).toHaveClass(/poster-only/);
@@ -398,7 +399,7 @@ test('one tile has native controls without spotlight and switches back after add
 test('removing the second tile clears a saved spotlight without recreating the remaining full player', async ({ page }) => {
   await setup(page);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one'})));
-  await page.goto('/');
+  await page.goto('/'); await readyPlayers(page);
   await expect(page.locator('#grid')).toHaveClass(/focused/);
   await page.evaluate(() => { window.singlePlayer = tiles.get('one').player; });
   await page.locator('#grid [data-login="two"] .close').click();
@@ -418,8 +419,8 @@ test('the spotlight button and a click on a small tile bring one stream in front
   await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'false');
   await expect(page.locator('#grid')).toHaveClass(/focused/);
   await expect(three.locator('.spotlight')).toHaveAttribute('aria-pressed', 'true');
-  await expect(three.locator('.spotlight')).toHaveAttribute('title', 'Revenir à la grille');
-  await expect(one.locator('.spotlight')).toHaveAttribute('title', 'Spotlight');
+  await expect(three.locator('.spotlight')).toHaveAttribute('aria-label', 'Revenir à la grille');
+  await expect(one.locator('.spotlight')).toHaveAttribute('aria-label', 'Spotlight');
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'three', muted: [true, true, false] });
   // the spotlight keeps its remove button; the button in its bar brings it back to the grid
   await expect(three.locator('.close')).toBeVisible();
@@ -485,16 +486,15 @@ test('tiles drag onto any other tile: sliding within the grid order, or taking t
   expect(await page.evaluate(() => Object.fromEntries([...tiles].map(([login, t]) => [login, +t.el.style.order])))).toEqual({ one: 0, two: 1, three: 2, four: 0 });
   expect(errors).toEqual([]);
 });
-for (const rendering of ['current', 'trial-1']) test(`drops over cross-origin stalled players reorder tiles and change spotlight in ${rendering}`, async ({page}) => {
+test(`drops over cross-origin stalled players reorder tiles and change spotlight`, async ({page}) => {
   const errors = await setup(page);
   await page.setViewportSize({width:1700,height:1100});
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('el.appendChild(this.frame);', "this.frame.src = 'https://player.twitch.tv/?drag-target=1'; el.appendChild(this.frame);")}));
   await page.route('https://player.twitch.tv/?drag-target=1', r => r.fulfill({contentType:'text/html',body:'<body style="margin:0;background:#222;color:white">Player</body>'}));
   await page.route('**/api/search?**', r => r.fulfill({json:{data:['one','two','three','four'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
-  await page.addInitScript(rendering => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:rendering}));
+  await page.addInitScript(() => {
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two','three','four'],focused:'one'}));
-  }, rendering);
+  });
   await page.goto('/');
   const tile = login => page.locator(`#grid [data-login="${login}"]`);
   await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t => t.hasPlayed))).toBe(true);
@@ -631,15 +631,15 @@ test('the mute-all button silences every stream and gives the sound back to thos
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   await button.click();
   await expect(button).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#tooltip')).toHaveText('Réactiver le son');   // the title shows as a tooltip while the pointer stays
+  await expect(button).toHaveAttribute('aria-label','Réactiver le son');
   await page.mouse.move(0, 0);
-  await expect(button).toHaveAttribute('title', 'Réactiver le son');
+  await expect(button).toHaveAttribute('aria-label', 'Réactiver le son');
   expect(await state()).toEqual({ mutedAll: ['one', 'two'], muted: [true, true, true] });
   // the tile sound controls step aside and say why; a click on them changes nothing
   const sound = page.locator('#grid [data-login="three"] .bar .snd');
   await expect(sound).toHaveAttribute('aria-disabled', 'true');
   await sound.hover();
-  await expect(page.locator('#tooltip')).toHaveText('Son coupé globalement');
+  await expect(sound).toHaveAttribute('aria-label','Son coupé globalement');
   await sound.click({force:true});   // Playwright honours aria-disabled; force the click to prove it is inert
   expect(await state()).toEqual({ mutedAll: ['one', 'two'], muted: [true, true, true] });
   await expect(page.locator('#grid [data-login="three"] .volume input')).toBeDisabled();
@@ -677,9 +677,9 @@ test('a locked grid refuses new streams until unlocked and remembers it', async 
   await lock.click();
   await expect(lock).toHaveAttribute('aria-pressed', 'true');
   await page.mouse.move(0, 0);
-  await expect(lock).toHaveAttribute('title', 'Déverrouiller la grille');
+  await expect(lock).toHaveAttribute('aria-label', 'Déverrouiller la grille');
   await expect(two).toBeDisabled();
-  await expect(two).toHaveAttribute('title', 'Grille verrouillée');
+  await expect(two).toHaveAttribute('data-tip', 'Grille verrouillée');
   expect(await page.evaluate(() => add({ twitch: 'two', display: 'Two', profileUrl: '' }))).toBe(false);
   await expect(page.locator('#grid .tile')).toHaveCount(1);
   await expect(page.locator('#notice')).toHaveText('Grille verrouillée : déverrouille-la pour ajouter un stream.');
@@ -696,7 +696,7 @@ test('a locked grid refuses new streams until unlocked and remembers it', async 
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).locked)).toBe(false);
   expect(errors).toEqual([]);
 });
-test('tile controls appear on hover or keyboard focus and adjusting volume enables and saves sound', async ({ page }) => {
+test('volume opens on hover and keyboard adjustment enables and saves sound', async ({ page }) => {
   const errors = await setup(page);
   await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));   // live channels: offline ones would disable their play button
   await page.addInitScript(() => {
@@ -716,7 +716,7 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   // the header play button mirrors the tile: two is paused, a click resumes it
   await expect(one.locator('.bar .pp')).toHaveAttribute('aria-pressed','false');
   await expect(two.locator('.bar .pp')).toHaveAttribute('aria-pressed','true');
-  await expect(two.locator('.bar .pp')).toHaveAttribute('title','Lecture');
+  await expect(two.locator('.bar .pp')).toHaveAttribute('aria-label','Lecture');
   await two.locator('.bar .pp').click();
   await expect(two.locator('.bar .pp')).toHaveAttribute('aria-pressed','false');
   expect(await page.evaluate(() => tiles.get('two').paused)).toBe(false);
@@ -738,7 +738,7 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   await expect(one.locator('.volume')).toBeHidden();
   await expect(volume).toBeHidden();
   await one.locator('.bar .snd').focus();
-  await expect(one.locator('.volume')).toBeVisible();
+  await expect(one.locator('.volume')).toBeHidden();
   await page.locator('#q').focus();
   await expect(one.locator('.volume')).toBeHidden();
   await one.locator('.bar .snd').hover();
@@ -752,13 +752,12 @@ test('tile controls appear on hover or keyboard focus and adjusting volume enabl
   await expect(volume).toHaveValue('0.55');
   expect(errors).toEqual([]);
 });
-for (const rendering of ['current', 'trial-1']) test(`zero volume mutes and unmute restores an audible level in ${rendering}`, async ({page}) => {
+test(`zero volume mutes and unmute restores an audible level`, async ({page}) => {
   const errors = await setup(page);
   await page.route('**/api/search?**', r => r.fulfill({json:{data:['one','two'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
-  await page.addInitScript(rendering => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:rendering}));
+  await page.addInitScript(() => {
     if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],paused:{two:true}}));
-  }, rendering);
+  });
   await page.goto('/');
   const tile = page.locator('#grid [data-login="one"]'), sound = tile.locator('.snd'), volume = tile.locator('.volume input');
   const state = () => page.evaluate(() => {
@@ -839,7 +838,7 @@ test('native pause, volume and mute survive the watchdog and returning to the gr
   await page.locator('#q').hover();
   await page.evaluate(() => {
     const player = tiles.get('one').player;
-    player.pause(); player.setVolume(0.25); player.setMuted(true); player.setQuality('720p60');
+    player.setVolume(0.25); player.setMuted(true); player.setQuality('720p60'); player.pause();
   });
   await page.clock.runFor(6000);
   expect(await page.evaluate(() => {
@@ -986,6 +985,7 @@ test('a slow previous search never replaces the latest results', async ({page}) 
 
 for (const connected of [false, true]) test(`stream metadata follows focus, hover and refresh in ${connected ? 'connected' : 'guest'} mode`, async ({ page }) => {
   const errors = await setup(page, connected);
+  await page.setViewportSize({width:1800,height:1000});
   if (connected) await api(page);
   let title = 'Une aventure <img src=x> & des surprises', game = 'Baldur’s Gate 3', online = true;
   const respond = route => route.fulfill({ json: { data: online ? ['one', 'two'].map(login => ({
@@ -1006,12 +1006,12 @@ for (const connected of [false, true]) test(`stream metadata follows focus, hove
   await expect(big.locator('.stream-title')).toHaveText(title);
   await expect(big.locator('.stream-info img')).toHaveCount(0);
   await expect(big.locator('.stream-info')).toBeVisible();
-  await expect(small.locator('.stream-info')).toBeHidden();
+  await expect(small.locator('.stream-info')).toBeVisible();
   await small.locator('.player').hover({position:{x:12,y:12}});
   await expect(small.locator('.stream-info')).toBeVisible();
-  await expect(small.locator('.stream-info')).toHaveCSS('backdrop-filter', 'blur(12px)');
+  await expect(small.locator('.stream-info')).toHaveCSS('backdrop-filter', 'none');
   await page.locator('#toggle').hover();
-  await expect(small.locator('.stream-info')).toBeHidden();
+  await expect(small.locator('.stream-info')).toBeVisible();
   await page.evaluate(() => { window.metadataPlayer = tiles.get('one').player; });
   title = 'Nouveau titre'; game = 'Just Chatting';
   await page.evaluate(() => refresh());
@@ -1142,16 +1142,15 @@ for (const connected of [false, true]) test(`live notifications track transition
 });
 
 
-for (const rendering of ['current', 'trial-1']) for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture} in ${rendering}`, async ({ page }) => {
+for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture}`, async ({ page }) => {
   const errors=await setup(page); await page.clock.install();
-  await page.addInitScript(rendering => localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:rendering})), rendering);
   await page.setViewportSize({width:2560,height:1440});
   await page.route('**/api/search?**',r=>r.fulfill({json:{data:['one','two','muted','paused'].map(broadcaster_login=>({broadcaster_login,is_live:true}))}}));
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({
     order:['one','two','muted','paused'],focused:'one',muted:{one:false,two:false,muted:true,paused:false},
     paused:{paused:true},volume:{one:0.3,two:0.7,muted:0.4,paused:0.6}
   })));
-  await page.goto('/'); await page.clock.runFor(1200);
+  await page.goto('/'); await expect.poll(() => page.evaluate(() => !refreshInFlight)).toBe(true); await page.clock.runFor(1200);
   const overlay=page.locator('#audio-overlay');
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveCSS('backdrop-filter','blur(14px)');
@@ -1166,7 +1165,7 @@ for (const rendering of ['current', 'trial-1']) for (const gesture of ['backgrou
   await page.clock.runFor(2500);
   await expect(overlay).toBeHidden();
   await expect(page.locator('#grid .snd[data-sound="on"]')).toHaveCount(2);
-  if (rendering === 'trial-1') await expect(page.locator('#grid .load').first()).toBeHidden();
+  await expect(page.locator('#grid .load').first()).toBeHidden();
   expect(await page.evaluate(()=>[...tiles.values()].map(t=>t.player?({muted:t.player.getMuted(),volume:t.player.getVolume(),paused:t.player.paused}):null)))
     .toEqual([{muted:false,volume:0.3,paused:false},{muted:false,volume:0.7,paused:false},{muted:true,volume:0.4,paused:false},null]);
   expect(await page.evaluate(()=>focused)).toBe('one');
@@ -1183,7 +1182,6 @@ test('the sound icon stays muted when the player refuses unmute without overwrit
   await page.route('**/api/search?**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
   await page.addInitScript(() => {
     window.refuseUnmute = true;
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],muted:{one:false}}));
   });
   await page.goto('/'); await page.clock.runFor(1500);
@@ -1215,7 +1213,7 @@ test('audio overlay skips silent and paused layouts; gesture also unlocks player
   await expect(overlay).toBeHidden();
   await page.evaluate(()=>{const t=tiles.get('one');t.volume=0.5;allPaused=true;updateAudioOverlay();});
   await expect(overlay).toBeHidden();
-  await page.evaluate(()=>{allPaused=false;updateAudioOverlay();});
+  await page.evaluate(()=>{allPaused=false;tiles.forEach(sync);updateAudioOverlay();});
   await expect(overlay).toBeVisible();
   expect(await page.evaluate(()=>tiles.get('one').ready)).toBe(false);
   await page.keyboard.press('Enter');
@@ -1237,7 +1235,7 @@ test('chat uses vertical letterboxing, follows spotlight and preserves players w
   const errors=await setup(page);await mockChat(page);
   await page.setViewportSize({width:1600,height:1000});
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one'})));
-  await page.goto('/');
+  await page.goto('/'); await readyPlayers(page);
   const one=page.locator('#grid [data-login="one"]'),two=page.locator('#grid [data-login="two"]');
   await expect(one.locator('.chat-toggle')).toBeVisible();
   await expect(two.locator('.chat-toggle')).toBeHidden();
@@ -1365,7 +1363,7 @@ test('chat reserves enough height for messages and Auto avoids a cramped bottom 
 test('side chat expands into pillarboxing up to its maximum without shrinking the video',async({page})=>{
   await setup(page);await mockChat(page);
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true})));
-  await page.goto('/');
+  await page.goto('/'); await readyPlayers(page);
   await page.locator('#grid .fs').click();
   const chat=page.locator('#grid .chat'),body=page.locator('#grid .tile-body');
   await page.evaluate(()=>{window.savedVideo=tiles.get('one').player;window.savedChat=tiles.get('one').chat.querySelector('iframe');});
@@ -1387,7 +1385,7 @@ test('side chat expands into pillarboxing up to its maximum without shrinking th
 
 test('chat layout is stored per mode, works with a single mobile tile, and avatars refresh',async({page})=>{
   const errors=await setup(page,true);await api(page);await mockChat(page);
-  await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'guest',is_live:false,thumbnail_url:'https://example.com/avatar.png'}]}}));
+  await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'guest',is_live:true,thumbnail_url:'https://example.com/avatar.png'}]}}));
   await page.route('https://example.com/avatar.png',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="9" fill="purple"/></svg>'}));
   await page.addInitScript(()=>{
     sessionStorage.setItem('tg.session',JSON.stringify('valid'));
@@ -1466,7 +1464,7 @@ for (const connected of [false,true]) test(`collaboration icons and participant 
     localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'live'},{twitch:'sidebar'}]));
     localStorage.setItem('tg.layout.'+(connected?'connected':'guest'),JSON.stringify({order:['live'],muted:{live:false},volume:{live:0.35}}));
   },connected);
-  await page.goto('/');
+  await page.goto('/'); await readyPlayers(page);
   await expect(page.locator('#list [data-login="sidebar"] .collaboration-indicator')).toBeVisible();
   const source=page.locator('#grid [data-login="live"]'),menu=source.locator('.collaboration');
   await expect(menu.locator('summary')).toBeVisible();
@@ -1543,7 +1541,7 @@ test('named grids migrate, copy without reloading players, rename, switch and de
   await page.addInitScript(()=>{
     if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',chatOpen:true,chatPosition:'left',volume:{one:0.25},paused:{two:true}}));
   });
-  await page.goto('/');
+  await page.goto('/'); await readyPlayers(page);
   await expect(page.locator('#current-grid-name')).toHaveText('Grille par défaut');
   await page.evaluate(()=>window.savedPlayers=[...tiles.values()].map(t=>t.player));
   await openGridManager(page);await page.locator('#grid-save-copy').click();
@@ -1709,7 +1707,7 @@ test('a pause right after our own unmute counts as blocked playback, never as a 
   const errors = await setup(page);
   await page.route('**/api/search?login=**', route => route.fulfill({ json: { data: new URL(route.request().url()).searchParams.getAll('login').map(login => ({ broadcaster_login: login, is_live: true, game_name: 'Art', viewer_count: 12 })) } }));   // offline channels never need the overlay
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], focused: 'one', muted: { one: false, two: true } })));
-  await page.goto('/');
+  await page.goto('/'); await readyPlayers(page);
   await expect(page.locator('#audio-overlay')).toBeVisible();
   await page.evaluate(() => { for (const t of tiles.values()) t.player?.play(); });
   await page.locator('#audio-overlay button').click();
@@ -1736,18 +1734,18 @@ test('a stream that ends takes its tile away after a minute unless pinned, locke
   await page.evaluate(() => { refreshInFlight = true; });   // the player events drive this test, not the status polling
   await page.evaluate(() => { for (const login of ['one', 'two', 'three', 'four']) tiles.get(login).player.emit('offline'); });
   await page.clock.runFor(30000);
-  await page.evaluate(() => tiles.get('three').player.emit('online'));
+  await page.evaluate(() => { const t=tiles.get('three');updateTileInfo(t,{...t.channel,online:true});sync(t); });
   await page.clock.runFor(31000);
   await expect(page.locator('#grid .tile')).toHaveCount(2);   // two and four are gone; the spotlight one stays, three came back
   expect(await page.evaluate(() => order)).toEqual(['one', 'three']);
   await expect(page.locator('#notice')).toContainText('four');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual(['one', 'three']);
   await page.locator('#grid-lock').click();
-  await page.evaluate(() => tiles.get('three').player.emit('offline'));
+  await page.evaluate(() => { const t=tiles.get('three');updateTileInfo(t,{...t.channel,online:false});sync(t); });
   await page.clock.runFor(61000);
   await expect(page.locator('#grid .tile')).toHaveCount(2);   // a locked grid keeps its tiles
   await page.locator('#grid-lock').click();
-  await page.evaluate(() => tiles.get('three').player.emit('offline'));   // unlocked: the next offline signal starts a new minute
+  await page.evaluate(() => { const t=tiles.get('three');updateTileInfo(t,{...t.channel,online:false});sync(t); });   // unlocked: the next offline signal starts a new minute
   await page.clock.runFor(61000);
   await expect(page.locator('#grid .tile')).toHaveCount(1);
   expect(errors).toEqual([]);
@@ -1794,8 +1792,8 @@ test('wide enough videos get the full player and wide enough tiles the chat, wit
 
 test('paused tiles preview muted on hover and retain their pause and audio intent', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
-  await page.evaluate(() => { add(channel({twitch:'preview'}), false, 0.5, true); });
-  const tile = page.locator('#grid .tile');
+  await page.evaluate(() => { add(channel({twitch:'preview',online:true}), false, 0.5, true); add(channel({twitch:'other',online:false}),true,0.5,true); });
+  const tile = page.locator('#grid [data-login="preview"]');
   await tile.hover();
   await expect.poll(() => page.evaluate(() => { const t=tiles.get('preview'); return [t.player?.paused,t.player?.muted,t.paused,t.muted]; })).toEqual([false,true,true,false]);
   await page.locator('#q').hover();
@@ -1942,10 +1940,10 @@ test('leaving a hover before Twitch is ready discards the embed and its late cal
   const errors=await setup(page);
   await page.route('**/api/search?**',r=>r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));   // an offline channel would have nothing to preview
   await page.route('https://player.twitch.tv/js/embed/v1.js',r=>r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('if (!this.destroyed) callback();','callback();').replace('}, 0);','}, 2000);')}));
-  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],allPaused:true})));
+  await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],allPaused:true})));
   await page.clock.install(); await page.goto('/');
-  await expect(page.locator('#grid .poster-only')).toHaveCount(1);
-  await page.locator('#grid .tile').hover(); await page.clock.runFor(500);
+  await expect(page.locator('#grid [data-login="one"].poster-only')).toHaveCount(1);
+  await page.locator('#grid [data-login="one"]').hover(); await page.clock.runFor(500);
   await expect(page.locator('#grid iframe')).toHaveCount(1);
   await page.locator('#q').hover(); await page.clock.runFor(500);
   await expect(page.locator('#grid iframe')).toHaveCount(0);
@@ -1992,8 +1990,8 @@ test('preview image refresh sleeps in background tabs and catches up without loa
   expect(errors).toEqual([]);
 });
 
-for (const rendering of ['current', 'trial-1']) test(`tile and sidebar loading covers follow the ${rendering} rendering mode`,async({page,browserName})=>{
-  await page.addInitScript(rendering => localStorage.setItem('tg.preferences', JSON.stringify({playerRendering:rendering,theme:'light'})), rendering);
+test(`tile and sidebar loading covers follow the player`,async({page,browserName})=>{
+  await page.addInitScript(() => localStorage.setItem('tg.preferences', JSON.stringify({theme:'light'})));
   const errors=await setup(page);
   // Simulate the SDK replacing its mount contents at READY, then buffering without a first frame.
   const bufferingPlayer=mockPlayer
@@ -2019,10 +2017,9 @@ for (const rendering of ['current', 'trial-1']) test(`tile and sidebar loading c
   await page.clock.runFor(500);
   await expect(tile.locator('.player-embed iframe')).toHaveCount(1);
   await expect(cover).toBeVisible();
-  if (rendering === 'trial-1') await expect(tile.locator('iframe')).toBeVisible();
+  await expect(tile.locator('iframe')).toBeVisible();
   await page.clock.runFor(1500);
-  if (rendering === 'current') await expect(cover).toBeVisible();
-  else {
+  {
     await expect(cover).toBeVisible();
     // Clicks reach the embed layer; simplified players delegate them to the tile.
     expect(await tile.locator('iframe').evaluate(frame => {
@@ -2057,10 +2054,9 @@ for (const rendering of ['current', 'trial-1']) test(`tile and sidebar loading c
   await page.clock.runFor(350);
   await expect(page.locator('#preview iframe')).toHaveCount(1);
   await expect(sidebarCover).toBeVisible();
-  if (rendering === 'trial-1') await expect(page.locator('#preview iframe')).toBeVisible();
+  await expect(page.locator('#preview iframe')).toBeVisible();
   await page.clock.runFor(1500);
-  if (rendering === 'current') await expect(sidebarCover).toBeVisible();
-  else {
+  {
     await expect(sidebarCover).toBeVisible();
     await expect(page.locator('#preview .player')).toHaveCSS('z-index','2');
     await expect(page.locator('#preview .preview-message')).toHaveText('Chargement de l’aperçu…');
@@ -2077,13 +2073,12 @@ for (const rendering of ['current', 'trial-1']) test(`tile and sidebar loading c
   expect(errors).toEqual([]);
 });
 
-for (const presentation of ['spotlight', 'single', 'expanded']) test(`trial pause stops the ${presentation} and keeps its still centered without overlays`, async ({page}) => {
+for (const presentation of ['spotlight', 'single', 'expanded']) test(`pause stops the ${presentation} and keeps its still centered without overlays`, async ({page}) => {
   const errors = await setup(page);
   await page.setViewportSize({width:1100,height:1100});
   await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two'].map(login => ({broadcaster_login:login,is_live:true}))}}));
   await page.route('https://static-cdn.jtvnw.net/**', r => r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="purple"/></svg>'}));
   await page.addInitScript(presentation => {
-    localStorage.setItem('tg.preferences', JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'one'},{twitch:'two'}]));
     localStorage.setItem('tg.layout.guest', JSON.stringify({order:presentation === 'single' ? ['one'] : ['one','two'],
       focused:presentation === 'spotlight' ? 'one' : null, muted:{one:false,two:true}, volume:{one:0.3,two:0.7}}));
@@ -2136,13 +2131,12 @@ for (const presentation of ['spotlight', 'single', 'expanded']) test(`trial paus
   expect(errors).toEqual([]);
 });
 
-test('trial iframe stays centered at 16:9 and only resizes when its video area changes', async ({page}) => {
+test('iframe stays centered at 16:9 and only resizes when its video area changes', async ({page}) => {
   const errors = await setup(page);
   await page.setViewportSize({width:1700,height:1400});
   await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
   await page.route('https://www.twitch.tv/embed/*/chat?**', r => r.fulfill({body:'Chat'}));
   await page.addInitScript(() => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',muted:{one:true,two:true},paused:{two:true}}));
   });
   await page.goto('/');
@@ -2187,12 +2181,11 @@ test('trial iframe stays centered at 16:9 and only resizes when its video area c
   expect(errors).toEqual([]);
 });
 
-test('trial side tiles remain fully visible at fractional sizes and resume after a global pause', async ({page, browserName}) => {
+test('side tiles remain fully visible at fractional sizes and resume after a global pause', async ({page, browserName}) => {
   const errors = await setup(page);
   await page.setViewportSize({width:1671,height:1100});
   await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two','three'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
   await page.addInitScript(() => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two','three'],focused:'one',muted:{one:true,two:true,three:true}}));
   });
   await page.goto('/');
@@ -2230,11 +2223,10 @@ test('trial side tiles remain fully visible at fractional sizes and resume after
   expect(errors).toEqual([]);
 });
 
-test('trial volume only opens on hover and tooltips cannot cover the player', async ({page, browserName}) => {
+test('volume only opens on hover and tooltips cannot cover the player', async ({page, browserName}) => {
   const errors = await setup(page);
   await page.route('**/api/search?login=**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
   await page.addInitScript(() => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],muted:{one:true}}));
   });
   await page.goto('/');
@@ -2263,79 +2255,6 @@ test('trial volume only opens on hover and tooltips cannot cover the player', as
   await page.locator('#language-setting').selectOption('en');
   await expect(sound).toHaveAttribute('aria-label','Mute');
   await expect(page.locator('[title]:not(iframe)')).toHaveCount(0);
-  await page.locator('#player-rendering-setting').selectOption('current');
-  await sound.hover();
-  await expect(page.locator('#tooltip')).toBeVisible();
-  await page.locator('#player-rendering-setting').selectOption('trial-1');
-  await expect(page.locator('#tooltip')).toBeHidden();
-  await expect(page.locator('[title]:not(iframe)')).toHaveCount(0);
-  expect(errors).toEqual([]);
-});
-
-test('rendering switch preserves the workspace, replaces video frames and persists after reload', async ({page, browserName}) => {
-  const errors = await setup(page);
-  await page.setViewportSize({width:1600,height:1000});
-  await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two'].map(login => ({broadcaster_login:login,is_live:true,game_name:'Art',title:'Live painting'}))}}));
-  await page.route('https://www.twitch.tv/embed/*/chat?**', r => r.fulfill({body:'Chat'}));
-  await page.addInitScript(() => {
-    if (localStorage.getItem('tg.favorites')) return;
-    localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'one'},{twitch:'two'}]));
-    localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one',collapsed:false,
-      muted:{one:true,two:true},volume:{one:0.25,two:0.7},paused:{one:false,two:true},chatOpen:{one:true}}));
-  });
-  await page.goto('/');
-  const one = page.locator('#grid [data-login="one"]'), selector = page.locator('#player-rendering-setting');
-  await expect(selector).toHaveValue('current');
-  await expect(one.locator('.player iframe')).toHaveCount(1);
-  await expect(one.locator('.chat iframe')).toHaveCount(1);
-  await expect(one.locator('.preview-cover')).toBeHidden();
-  await page.evaluate(() => {
-    window.beforeRendering = JSON.stringify(currentLayout());
-    window.oldVideo = tiles.get('one').player;
-    window.oldChat = tiles.get('one').chat.querySelector('iframe');
-    window.oldBounds = tiles.get('one').el.getBoundingClientRect().toJSON();
-  });
-  await selector.selectOption('trial-1');
-  await expect(one.locator('.player iframe')).toHaveCSS('transform','none');
-  await expect(one.locator('.preview-cover')).toBeHidden();
-  expect(await page.evaluate(() => ({layout:JSON.stringify(currentLayout()) === window.beforeRendering,
-    replaced:window.oldVideo.destroyed && tiles.get('one').player !== window.oldVideo,
-    chat:tiles.get('one').chat.querySelector('iframe') === window.oldChat,
-    bounds:JSON.stringify(tiles.get('one').el.getBoundingClientRect().toJSON()) === JSON.stringify(window.oldBounds)})))
-    .toEqual({layout:true,replaced:true,chat:true,bounds:true});
-  const frame = await one.locator('.player iframe').boundingBox(), box = await one.locator('.player').boundingBox();
-  expect(frame.width).toBeCloseTo(Math.min(box.width,box.height*16/9),0);
-  expect(frame.height).toBeCloseTo(frame.width*9/16,0);
-  expect(frame.x+frame.width/2).toBeCloseTo(box.x+box.width/2,0);
-  expect(frame.y+frame.height/2).toBeCloseTo(box.y+box.height/2,0);
-  if (browserName === 'chromium') {
-    // Exercise browser visibility, independently of the mocked Twitch playback events.
-    expect(await one.locator('.player iframe').evaluate(frame => new Promise(resolve => {
-      const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve(entry.isVisible); }, {trackVisibility:true,delay:100});
-      observer.observe(frame);
-    }))).toBe(true);
-  }
-  await expect(one.locator('.volume')).toBeHidden();
-  await one.locator('.snd').hover();
-  await expect(one.locator('.volume')).toBeVisible();
-  await expect(one.locator('.volume input')).toHaveCSS('writing-mode','horizontal-tb');
-  const volume = await one.locator('.volume').boundingBox(), header = await one.locator('.bar').boundingBox();
-  expect(volume.width).toBeGreaterThan(volume.height);
-  expect(volume.y).toBeGreaterThanOrEqual(header.y);
-  expect(volume.y + volume.height).toBeLessThanOrEqual(header.y + header.height);
-  await selector.hover();
-  await expect(one.locator('.volume')).toBeHidden();
-  await selector.selectOption('current');
-  await expect(one.locator('.player iframe')).not.toHaveCSS('transform','none');
-  await expect(one.locator('.player iframe')).toHaveCSS('width','1280px');
-  expect(await page.evaluate(() => JSON.stringify(currentLayout()) === window.beforeRendering)).toBe(true);
-  await selector.selectOption('trial-1');
-  await page.reload();
-  await expect(selector).toHaveValue('trial-1');
-  await expect(one.locator('.player iframe')).toHaveCSS('transform','none');
-  await expect(page.locator('#grid [data-login="two"]')).toHaveClass(/poster-only/);
-  expect(await page.evaluate(() => ({order,focused,volume:tiles.get('one').volume,paused:tiles.get('two').paused})))
-    .toEqual({order:['one','two'],focused:'one',volume:0.25,paused:true});
   expect(errors).toEqual([]);
 });
 
@@ -2440,7 +2359,7 @@ test('a slow preview reports its timeout outside the iframe and clears it when p
 });
 
 
-test('trial reload waits for status and never mounts confirmed offline channels', async ({page}) => {
+test('reload waits for status and never mounts confirmed offline channels', async ({page}) => {
   const errors = await setup(page);
   const banner = 'https://static-cdn.jtvnw.net/offline-banner.png', avatar = 'https://static-cdn.jtvnw.net/avatar.png';
   await page.route('https://static-cdn.jtvnw.net/**', r => r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="purple"/></svg>'}));
@@ -2452,7 +2371,6 @@ test('trial reload waits for status and never mounts confirmed offline channels'
     await r.fulfill({json:{data:[{broadcaster_login:'offline',is_live:false,offline_image_url:banner,thumbnail_url:avatar},{broadcaster_login:'live',is_live:true}]}});
   });
   await page.addInitScript(() => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest',JSON.stringify({order:['offline','live'],muted:{offline:true,live:true}}));
   });
   await page.goto('/');
@@ -2477,12 +2395,11 @@ test('trial reload waits for status and never mounts confirmed offline channels'
   expect(errors).toEqual([]);
 });
 
-test('trial offline transitions release the embed and resume when the channel returns', async ({page}) => {
+test('offline transitions release the embed and resume when the channel returns', async ({page}) => {
   const errors = await setup(page);
   let online = true;
   await page.route('**/api/search?login=**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:online,offline_image_url:'https://static-cdn.jtvnw.net/offline.png'}]}}));
   await page.addInitScript(() => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],locked:true,volume:{one:0.3},muted:{one:true}}));
   });
   await page.goto('/');
@@ -2507,11 +2424,10 @@ test('trial offline transitions release the embed and resume when the channel re
   expect(errors).toEqual([]);
 });
 
-test('trial failed status lookup lets the unknown channel try its embed', async ({page}) => {
+test('failed status lookup lets the unknown channel try its embed', async ({page}) => {
   const errors = await setup(page);
   await page.route('**/api/search?login=**', r => r.fulfill({status:503,json:{error:'Unavailable'}}));
   await page.addInitScript(() => {
-    localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:'trial-1'}));
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one']}));
   });
   await page.goto('/');
@@ -2548,7 +2464,7 @@ test('offline tiles show the channel banner when it has one, or an offline overl
   await page.waitForTimeout(600);
   await page.evaluate(()=>{ for (const t of tiles.values()) { t.readyAt=Date.now()-20000; mark(t); } });
   await expect(page.locator('#grid .tile.stalled')).toHaveCount(0);
-  await expect(withBanner.locator('.play-hint')).toHaveCSS('opacity','0');
+  await expect(withBanner.locator('.play-hint')).toHaveCount(0);
   // the play button of an offline tile steps aside, and the global button leaves the tile alone
   const play=withBanner.locator('.bar .pp');
   await expect(play).toHaveAttribute('aria-disabled','true');
@@ -2561,7 +2477,7 @@ test('offline tiles show the channel banner when it has one, or an offline overl
   expect(errors).toEqual([]);
 });
 
-test('a click on the loader does nothing, and a player that will not start turns it into a play button over the embed',async({page})=>{
+test('a stalled player exposes its native controls and keeps loading feedback in the header',async({page})=>{
   const errors=await setup(page);
   // READY, then play() leaves the player in Ready: nothing starts until a click inside the embed.
   const stuck=mockPlayer.replace(/play\(\) \{ if \(this.paused\) \{[^\n]+?\} \}/,'play() { this.attempts=(this.attempts||0)+1; }');
@@ -2571,21 +2487,20 @@ test('a click on the loader does nothing, and a player that will not start turns
   await page.clock.install();await page.goto('/');await page.clock.runFor(1000);
   const tile=page.locator('#grid [data-login="one"]'),loader=tile.locator('.load'),frame=tile.locator('.player iframe');
   await expect(tile).toHaveClass(/loading/);
-  await expect(loader).toHaveCSS('pointer-events','auto');
-  await loader.click();
-  expect(await page.evaluate(()=>({focused,paused:tiles.get('one').paused,attempts:tiles.get('one').player.attempts}))).toEqual({focused:null,paused:false,attempts:1});
+  await expect(loader).toHaveCount(0);
   await expect(frame).toHaveCSS('pointer-events','none');
   await page.clock.runFor(9000);
   await expect(tile).toHaveClass(/stalled/);
-  await expect(loader).toHaveCSS('opacity','0');
-  await expect(tile.locator('.play-hint')).toHaveCSS('opacity','1');
+  await expect(loader).toHaveCount(0);
+  await expect(tile.locator('.play-hint')).toHaveCount(0);
+  await expect(tile.locator('.playback-status')).toBeVisible();
   await expect(frame).toHaveCSS('pointer-events','auto');
   await expect(tile.locator('.preview-cover')).toBeVisible();
   // the gesture inside the embed starts it: the play button and the still fade away
   await page.evaluate(()=>{const p=tiles.get('one').player;p.paused=false;p.emit('play');p.emit('playing');});
   await page.clock.runFor(1000);
   await expect(tile).not.toHaveClass(/stalled/);
-  await expect(tile.locator('.play-hint')).toHaveCSS('opacity','0');
+  await expect(tile.locator('.play-hint')).toHaveCount(0);
   await expect(tile.locator('.preview-cover')).toBeHidden();
   await expect(frame).toHaveCSS('pointer-events','none');
   expect(errors).toEqual([]);
@@ -2624,10 +2539,14 @@ test('the global play and pause button is a shortcut every tile can override',as
   expect(errors).toEqual([]);
 });
 
-test('the validated rendering is the default for every browser', async ({page}) => {
+for (const savedRendering of ['current','trial-1']) test(`saved ${savedRendering} preferences cannot select a retired renderer`, async ({page}) => {
   await setup(page);
-  await page.addInitScript(() => localStorage.removeItem('tg.preferences'));
+  await page.addInitScript(savedRendering => localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:savedRendering,language:'en',theme:'light'})), savedRendering);
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one']})));
   await page.goto('/');
-  await expect(page.locator('html')).toHaveAttribute('data-player-rendering','trial-1');
-  await expect(page.locator('#player-rendering-setting')).toHaveValue('trial-1');
+  await expect(page.locator('#grid .player iframe')).toHaveCSS('transform','none');
+  await expect(page.locator('#player-rendering-setting')).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('lang','en');
+  await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+  expect(await page.evaluate(() => 'playerRendering' in preferences)).toBe(false);
 });

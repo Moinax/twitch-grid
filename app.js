@@ -1,8 +1,6 @@
 const $ = s => document.querySelector(s);
 const list = $('#list'), grid = $('#grid');
 const tiles = new Map();   // twitch login -> { el, player, bar }
-let playerRendering = preferences.playerRendering;
-const trialRendering = () => playerRendering === 'trial-1';
 let streamers = [], focused = null, locked = false, mutedAll = null, expanded = null, order = [], dragging = null, allPaused = false, restored = false, layoutMode = null;
 const collaborations = new Map();
 const collaborationIcon = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M2 21v-3a7 7 0 0 1 14 0v3M16 4a3 3 0 0 1 0 6M19 14a5 5 0 0 1 3 4v3"/></svg>';
@@ -14,7 +12,7 @@ function isLiveGrid() { return gridStore?.activeId === 'live-follows'; }
 // null keeps the automatic grid's size-dependent default; booleans are manual choices.
 function tilePaused(t) { return t.paused ?? (isLiveGrid() && tiles.size >= 9); }
 function hoverPlayback(t) {
-  if (trialRendering() && (t.hoverSuppressed || tiles.size === 1 || t.el.dataset.login === focused || t.el.dataset.login === expanded)) return false;
+  if (t.hoverSuppressed || tiles.size === 1 || t.el.dataset.login === focused || t.el.dataset.login === expanded) return false;
   return t.hovered && t.channel.online !== false && (allPaused || tilePaused(t));
 }
 function wantsPlayback(t) { return !document.hidden && !document.body.classList.contains('landing') && $('#audio-overlay').hidden && !showPoster(t) && (!allPaused && !tilePaused(t) || hoverPlayback(t)) && onScreen(t); }
@@ -99,7 +97,7 @@ function restore() {
   refreshCollaborations();
   save();
   // A late SDK load can restore channels after the initial status request has finished.
-  if (trialRendering()) queueMicrotask(() => { if ([...tiles.values()].some(t => t.waitingForStatus)) refresh(); });
+  queueMicrotask(() => { if ([...tiles.values()].some(t => t.waitingForStatus)) refresh(); });
 }
 function switchLayout(mode) {
   if (layoutMode === mode) { restore(); return; }
@@ -135,23 +133,13 @@ function fit(p) {
   const width = Math.min(box.width, box.height * 16 / 9), height = width * 9 / 16;
   const bounds = { width: width + 'px', height: height + 'px', left: (box.width - width) / 2 + 'px', top: (box.height - height) / 2 + 'px' };
   const poster = p.querySelector('.stream-poster');
-  if (poster) {
-    if (trialRendering()) {
-      Object.assign(poster.style, bounds);
-    } else {
-      for (const property of ['width', 'height', 'left', 'top']) poster.style.removeProperty(property);
-    }
-  }
-  const f = p.querySelector('iframe');   // the embed sits in its own box beside the cover, the iframe is what scales
-  if (!f) return;
-  if (trialRendering() && document.fullscreenElement !== f) {
-    Object.assign(f.style, bounds, { transform: 'none' });
-    return;
-  }
-  for (const property of ['width', 'height', 'left', 'top']) f.style.removeProperty(property);
-  if (document.fullscreenElement === f) { f.style.transform = 'none'; return; }
-  const s = Math.min(p.clientWidth / f.offsetWidth, p.clientHeight / f.offsetHeight);   // offsetWidth ignores the transform
-  f.style.transform = `translate(${(p.clientWidth - f.offsetWidth * s) / 2}px, ${(p.clientHeight - f.offsetHeight * s) / 2}px) scale(${s})`;
+  if (poster) Object.assign(poster.style, bounds);
+  const frame = p.querySelector('iframe');
+  if (!frame) return;
+  if (document.fullscreenElement === frame) {
+    for (const property of ['width', 'height', 'left', 'top']) frame.style.removeProperty(property);
+    frame.style.transform = 'none';
+  } else Object.assign(frame.style, bounds, {transform:'none'});
 }
 const ro = new ResizeObserver(es => es.forEach(e => fit(e.target)));
 const chatResize = new ResizeObserver(es => es.forEach(e => {
@@ -340,7 +328,7 @@ function start(t) {
 function sync(t) {
   mark(t);
   clearTimeout(t.timer);
-  if (trialRendering() && showPoster(t)) { releasePlayer(t); return; }
+  if (showPoster(t)) { releasePlayer(t); return; }
   t.timer = setTimeout(() => {
     if (!t.el.isConnected) return;
     if (showPoster(t)) { releasePlayer(t); return; }
@@ -371,7 +359,7 @@ function watchdog(t) {
   if (activated && st === 'Playing' && t.player.getMuted() !== (hoverPlayback(t) || t.muted)) applyMuted(t, t.muted);   // keeps the intent applied once sound is allowed
   mark(t);
 }
-// Deliberate pauses show a thumbnail; trial loading feedback sits beneath the iframe.
+// Deliberate pauses show a thumbnail; loading feedback sits beneath the iframe.
 function mark(t) {
   // Paused tiles keep a still image; only an active hover gets the preview loading status.
   const paused = allPaused || tilePaused(t);
@@ -383,22 +371,22 @@ function mark(t) {
   const stalled = !offline && t.ready && !playing && state !== 'Buffering' && wantsPlayback(t) && (t.playbackBlocked || t.playbackError || Date.now() - (t.readyAt || Date.now()) > 8000);
   t.el.classList.toggle('stalled', stalled);
   if (playing) t.hasPlayed = true;
-  // Keep the still until playback, beneath the embed in trial mode and above it in the original mode.
+  // Keep the still until playback, beneath the embed.
   t.cover.classList.toggle('gone', !offline && !showPoster(t) && (playing || t.hasPlayed));   // a class, so the still fades instead of vanishing
   t.el.classList.toggle('player-ready', t.ready);
   // An offline channel shows its avatar and status over its banner, or over the dark tile when it has none.
   t.cover.classList.toggle('offline', offline);
-  t.previewStatus.hidden = !(offline || !t.hasPlayed && (hoverPlayback(t) || trialRendering() && (t.waitingForStatus || wantsPlayback(t))));
+  t.previewStatus.hidden = !(offline || !t.hasPlayed && (hoverPlayback(t) || (t.waitingForStatus || wantsPlayback(t))));
   t.previewStatus.querySelector('span').textContent = tr(offline ? 'Hors ligne' : t.playbackError || t.playbackBlocked ? 'Aperçu indisponible' : 'Chargement de l’aperçu…');
   t.el.classList.toggle('loading', !paused && !offline && onScreen(t) && !playing);   // the offline overlay replaces the loader
   t.el.classList.toggle('partial', !paused && !seen(t) && !playing);
   let status = t.bar.querySelector('.playback-status');
-  if (trialRendering() && !status) {
+  if (!status) {
     status = document.createElement('span'); status.className = 'playback-status'; status.setAttribute('role', 'status');
     t.bar.querySelector('b').after(status);
   }
   if (status) {
-    status.hidden = !trialRendering() || offline || playing || !wantsPlayback(t);
+    status.hidden = offline || playing || !wantsPlayback(t);
     status.classList.toggle('blocked', stalled);
     status.textContent = stalled ? '!' : '';
     status.title = tr(stalled ? 'Cliquer dans le lecteur pour réessayer' : 'Chargement du lecteur…');
@@ -516,7 +504,7 @@ function loadPreview() {
   player.addEventListener(Twitch.Player.READY, () => {
     if (!current()) return;
     previewReady = true; preview.classList.add('player-ready');
-    if (trialRendering()) { previewMessage.textContent = tr('Chargement de l’aperçu…'); previewMessage.hidden = false; }
+    previewMessage.textContent = tr('Chargement de l’aperçu…'); previewMessage.hidden = false;
     player.setMuted(true); player.setVolume(0);
     // Leave time for the browser to report the now-uncovered iframe as visible.
     previewTimer = setTimeout(() => { if (current()) { player.play(); previewNudgedAt = Date.now(); markPreview(); } }, 400);
@@ -595,7 +583,7 @@ function updateTileInfo(t, s) {
   const hadPoster = t.channel && showPoster(t);
   t.channel = s;
   if (typeof s.online === 'boolean') t.waitingForStatus = false;
-  if (trialRendering() && s.online === true) t.el.classList.remove('offline');
+  if (s.online === true) t.el.classList.remove('offline');
   updatePoster(t);
   if (typeof s.online === 'boolean') trackOnline(t, s.online);
   renderCollaboration(t, s.online === false ? [] : collaborations.get(s.twitch)?.participants || []);
@@ -611,7 +599,7 @@ function updateTileInfo(t, s) {
     field.hidden = !value;
   }
   if (t.cover) { t.ppIcon(); mark(t); }   // the offline overlay and the play button follow the status
-  if (trialRendering() && tiles.get(s.twitch) === t && hadPoster !== showPoster(t)) sync(t);
+  if (tiles.get(s.twitch) === t && hadPoster !== showPoster(t)) sync(t);
 }
 
 function add(s, muted = true, volume = 0.5, paused = false, chatOpen = false, chatPosition = 'auto', automatic = false) {
@@ -621,7 +609,7 @@ function add(s, muted = true, volume = 0.5, paused = false, chatOpen = false, ch
   const el = document.createElement('div');
   el.className = 'tile loading';
   el.dataset.login = s.twitch;
-  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Play/pause" data-i18n-title="Play/pause" aria-label="Play/pause" data-i18n-aria-label="Play/pause" aria-pressed="false" class="pp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="pause"><path d="M8 5v14M16 5v14"/></g><g class="play"><path d="M7 4v16l13-8z" fill="currentColor"/></g></svg></button><span class="snd-wrap"><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><div class="volume"><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume" aria-label="Volume" data-i18n-aria-label="Volume"></div></span><button title="Spotlight" data-i18n-title="Spotlight" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="12" height="14" rx="1"/><rect x="17" y="5" width="4" height="6" rx="1"/><rect x="17" y="13" width="4" height="6" rx="1"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div><div class="load"><i></i><b>${escapeHTML(s.display)}</b><small data-i18n="Hors ligne">Hors ligne</small><small class="more" data-i18n="Fais défiler pour lire">Fais défiler pour lire</small></div><div class="play-hint" aria-hidden="true"><svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg></div>`;
+  el.innerHTML = `<div class="bar"><img class="stream-avatar" alt="" draggable="false"><b>${escapeHTML(s.display)}</b><div class="stream-info" hidden><span class="stream-category"></span><span class="stream-title"></span></div><span class="viewers"></span><button title="Afficher le chat" data-i18n-title="Afficher le chat" aria-label="Afficher le chat" data-i18n-aria-label="Afficher le chat" aria-expanded="false" class="chat-toggle"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"/></svg></button><details class="chat-options" hidden><summary title="Options du chat" data-i18n-title="Options du chat" aria-label="Options du chat" data-i18n-aria-label="Options du chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="chat-menu"><label><span data-i18n="Position du chat">Position du chat</span><select aria-label="Position du chat" data-i18n-aria-label="Position du chat"><option value="auto" data-i18n="Auto">Auto</option><option value="top" data-i18n="Top">Top</option><option value="bottom" data-i18n="Bottom">Bottom</option><option value="left" data-i18n="Left">Left</option><option value="right" data-i18n="Right">Right</option></select></label><a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">Ouvrir sur Twitch ↗</a></div></details><button title="Play/pause" data-i18n-title="Play/pause" aria-label="Play/pause" data-i18n-aria-label="Play/pause" aria-pressed="false" class="pp"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="pause"><path d="M8 5v14M16 5v14"/></g><g class="play"><path d="M7 4v16l13-8z" fill="currentColor"/></g></svg></button><span class="snd-wrap"><button title="Son" data-i18n-title="Son" class="snd"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g></svg></button><div class="volume"><input type="range" min="0" max="1" step="0.05" title="Volume" data-i18n-title="Volume" aria-label="Volume" data-i18n-aria-label="Volume"></div></span><button title="Spotlight" data-i18n-title="Spotlight" aria-pressed="false" class="spotlight"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="12" height="14" rx="1"/><rect x="17" y="5" width="4" height="6" rx="1"/><rect x="17" y="13" width="4" height="6" rx="1"/></svg></button><button title="Agrandir dans la fenêtre" data-i18n-title="Agrandir dans la fenêtre" class="fs"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g></svg></button><button title="Retirer" data-i18n-title="Retirer" class="close"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div class="tile-body"><div class="player"></div><section class="chat" hidden></section></div>`;
   const drop = document.createElement('div');
   drop.className = 'drop';
   drop.dataset.i18n = 'Déposer ici';
@@ -636,7 +624,7 @@ function add(s, muted = true, volume = 0.5, paused = false, chatOpen = false, ch
   const pp = el.querySelector('.pp'), vol = el.querySelector('.volume input'), volumeBox = el.querySelector('.volume');
   // An offline channel has nothing to play or pause: its button steps aside, and the global button leaves it alone.
   const ppIcon = () => { const paused = allPaused || tilePaused(t), offline = t.channel.online === false; pp.setAttribute('aria-pressed', String(paused)); pp.setAttribute('aria-disabled', String(offline)); pp.title = tr(offline ? 'Hors ligne' : paused ? 'Lecture' : 'Pause'); pp.setAttribute('aria-label', pp.title); };
-  pp.onclick = e => { e.stopPropagation(); if (t.channel.online === false) return; if (allPaused || tilePaused(t)) resumeTile(t); else { t.paused = true; t.hoverSuppressed = trialRendering(); } ppIcon(); sync(t); mark(t); save(); };
+  pp.onclick = e => { e.stopPropagation(); if (t.channel.online === false) return; if (allPaused || tilePaused(t)) resumeTile(t); else { t.paused = true; t.hoverSuppressed = true; } ppIcon(); sync(t); mark(t); save(); };
   vol.value = volume;
   vol.oninput = () => { t.volume = +vol.value; t.player?.setVolume(t.volume); setMuted(t, t.volume === 0); save(); };
   // one button, two states: a sound turned on here stays on until turned off here
@@ -700,7 +688,7 @@ function resumeTile(t) {
   t.paused = false; t.ppIcon(); paintPlayAll();
 }
 // a still image instead of an idle iframe: paused without a hover
-function showPoster(t) { return trialRendering() && (t.channel.online === false || t.waitingForStatus) || (allPaused || tilePaused(t)) && !hoverPlayback(t); }
+function showPoster(t) { return (t.channel.online === false || t.waitingForStatus) || (allPaused || tilePaused(t)) && !hoverPlayback(t); }
 function previewImageURL(s) {
   if (s.online === false) return s.offlineUrl || '';   // the banner the channel set for its offline screen, when it has one
   const url = s.previewUrl || `https://static-cdn.jtvnw.net/previews-ttv/live_user_${s.twitch}-{width}x{height}.jpg`;
@@ -724,6 +712,7 @@ function updatePoster(t) {
 }
 function releasePlayer(t) {
   readNativeControls(t);
+  if (t.ready && t.controls) t.quality = t.player.getQuality?.();
   if (t.ready && t.controls) t.quality = t.player.getQuality?.();
   const player = t.player;
   // Invalidate callbacks before destroying the iframe, including delayed READY events.
@@ -774,7 +763,7 @@ function mountPlayer(t, controls) {
   t.player = player;
   // The cover is outside Twitch's mount node, so iframe initialization cannot remove it.
   container.querySelector('iframe').title = tr('Stream de {name}', {name:t.channel.display});
-  fit(container);   // scaled from the first frame: the 640x360 iframe would spill out of the tile until READY
+  fit(container);   // Size the iframe before READY so it fits the tile from the first frame.
   const current = () => t.player === player && t.el.isConnected;
   player.addEventListener(Twitch.Player.READY, () => {
     if (!current()) return;
@@ -791,7 +780,7 @@ function mountPlayer(t, controls) {
     if (!current() || unloading) return;   // a player torn down by the navigation is not a viewer pausing
     if (event === 'offline' || event === 'online') t.el.classList.toggle('offline', event === 'offline');
     if (event === 'offline' || event === 'online' || event === 'playing') trackOnline(t, event !== 'offline');
-    if (trialRendering() && event === 'offline') {
+    if (event === 'offline') {
       updateTileInfo(t, { ...t.channel, online: false });
       sync(t);
       return;
@@ -808,7 +797,7 @@ function mountPlayer(t, controls) {
       if (event === 'pause' && !allPaused && onScreen(t) && !t.playbackBlocked) {
         // Firefox answers an unmute in a frame never clicked by pausing the media: blocked playback, not a pause the viewer chose
         if (Date.now() - (t.unmutedAt || 0) < 1000) t.playbackBlocked = true;
-        else { t.paused = true; t.hoverSuppressed = trialRendering(); }
+        else { t.paused = true; t.hoverSuppressed = true; }
       }
       if (event === 'play' && !t.commandedPlay) {
         t.paused = false;
@@ -1091,19 +1080,15 @@ $('#muteall').onclick = () => {
   paintMuteAll(); save();
 };
 $('#playall').onclick = () => {
-  hideTip();
   // A quick shortcut, not a lock like the global mute: pause stops every tile, play resumes every tile, and each
   // tile's own button can override it afterwards.
   allPaused = !gridPaused();
-  tiles.forEach(t => { if (!allPaused && t.channel.online !== false) t.paused = false; if (allPaused && trialRendering()) t.hoverSuppressed = !!t.hovered; t.ppIcon(); });
+  tiles.forEach(t => { if (!allPaused && t.channel.online !== false) t.paused = false; if (allPaused) t.hoverSuppressed = !!t.hovered; t.ppIcon(); });
   paintPlayAll(); tiles.forEach(sync); save();
 };
 let unloading = false;
 onpagehide = () => { unloading = true; saveCurrentLayout(); };
-// Tooltips: every title shows as a styled tooltip; the attribute moves aside while the pointer or the focus is on the element
-// so the browser's own tooltip stays quiet, and comes back as soon as they leave.
-const tooltip = $('#tooltip');
-let tipTarget = null, tipTimer;
+// Keep accessible labels while suppressing tooltips that would cover Twitch players.
 function stashTitle(el) {
   if (!el.hasAttribute('title')) return;
   el.dataset.tip = el.getAttribute('title');
@@ -1114,64 +1099,18 @@ function stashTitle(el) {
   el.removeAttribute('title');
 }
 function syncTooltipTitles(root = document) {
-  const disabled = preferences.playerRendering === 'trial-1';
-  const selector = disabled ? '[title]:not(iframe)' : '[data-tip]';
-  const elements = [...root.querySelectorAll(selector)];
-  if (root.matches?.(selector)) elements.unshift(root);
-  for (const el of elements) {
-    if (disabled) stashTitle(el);
-    else { el.setAttribute('title', el.dataset.tip); delete el.dataset.tip; }
-  }
+  const selector = '[title]:not(iframe)';
+  if (root.matches?.(selector)) stashTitle(root);
+  for (const el of root.querySelectorAll(selector)) stashTitle(el);
 }
-function showTip(el, delay) {
-  hideTip();
-  stashTitle(el);
-  if (!el.dataset.tip) return;
-  tipTarget = el;
-  // Still stash native titles while hovered, but show no tooltip over trial players.
-  if (trialRendering()) return;
-  tipTimer = setTimeout(() => {
-    if (tipTarget !== el || !el.isConnected) return;
-    const side = el.closest('#side')?.getBoundingClientRect();
-    const contained = side && !document.body.classList.contains('collapsed');
-    tooltip.style.maxWidth = contained ? `${Math.min(320, side.width - 16)}px` : '';
-    tooltip.classList.toggle('sidebar-tip', !!contained);
-    tooltip.textContent = el.dataset.tip; tooltip.hidden = false;
-    const r = el.getBoundingClientRect(), w = tooltip.offsetWidth, h = tooltip.offsetHeight;
-    // Keep sidebar tooltips off the video surface when there is room in the sidebar.
-    const right = contained ? side.right : innerWidth;
-    const popover = el.closest('.snd-wrap')?.querySelector('.volume');   // the volume hangs under the sound button: its tooltip goes below the slider
-    const bottom = popover ? popover.getBoundingClientRect().bottom : r.bottom;
-    const x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), right - w - 8);
-    const y = bottom + h + 16 > innerHeight ? r.top - h - 8 : bottom + 8;
-    tooltip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
-    tooltip.classList.add('in');
-  }, delay);
-}
-function hideTip() {
-  clearTimeout(tipTimer);
-  if (preferences.playerRendering !== 'trial-1' && tipTarget && tipTarget.dataset.tip !== undefined) { tipTarget.setAttribute('title', tipTarget.dataset.tip); delete tipTarget.dataset.tip; }
-  tipTarget = null; tooltip.classList.remove('in'); tooltip.hidden = true;
-}
-const tipSource = target => { const el = target.closest?.('[title], [data-tip]'); return el && el.tagName !== 'IFRAME' ? el : null; };
-document.addEventListener('pointerover', e => { const el = tipSource(e.target); if (el && el !== tipTarget && e.pointerType !== 'touch') showTip(el, 400); });
-document.addEventListener('pointerout', e => { if (tipTarget && !tipTarget.contains(e.relatedTarget)) hideTip(); });
-document.addEventListener('focusin', e => { const el = tipSource(e.target); if (el && el.matches(':focus-visible')) showTip(el, 0); });
-document.addEventListener('focusout', () => { if (tipTarget && !tipTarget.matches(':hover')) hideTip(); });
-document.addEventListener('dragstart', hideTip, true);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); }, true);
-// a click often changes the title of the button under the pointer: keep it aside and refresh the tooltip
 new MutationObserver(records => {
-  for (const r of records) {
-    if (r.type === 'childList') {
-      if (preferences.playerRendering === 'trial-1') for (const node of r.addedNodes) if (node.nodeType === Node.ELEMENT_NODE) syncTooltipTitles(node);
-    } else if (r.target.tagName !== 'IFRAME' && r.target.hasAttribute('title') && (r.target === tipTarget || preferences.playerRendering === 'trial-1')) {
-      stashTitle(r.target);
-      if (r.target === tipTarget) tooltip.textContent = r.target.dataset.tip;
-    }
+  for (const record of records) {
+    if (record.type === 'childList') {
+      for (const node of record.addedNodes) if (node.nodeType === Node.ELEMENT_NODE) syncTooltipTitles(node);
+    } else if (record.target.tagName !== 'IFRAME') stashTitle(record.target);
   }
-}).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
-addEventListener('preferenceschange', () => { hideTip(); syncTooltipTitles(); });
+}).observe(document.documentElement, {subtree:true, childList:true, attributes:true, attributeFilter:['title']});
+addEventListener('preferenceschange', () => syncTooltipTitles());
 syncTooltipTitles();
 onpageshow = () => { unloading = false; };
 function tick() {
@@ -1558,7 +1497,7 @@ async function refresh() {
     if (version === accountVersion) for (const t of tiles.values()) if (t.waitingForStatus) {
       // A failed lookup leaves the status unknown; let Twitch try instead of waiting forever.
       t.waitingForStatus = false;
-      if (trialRendering()) sync(t);
+      sync(t);
     }
     if (version === accountVersion && (!lastFollows || streamers.some(s => s.online == null))) renderList();   // loading rows step aside
     if (version !== accountVersion) refresh();
@@ -1615,17 +1554,6 @@ async function init() {
   updateAccount(); rebuild(); switchLayout(library.user ? 'connected' : 'guest'); await refresh();
 }
 initWorkspace();
-addEventListener('preferenceschange', () => {
-  if (playerRendering === preferences.playerRendering) return;
-  saveCurrentLayout();
-  hidePreview();
-  playerRendering = preferences.playerRendering;
-  // Keep the tile state and chat frames; replace only video players for a fresh comparison.
-  for (const t of tiles.values()) {
-    releasePlayer(t);
-    mountPlayer(t, !!t.controls);
-  }
-});
 addEventListener('preferenceschange', () => { $('#landing-language').value = preferences.language; splitReveal(); });
 $('#landing-language').value = preferences.language; splitReveal();
 init().catch(handleError);

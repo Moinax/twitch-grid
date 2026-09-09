@@ -143,7 +143,6 @@ function refreshPreferences() {
   syncChat(); hidePreview(); paintMuteAll();
   document.getElementById('language-setting').value=preferences.language;
   document.getElementById('theme-setting').value=preferences.theme;
-  document.getElementById('player-rendering-setting').value=preferences.playerRendering;
 }
 function initWorkspace() {
   translateTree();renderGridLauncher();
@@ -155,8 +154,6 @@ function initWorkspace() {
   document.getElementById('theme-setting').value=preferences.theme;
   document.getElementById('language-setting').onchange=e=>setPreference('language',e.target.value);
   document.getElementById('theme-setting').onchange=e=>setPreference('theme',e.target.value);
-  document.getElementById('player-rendering-setting').value=preferences.playerRendering;
-  document.getElementById('player-rendering-setting').onchange=e=>setPreference('playerRendering',e.target.value);
   for(const button of document.querySelectorAll('[data-close-dialog]')) button.onclick=()=>button.closest('dialog').close();
   for(const dialog of document.querySelectorAll('dialog')) {
     dialog.addEventListener('keydown',e=>e.stopPropagation());
