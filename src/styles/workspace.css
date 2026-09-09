@@ -1,0 +1,497 @@
+/* ---- workspace: grids and settings ---- */
+#workspace-controls {
+  @apply mt-[12px] flex;
+  @apply gap-[8px];
+}
+#grid-switcher {
+  flex: 1;
+  min-width: 0;
+}
+#grid-lock {
+  flex: none;
+  @apply w-[32px] h-[32px];
+  padding: 0;
+  @apply flex items-center;
+  @apply justify-center;
+  border: 1px solid var(--line);
+  @apply rounded-[6px];
+  background: var(--bg);
+  color: var(--dim);
+  @apply cursor-pointer;
+  transition:
+    color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+#grid-lock:hover:not(:disabled) {
+  border-color: #9147ff80;
+  color: var(--fg);
+}
+#grid-lock:disabled {
+  opacity: 0.5;
+  @apply cursor-default;
+}
+#grid-lock[aria-pressed="true"] {
+  border-color: #9147ff80;
+  color: #bf94ff;
+}
+#grid-lock[aria-pressed="true"] .open,
+#grid-lock[aria-pressed="false"] .closed {
+  @apply hidden;
+}
+#grid-switcher {
+  @apply relative;
+}
+#grid-switcher summary {
+  @apply flex items-center;
+  @apply gap-[8px] h-[32px];
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  @apply rounded-[6px];
+  background: var(--bg);
+  color: var(--fg);
+  @apply cursor-pointer;
+  list-style: none;
+  @apply select-none;
+  transition:
+    border-color 0.2s var(--ease),
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+#grid-switcher summary::-webkit-details-marker {
+  @apply hidden;
+}
+#grid-switcher summary:hover,
+#grid-switcher[open] summary {
+  border-color: #9147ff80;
+}
+#grid-switcher summary:active {
+  transform: scale(0.98);
+}
+#grid-switcher summary svg {
+  flex: none;
+}
+#grid-switcher summary > svg:first-child {
+  color: #bf94ff;
+}
+#grid-switcher .chevron {
+  color: var(--dim);
+  transition: transform 0.3s var(--ease);
+}
+#grid-switcher[open] .chevron {
+  transform: rotate(180deg);
+}
+#current-grid-name {
+  flex: 1;
+  @apply overflow-hidden text-ellipsis;
+  @apply whitespace-nowrap;
+}
+.grid-menu {
+  @apply absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  @apply p-[8px];
+  border: 1px solid var(--line);
+  @apply rounded-[8px];
+  background: var(--panel);
+  box-shadow: 0 12px 32px #181818a6;
+  animation: menu-in 0.3s var(--ease);
+}
+#grid-menu-list {
+  max-height: 40vh;
+  @apply overflow-y-auto;
+}
+.grid-menu .open-grid {
+  width: 100%;
+  @apply flex items-center;
+  @apply gap-[12px];
+  padding: 8px 12px;
+  border: 0;
+  @apply rounded-[6px];
+  background: none;
+  color: var(--fg);
+  @apply text-left cursor-pointer;
+  transition:
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+.grid-menu .open-grid:hover {
+  background: #ffffff0a;
+}
+.grid-menu #grids-open {
+  width: 100%;
+  @apply mt-[8px];
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 4px 4px;
+  background: none;
+  color: var(--dim);
+  @apply text-left cursor-pointer;
+  transition:
+    color 0.2s var(--ease),
+    background-color 0.2s var(--ease);
+}
+.grid-menu #grids-open:hover {
+  color: var(--fg);
+  background: #ffffff0a;
+}
+#preferences {
+  @apply flex flex-wrap;
+  @apply gap-[8px];
+}
+#preferences label {
+  flex: 1;
+  @apply flex items-center;
+  @apply gap-[4px];
+  min-width: 0;
+  color: var(--dim);
+}
+#preferences svg {
+  flex: none;
+}
+#preferences select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 4px;
+  border: 1px solid var(--line);
+  @apply rounded-[4px];
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 16px;
+  transition: border-color 0.2s var(--ease);
+}
+#preferences select:hover,
+#preferences select:focus-visible {
+  border-color: #9147ff80;
+}
+#ctl .workspace-shortcut {
+  @apply hidden;
+}
+body.collapsed #ctl .workspace-shortcut {
+  @apply flex;
+}
+dialog {
+  margin: auto;
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  @apply overflow-y-auto p-[24px];
+  border: 1px solid var(--line);
+  @apply rounded-[16px];
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 24px 80px #0e0e1080;
+}
+dialog::backdrop {
+  background: #18181899;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+/* the dialog and its backdrop settle in from below; @starting-style is a progressive enhancement */
+dialog[open] {
+  animation: dialog-in 0.45s var(--ease);
+}
+dialog[open]::backdrop {
+  animation: fade-in 0.45s var(--ease);
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.dialog-heading {
+  @apply flex items-center;
+  @apply gap-[16px] mb-[24px];
+}
+.dialog-heading h2 {
+  flex: 1;
+  @apply font-bold;
+  font-size: 20px;
+  line-height: 28px;
+  letter-spacing: -0.02em;
+}
+dialog button,
+dialog select,
+dialog input {
+  border: 1px solid var(--line);
+  @apply rounded-[6px];
+  background: var(--bg);
+  color: var(--fg);
+  padding: 8px 12px;
+  font: inherit;
+  transition:
+    background-color 0.2s var(--ease),
+    border-color 0.2s var(--ease),
+    color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+dialog button {
+  @apply cursor-pointer;
+}
+dialog button:hover:not(:disabled) {
+  border-color: #9147ff80;
+}
+dialog button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+dialog button:disabled {
+  opacity: 0.5;
+  @apply cursor-default;
+}
+dialog select:hover,
+dialog input:hover,
+dialog select:focus-visible,
+dialog input:focus-visible {
+  border-color: #9147ff80;
+}
+.dialog-heading button,
+.icon-button {
+  @apply flex items-center;
+  @apply justify-center w-[32px];
+  @apply h-[32px];
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+}
+.dialog-heading button:hover:not(:disabled),
+.icon-button:hover:not(:disabled) {
+  background: #ffffff14;
+  color: var(--fg);
+}
+.dialog-actions {
+  @apply flex flex-wrap;
+  @apply justify-end gap-[8px];
+  @apply mt-[24px];
+}
+#grid-form-submit {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  @apply font-semibold;
+}
+#grid-form-submit:hover:not(:disabled) {
+  background: #a66aff;
+  border-color: #a66aff;
+}
+#grid-form[data-kind="delete"] #grid-form-submit {
+  background: #c9302c;
+  border-color: #c9302c;
+}
+#grid-form[data-kind="delete"] #grid-form-submit:hover:not(:disabled) {
+  background: #e04440;
+  border-color: #e04440;
+}
+#grid-form h3 {
+  @apply mb-[16px];
+  font-size: 16px;
+  line-height: 24px;
+  @apply font-semibold;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+#grid-name-label {
+  @apply flex flex-col;
+  @apply gap-[8px];
+}
+#grid-name[aria-invalid="true"] {
+  border-color: #e35b69;
+}
+#grid-form-error {
+  color: #e35b69;
+  @apply mt-[8px];
+  font-size: 12px;
+  line-height: 16px;
+}
+#grid-form-error:empty {
+  @apply hidden;
+}
+#grid-delete-description {
+  color: var(--dim);
+  line-height: 20px;
+}
+#saved-grids {
+  @apply flex flex-col;
+  @apply gap-[4px];
+}
+.saved-grid {
+  @apply flex items-center;
+  @apply gap-[2px] p-[4px];
+  @apply rounded-[10px];
+  transition: background-color 0.2s var(--ease);
+}
+.saved-grid:hover,
+.saved-grid:focus-within {
+  background: #ffffff0a;
+}
+.saved-grid .open-grid {
+  flex: 1;
+  min-width: 0;
+  @apply flex items-center;
+  @apply gap-[12px];
+  padding: 8px 12px;
+  border-color: transparent;
+  background: transparent;
+  @apply text-left;
+}
+.saved-grid .open-grid:hover:not(:disabled) {
+  border-color: transparent;
+  background: #ffffff0a;
+}
+.open-grid .grid-mark {
+  flex: none;
+  @apply w-[8px] h-[8px];
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  transition:
+    background-color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+.open-grid[aria-current="true"] .grid-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px #9147ff33;
+}
+.open-grid > span {
+  flex: 1;
+  min-width: 0;
+}
+.open-grid strong {
+  @apply block overflow-hidden;
+  @apply text-ellipsis whitespace-nowrap;
+  @apply font-semibold;
+}
+.open-grid[aria-current="true"] strong {
+  color: #d6baff;
+}
+.open-grid small {
+  @apply block mt-[2px];
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 16px;
+}
+.saved-grid .delete-grid:hover:not(:disabled) {
+  color: #ff7775;
+  background: #eb040018;
+}
+.tile .collaboration-menu .create-collaboration-grid {
+  width: 100%;
+  height: auto;
+  @apply min-h-[28px] mt-[6px];
+  @apply p-[6px];
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.tile .collaboration-menu .create-collaboration-grid:hover:not(:disabled) {
+  background: #9147ff40;
+  border-color: #9147ff80;
+}
+:root[data-theme="light"] {
+  --video-bg: #fff;
+  --bg: #f4f4f7;
+  --panel: #fff;
+  --raised: #e8e8ef;
+  --line: #dadae3;
+  --fg: #202027;
+  --dim: #61616f;
+  --accent: #7734d8;
+  --accent-soft: #7734d81a;
+}
+[data-theme="light"] .preview-cover .preview-status {
+  background: #ffffffb3;
+  color: var(--fg);
+  text-shadow: none;
+}
+[data-theme="light"] #ctl button:hover,
+[data-theme="light"] #ctl a:hover {
+  background: #dadae3;
+}
+[data-theme="light"] #list .favorite:hover {
+  background: #7734d80f;
+}
+[data-theme="light"] #list .collaboration-indicator,
+[data-theme="light"] #preview .category,
+[data-theme="light"] .tile .stream-info .stream-category {
+  color: #7734d8;
+}
+[data-theme="light"] #empty h1 {
+  background-image: linear-gradient(90deg, #000, #666);
+}
+[data-theme="light"] #empty .gh {
+  box-shadow: 0 6px 22px #20202714;
+}
+[data-theme="light"] #preview {
+  box-shadow: 0 12px 40px #20202733;
+}
+[data-theme="light"] .live-notification {
+  background: #ffffffe6;
+  box-shadow: 0 6px 24px #20202726;
+}
+[data-theme="light"] .live-notification small {
+  color: #7734d8;
+}
+[data-theme="light"] #grid:not(.single) .tile:where(:not(.big)):hover .bar b {
+  color: var(--fg);
+}
+[data-theme="light"] .tile.loud .snd {
+  color: #7734d8;
+}
+[data-theme="light"] .tile:not(.full-player) .stream-info {
+  background: #ffffffed;
+}
+[data-theme="light"] #audio-overlay {
+  background: #ffffff22;
+  color: var(--fg);
+}
+[data-theme="light"] #audio-overlay p {
+  color: var(--fg);
+}
+[data-theme="light"] #audio-overlay h2,
+[data-theme="light"] #audio-overlay p {
+  text-shadow: 0 1px 10px #fff;
+}
+[data-theme="light"] .chat-options summary:hover,
+[data-theme="light"] .chat-options[open] summary,
+[data-theme="light"] .collaboration summary {
+  background: #7734d81a;
+}
+[data-theme="light"] dialog {
+  box-shadow: 0 24px 80px #20202733;
+}
+[data-theme="light"] dialog::backdrop {
+  background: #f4f4f7b3;
+}
+[data-theme="light"] .saved-grid:hover,
+[data-theme="light"] .saved-grid:focus-within,
+[data-theme="light"] .saved-grid .open-grid:hover:not(:disabled),
+[data-theme="light"] .dialog-heading button:hover:not(:disabled),
+[data-theme="light"] .icon-button:hover:not(:disabled),
+[data-theme="light"] .collaboration-row:hover,
+[data-theme="light"] .chat-menu a:hover {
+  background: #7734d80f;
+}
+[data-theme="light"] .open-grid[aria-current="true"] strong,
+[data-theme="light"] #grid-switcher summary > svg:first-child,
+[data-theme="light"] #grid-lock[aria-pressed="true"],
+[data-theme="light"] .tile .bar .spotlight[aria-pressed="true"] {
+  color: #7734d8;
+}
+[data-theme="light"] .chat-menu,
+[data-theme="light"] .collaboration-menu,
+[data-theme="light"] .grid-menu {
+  box-shadow: 0 12px 32px #20202726;
+}

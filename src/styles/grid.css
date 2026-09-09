@@ -1,0 +1,1321 @@
+/* ---- grid ---- */
+#main {
+  flex: 1;
+  @apply relative;
+  min-width: 0;
+}
+#grid {
+  height: 100dvh;
+  @apply overflow-y-auto grid;
+  @apply gap-[2px];
+}
+#empty {
+  @apply absolute;
+  inset: 0;
+  @apply flex flex-col;
+  @apply items-center justify-center;
+  @apply gap-[16px];
+  padding: 40px 40px 48px;
+  @apply text-center;
+}
+/* a faint grid drawn in the accent, fading out from the centre: the product's own motif instead of an ambient glow */
+#empty::before {
+  content: "";
+  @apply absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cpath d='M48 .5H.5V48' fill='none' stroke='%239147ff' stroke-opacity='.18'/%3E%3C/svg%3E")
+    center / 48px 48px;
+  mask-image: radial-gradient(60% 55% at 50% 45%, #000, transparent);
+  -webkit-mask-image: radial-gradient(60% 55% at 50% 45%, #000, transparent);
+  @apply pointer-events-none;
+}
+#empty > * {
+  @apply relative;
+}
+#grid:not(:empty) ~ #empty {
+  @apply hidden;
+}
+/* nothing filtered inside the animated element: Firefox re-rasterises the drop-shadow every frame otherwise and the float stutters, so the glow is a static blurred blob behind a plain moving wrapper */
+#empty .hero {
+  @apply relative mb-[8px];
+}
+#empty .hero::before {
+  content: "";
+  @apply absolute;
+  inset: 32px 12px -16px;
+  border-radius: 50%;
+  background: #9147ff80;
+  filter: blur(28px);
+}
+#empty .float {
+  @apply block relative;
+  will-change: transform;
+  animation: float 6s ease-in-out infinite;
+}
+#empty img {
+  @apply block w-[120px];
+  @apply h-[120px];
+}
+/* background-clip: text paints nothing outside the box: room for the overshoot of the G and the last glyph */
+#empty h1 {
+  @apply font-bold;
+  font-size: 48px;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  padding: 0.06em 0.12em 0.2em;
+  margin-bottom: -0.14em;
+  background: linear-gradient(90deg, #fff, #9b9b9b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-wrap: balance;
+}
+#empty p {
+  @apply max-w-[440px];
+  color: var(--dim);
+  font-size: 16px;
+  @apply font-semibold;
+  line-height: 24px;
+  text-wrap: pretty;
+}
+#empty button {
+  @apply mt-[8px];
+  padding: 12px 24px;
+  border: 0;
+  @apply rounded-[9999px];
+  background: var(--accent);
+  color: #fff;
+  @apply font-semibold;
+  font-size: 16px;
+  line-height: 24px;
+  @apply cursor-pointer;
+  box-shadow: 0 12px 32px #9147ff59;
+  transition:
+    background-color 0.2s var(--ease),
+    transform 0.3s var(--ease),
+    box-shadow 0.3s var(--ease);
+}
+#empty button:hover {
+  background: #a66aff;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px #9147ff80;
+}
+#empty .links {
+  @apply flex flex-wrap;
+  @apply justify-center;
+  gap: 8px 16px;
+}
+#empty .link {
+  margin-top: 0;
+  padding: 4px 8px;
+  @apply rounded-[4px];
+  background: none;
+  box-shadow: none;
+  color: var(--dim);
+  font-size: 14px;
+  @apply font-semibold;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+#empty .link:hover {
+  color: var(--fg);
+  transform: none;
+}
+#empty .start {
+  @apply grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  @apply gap-[12px] max-w-[760px];
+  @apply mt-[8px];
+  padding: 0;
+  list-style: none;
+  @apply text-left;
+}
+#empty .start li {
+  @apply p-[16px];
+  border: 1px solid var(--line);
+  @apply rounded-[12px];
+  background: var(--panel);
+}
+#empty .start b {
+  @apply flex items-center;
+  @apply justify-center w-[24px];
+  @apply h-[24px] mb-[8px];
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  @apply font-bold;
+}
+#empty .start h2 {
+  font-size: 14px;
+  line-height: 20px;
+  @apply font-bold;
+  text-wrap: balance;
+}
+#empty .start span {
+  @apply block mt-[2px];
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 16px;
+  @apply font-medium;
+  text-wrap: pretty;
+}
+#empty button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+#empty .gh {
+  @apply absolute;
+  top: calc(var(--bar) + 16px);
+  right: 24px;
+  @apply flex items-center;
+  @apply gap-[8px];
+  padding: 8px 16px 8px 12px;
+  @apply rounded-[9999px];
+  background: #9147ff40;
+  backdrop-filter: blur(12px);
+  border: 1px solid #ffffff2e;
+  box-shadow: 0 8px 30px #18181899;
+  color: var(--fg);
+  @apply font-semibold;
+  font-size: 14px;
+  text-decoration: none;
+  transition:
+    background-color 0.2s var(--ease),
+    transform 0.3s var(--ease);
+}
+#empty .gh:hover {
+  background: #9147ff66;
+  transform: translateY(-1px);
+}
+#empty .gh svg {
+  fill: currentColor;
+}
+@keyframes float {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.tile {
+  @apply relative flex;
+  @apply flex-col;
+  background: var(--video-bg);
+  min-width: 0;
+  min-height: 0;
+}
+/* Draw the frame outside the video instead of covering the iframe with a pseudo-element. */
+.tile {
+  outline: 1px solid var(--line);
+  transition: outline-color 0.2s var(--ease);
+}
+/* every grid tile lights up under the pointer, whatever player it carries; the spotlight and a lone tile have nowhere to go */
+#grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover {
+  outline-color: var(--accent);
+}
+#grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar {
+  background: var(--raised);
+}
+#grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar b {
+  color: #fff;
+}
+/* Hit testing must find the tile underneath an iframe during a pointer drag. */
+body.dragging #grid iframe {
+  @apply pointer-events-none;
+}
+body.dragging,
+body.dragging .tile .bar {
+  @apply cursor-grabbing;
+}
+.tile .bar {
+  touch-action: none;
+}
+.tile.drag-ghost {
+  @apply fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  opacity: 0.75;
+  @apply rounded-[6px] overflow-hidden;
+  box-shadow: 0 8px 24px #0006;
+}
+.drag-ghost,
+.drag-ghost * {
+  @apply pointer-events-none;
+}
+.tile.drag-ghost .bar {
+  @apply h-[26px] gap-[5px];
+  padding: 0 6px;
+  font-size: 11px;
+}
+.tile.drag-ghost .stream-avatar {
+  @apply w-[18px] h-[18px];
+}
+.drag-preview {
+  @apply relative;
+  aspect-ratio: 16 / 9;
+  background: var(--video-bg);
+}
+.drag-poster {
+  @apply block;
+  width: 100%;
+  height: 100%;
+  @apply object-contain;
+}
+.drag-preview-status {
+  @apply absolute;
+  inset: 0;
+  @apply flex flex-col;
+  @apply items-center justify-center;
+  @apply gap-[4px];
+  background: #0006;
+  color: #fff;
+  font-size: 10px;
+}
+.drag-preview-status img {
+  @apply w-[32px] h-[32px];
+  border-radius: 50%;
+}
+.drag-preview [hidden] {
+  @apply hidden;
+}
+/* Only the hovered drop destination covers its player. */
+.tile .drop {
+  @apply hidden absolute;
+  inset: var(--bar) 0 0;
+  z-index: 8;
+  @apply items-center justify-center;
+  background: #9147ff55;
+  color: #fff;
+  font-size: 18px;
+  @apply font-bold;
+  text-shadow: 0 1px 4px #000;
+  @apply pointer-events-none;
+}
+body.dragging .tile.drop-target.over .drop {
+  @apply flex;
+}
+body.dragging .tile.drop-target.over {
+  outline-color: var(--accent);
+}
+body.dragging .tile.dragged .bar {
+  background: var(--raised);
+}
+.tile .bar {
+  height: var(--bar);
+  flex: none;
+  @apply flex items-center;
+  @apply gap-[8px];
+  padding: 0 8px;
+  background: var(--panel);
+  @apply cursor-grab select-none;
+  transition: background-color 0.2s var(--ease);
+}
+.tile .bar::before {
+  content: "";
+  flex: none;
+  @apply w-[8px] h-[12px];
+  background: repeating-linear-gradient(
+    90deg,
+    currentColor 0 2px,
+    transparent 2px 5px
+  );
+  color: #ffffff55;
+} /* grip: the bar is the drag handle */
+.tile.loud .snd {
+  color: #bf94ff;
+} /* the icon alone tells the sound state, the bar keeps its colour */
+.tile .bar b {
+  flex: 1;
+  @apply overflow-hidden text-ellipsis;
+  @apply whitespace-nowrap font-bold;
+}
+.tile .bar span {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.tile .bar button {
+  border: 0;
+  background: none;
+  color: var(--dim);
+  @apply cursor-pointer;
+  font-size: 14px;
+  padding: 0 6px;
+  @apply h-[28px] rounded-[4px];
+  transition:
+    color 0.2s var(--ease),
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+.tile .bar button:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--fg);
+}
+.tile .bar button:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.94);
+}
+.tile .bar button:disabled,
+.tile button[aria-disabled="true"] {
+  opacity: 0.3;
+  @apply cursor-default;
+}
+.tile .stream-avatar {
+  flex: none;
+  @apply w-[22px] h-[22px];
+  border-radius: 50%;
+  @apply object-cover;
+}
+.tile:not(.full-player) .chat-toggle {
+  @apply hidden;
+}
+.tile .chat-toggle[aria-expanded="true"] {
+  color: #fff;
+  background: #ffffff26;
+}
+.tile .bar > button,
+.tile .viewers {
+  flex: none;
+}
+.tile .stream-info {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+.tile .stream-info .stream-category {
+  color: #d6baff;
+  @apply font-semibold;
+}
+.tile .stream-info .stream-title {
+  color: var(--fg);
+}
+.tile.full-player .bar:has(.stream-info:not([hidden])) b {
+  flex: 0 1 auto;
+  max-width: 20%;
+}
+.tile.full-player .stream-info {
+  flex: 1;
+  @apply flex items-center;
+  @apply gap-[8px];
+}
+.tile.full-player .stream-info span {
+  @apply overflow-hidden whitespace-nowrap;
+  @apply text-ellipsis;
+}
+.tile.full-player .stream-category {
+  flex: 0 1 auto;
+  max-width: 35%;
+}
+.tile.full-player .stream-title {
+  flex: 1;
+}
+/* over a still image the metadata shows at rest and steps aside for the hover preview; over a player it comes with the pointer */
+.tile:not(.full-player) .stream-category,
+.tile:not(.full-player) .stream-title {
+  @apply block overflow-hidden;
+  @apply whitespace-nowrap text-ellipsis;
+}
+.tile:not(.full-player) .stream-category {
+  @apply mb-[2px];
+}
+#grid.single .spotlight,
+.tile:not(.full-player) .fs {
+  @apply hidden;
+} /* a single player has nothing to come in front of */
+.tile .bar .spotlight[aria-pressed="true"] {
+  color: #bf94ff;
+}
+#grid.single .bar,
+.tile .bar[draggable="false"] {
+  @apply cursor-default;
+}
+#grid.single .bar::before,
+.tile .bar[draggable="false"]::before {
+  @apply hidden;
+}
+.tile .bar svg {
+  @apply block;
+}
+.tile:not(.expanded) .fs .exit,
+.tile.expanded .fs .enter {
+  @apply hidden;
+}
+#update {
+  @apply fixed;
+  bottom: 24px;
+  left: calc(50% + var(--sb) / 2);
+  transform: translateX(-50%); /* centred on the grid, not the window */
+  z-index: 5;
+  padding: 8px 16px;
+  @apply rounded-[9999px];
+  background: #9147ff40;
+  backdrop-filter: blur(10px);
+  border: 1px solid #ffffff22;
+  color: var(--fg);
+  @apply font-semibold cursor-pointer;
+  animation: toast-in 0.5s var(--ease);
+  transition: background-color 0.2s var(--ease);
+}
+#update:hover {
+  background: #9147ff66;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.tile.loud .snd .off,
+.tile:not(.loud) .snd .on {
+  @apply hidden;
+}
+#audio-overlay {
+  @apply fixed;
+  inset: 0;
+  z-index: 100;
+  @apply flex flex-col;
+  @apply items-center justify-center;
+  @apply gap-[16px] p-[24px];
+  background: #1818180d;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  @apply text-center cursor-pointer;
+  animation: fade-in 0.45s var(--ease);
+}
+#audio-overlay > svg {
+  @apply w-[64px] h-[64px];
+  @apply p-[16px];
+  box-sizing: content-box;
+  border: 1px solid #b68aff55;
+  @apply rounded-[24px];
+  background: #9147ff33;
+  color: #d6baff;
+}
+#audio-overlay h2 {
+  font-size: clamp(24px, 4vw, 30px);
+  line-height: 36px;
+  @apply font-bold;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 12px #000c;
+  text-wrap: balance;
+}
+#audio-overlay p {
+  @apply max-w-[360px];
+  color: #fff;
+  text-shadow:
+    0 1px 6px #000,
+    0 2px 16px #000c;
+  font-size: 16px;
+  line-height: 24px;
+  text-wrap: pretty;
+}
+#audio-overlay button {
+  padding: 12px 24px;
+  border: 1px solid #ffffff33;
+  @apply rounded-[9999px];
+  background: var(--accent);
+  color: white;
+  @apply font-semibold;
+  font-size: 16px;
+  line-height: 24px;
+  @apply cursor-pointer;
+  transition:
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+#audio-overlay button:hover {
+  background: #a66aff;
+}
+#live-notifications {
+  @apply fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  @apply w-[340px];
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 160px);
+  @apply overflow-y-auto flex;
+  @apply flex-col gap-[8px];
+}
+#update:not([hidden]) ~ #live-notifications {
+  bottom: 80px;
+}
+.live-notification {
+  @apply flex items-center;
+  flex: none;
+  border: 1px solid #9147ff88;
+  @apply rounded-[12px];
+  background: #1f1f1fe6;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 24px #18181899;
+  animation: menu-in 0.4s var(--ease);
+}
+.live-notification button {
+  border: 0;
+  background: none;
+  color: var(--fg);
+  @apply cursor-pointer rounded-[12px];
+  transition:
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+.live-notification button:hover {
+  background: var(--accent-soft);
+}
+.live-notification .watch {
+  @apply flex items-center;
+  @apply gap-[10px];
+  flex: 1;
+  min-width: 0;
+  @apply p-[12px] text-left;
+}
+.live-notification img {
+  @apply w-[32px] h-[32px];
+  border-radius: 50%;
+  flex: none;
+}
+.live-notification .watch span {
+  min-width: 0;
+}
+.live-notification b {
+  @apply block;
+  overflow-wrap: anywhere;
+}
+.live-notification b {
+  @apply font-bold;
+}
+.live-notification small {
+  @apply block mt-[2px];
+  color: #d6baff;
+  font-size: 12px;
+  line-height: 16px;
+}
+.live-notification .dismiss {
+  flex: none;
+  @apply flex p-[8px];
+  margin-right: 4px;
+  color: var(--dim);
+}
+.tile .bar .pp[aria-pressed="true"] .pause,
+.tile .bar .pp[aria-pressed="false"] .play {
+  @apply hidden;
+}
+/* The volume stays in the header and opens only on hover. */
+.snd-wrap {
+  @apply relative;
+  flex: none;
+  @apply flex;
+}
+
+/* A thin track with a round thumb. */
+.tile .volume input {
+  appearance: none;
+  -webkit-appearance: none;
+  writing-mode: horizontal-tb;
+  direction: ltr;
+  @apply w-[72px] h-[3px];
+  margin: 0 auto;
+  @apply rounded-[2px];
+  background: #ffffff33;
+  @apply cursor-pointer;
+}
+.tile .volume input::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  @apply w-[12px] h-[12px];
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tile .volume input::-moz-range-thumb {
+  @apply w-[12px] h-[12px];
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tile .volume input:focus-visible {
+  outline: none;
+}
+.tile .volume input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px #9147ff80;
+}
+.tile .volume input:disabled {
+  opacity: 0.3;
+  @apply cursor-default;
+}
+.stream-poster {
+  @apply absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  @apply object-contain block;
+  @apply pointer-events-none;
+}
+.player-embed {
+  @apply absolute;
+  inset: 0;
+  background: var(--video-bg);
+}
+.tile.poster-only .player {
+  @apply cursor-pointer;
+}
+.tile .player {
+  flex: 1;
+  min-height: 0;
+  @apply relative overflow-hidden;
+  background-color: var(--video-bg);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.tile-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  @apply grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.tile-body > .player {
+  min-width: 0;
+}
+.tile-body[data-chat-position="right"] {
+  grid-template-columns: minmax(0, 1fr) var(--chat-width);
+}
+.tile-body[data-chat-position="left"] {
+  grid-template-columns: var(--chat-width) minmax(0, 1fr);
+}
+.tile-body[data-chat-position="left"] > .chat {
+  grid-column: 1;
+  grid-row: 1;
+}
+.tile-body[data-chat-position="left"] > .player {
+  grid-column: 2;
+  grid-row: 1;
+}
+.tile-body[data-chat-position="bottom"] {
+  grid-template-rows: var(--video-height) minmax(0, 1fr);
+}
+.tile-body[data-chat-position="top"] {
+  grid-template-rows: minmax(0, 1fr) var(--video-height);
+}
+.tile-body[data-chat-position="top"] > .chat {
+  grid-column: 1;
+  grid-row: 1;
+}
+.tile-body[data-chat-position="top"] > .player {
+  grid-column: 1;
+  grid-row: 2;
+}
+.chat {
+  min-width: 0;
+  min-height: 0;
+  @apply flex flex-col;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+}
+[data-chat-position="bottom"] .chat {
+  border-left: 0;
+  border-top: 1px solid var(--line);
+}
+[data-chat-position="top"] .chat {
+  border-left: 0;
+  border-bottom: 1px solid var(--line);
+}
+[data-chat-position="left"] .chat {
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+.chat-options {
+  flex: none;
+  @apply relative;
+  margin-left: -8px;
+  @apply cursor-default;
+}
+.chat-options summary {
+  @apply flex items-center;
+  @apply justify-center w-[22px];
+  @apply h-[28px] rounded-[4px];
+  color: var(--fg);
+  @apply cursor-pointer;
+  list-style: none;
+  transition: background-color 0.2s var(--ease);
+}
+.chat-options summary svg {
+  transition: transform 0.3s var(--ease);
+}
+.chat-options[open] summary svg {
+  transform: rotate(180deg);
+}
+.chat-options summary::-webkit-details-marker {
+  @apply hidden;
+}
+.chat-options summary:hover,
+.chat-options[open] summary {
+  background: #ffffff26;
+}
+.chat-menu {
+  @apply absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  @apply w-[220px];
+  max-width: calc(100vw - 32px);
+  @apply p-[8px];
+  border: 1px solid var(--line);
+  @apply rounded-[8px];
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 12px 32px #181818a6;
+  font-size: 12px;
+  line-height: 16px;
+  animation: menu-in 0.3s var(--ease);
+}
+.chat-menu label {
+  @apply flex items-center;
+  @apply justify-between gap-[12px];
+  padding: 4px 4px 8px;
+}
+.chat-menu select {
+  min-width: 0;
+  border: 1px solid var(--line);
+  @apply rounded-[4px];
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  padding: 4px 6px;
+  transition: border-color 0.2s var(--ease);
+}
+.chat-menu select:hover,
+.chat-menu select:focus-visible {
+  border-color: #9147ff80;
+}
+.chat-menu a {
+  @apply block;
+  padding: 8px 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 4px 4px;
+  color: var(--fg);
+  text-decoration: none;
+  transition: background-color 0.2s var(--ease);
+}
+.chat-menu a:hover {
+  background: #ffffff0a;
+}
+.collaboration {
+  flex: none;
+}
+.collaboration summary {
+  @apply flex items-center;
+  @apply gap-[5px] h-[28px];
+  padding: 0 6px;
+  @apply rounded-[4px];
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+  @apply cursor-pointer;
+  background: #ffffff18;
+  transition: background-color 0.2s var(--ease);
+}
+.collaboration summary::-webkit-details-marker {
+  @apply hidden;
+}
+.collaboration summary:hover,
+.collaboration[open] summary {
+  background: #ffffff30;
+}
+.tile .collaboration summary span {
+  color: var(--fg);
+}
+.collaboration-menu {
+  @apply fixed;
+  z-index: 20;
+  @apply overflow-y-auto p-[8px];
+  border: 1px solid var(--line);
+  @apply rounded-[8px];
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 12px 32px #181818a6;
+  @apply cursor-default;
+  animation: menu-in 0.3s var(--ease);
+}
+.collaboration-heading {
+  @apply block;
+  padding: 4px 4px 8px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 16px;
+  @apply font-semibold;
+}
+.collaboration-row {
+  @apply flex items-center;
+  @apply gap-[8px];
+  padding: 6px 4px;
+  @apply rounded-[6px];
+  transition: background-color 0.2s var(--ease);
+}
+.collaboration-row:hover {
+  background: #ffffff0a;
+}
+.collaboration-row img {
+  flex: none;
+  @apply w-[28px] h-[28px];
+  border-radius: 50%;
+}
+.collaboration-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.tile .collaboration-name {
+  @apply block overflow-hidden;
+  @apply text-ellipsis whitespace-nowrap;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 16px;
+  @apply font-semibold;
+}
+.collaboration-row small {
+  @apply block overflow-hidden;
+  @apply text-ellipsis whitespace-nowrap;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 16px;
+}
+.tile .collaboration-menu button {
+  flex: none;
+  @apply h-[28px] rounded-[4px];
+  padding: 0 8px;
+  background: #9147ff40;
+  color: var(--fg);
+  font-size: 12px;
+  @apply font-semibold;
+  transition:
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+.tile .collaboration-menu button:hover:not(:disabled) {
+  background: var(--accent);
+}
+.tile .collaboration-menu button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.tile .collaboration-menu button:disabled {
+  opacity: 0.5;
+  @apply cursor-default;
+}
+.tile .collaboration-menu .add-collaboration {
+  width: 100%;
+  @apply mt-[8px];
+  background: var(--accent);
+}
+.tile .collaboration-menu .add-collaboration:hover:not(:disabled) {
+  background: #a66aff;
+}
+.chat iframe {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+}
+/* loader: covers Twitch's blurred poster while a tile that should play is not playing yet */
+/* a player that will not start: the loader fades away, a play button shows, and the click reaches the embed */
+.tile.stalled .tile-body .player iframe {
+  @apply pointer-events-auto;
+} /* outranks the simplified players rule below */
+/* sticky against the grid's scrollport: the message stays in the visible slice, whichever edge cuts the tile */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Simplified players keep their pointer events off the iframe: the video is not a button. */
+.tile:not(.full-player) .player iframe {
+  @apply pointer-events-none;
+}
+.tile .player iframe {
+  @apply absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  @apply block;
+}
+.tile .player iframe:fullscreen {
+  transform: none !important;
+  width: 100vw;
+  height: 100vh;
+}
+/* The image and loading status stay below the embed, including before READY. */
+.tile .player iframe,
+#preview iframe {
+  width: 100%;
+  height: 100%;
+  color-scheme: normal;
+  background: var(--video-bg);
+}
+/* Match Twitch's document color scheme: forcing dark makes its initially transparent canvas paint white. */
+.player-embed,
+#preview .player {
+  z-index: 2;
+  background: transparent;
+}
+.preview-cover {
+  @apply pointer-events-none;
+}
+.preview-cover .preview-status {
+  color: #eee;
+}
+#preview {
+  transform: none;
+  transition: none;
+}
+.tile:not(.full-player) .stream-info {
+  position: static;
+  flex: 1;
+  @apply flex items-center;
+  @apply gap-[8px];
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+.tile:not(.full-player) .stream-info[hidden] {
+  @apply hidden;
+}
+.tile:not(.full-player) .bar:has(.stream-info:not([hidden])) b {
+  flex: 0 1 auto;
+  max-width: 20%;
+}
+.tile:not(.full-player) .stream-category {
+  flex: 0 1 auto;
+  max-width: 35%;
+  margin-bottom: 0;
+}
+.tile:not(.full-player) .stream-title {
+  flex: 1;
+}
+.playback-status {
+  flex: none;
+  @apply w-[12px] h-[12px];
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1.1s linear infinite;
+}
+.playback-status.blocked {
+  @apply h-[20px];
+  border: 0;
+  color: var(--accent);
+  @apply text-center;
+  animation: none;
+}
+.playback-status[hidden] {
+  @apply hidden;
+}
+/* Keep volume inside the header and close it immediately when the pointer leaves, even after a click. */
+.tile .volume {
+  @apply absolute;
+  z-index: 6;
+  @apply flex items-center;
+  @apply rounded-[9999px];
+  border: 1px solid #ffffff10;
+  top: 50%;
+  right: 100%;
+  @apply w-[88px] h-[24px];
+  padding: 0 8px;
+  background: var(--panel);
+  backdrop-filter: none;
+  transform: translateY(-50%);
+  transition: none;
+  visibility: hidden;
+  opacity: 0;
+}
+.tile .snd-wrap:hover .volume {
+  visibility: visible;
+  opacity: 1;
+}
+.tile .volume input {
+  writing-mode: horizontal-tb;
+  direction: ltr;
+  @apply w-[72px] h-[3px];
+}
+#grid {
+  --cols: 1;
+  --tile-h: calc(var(--side) / var(--cols) * 9 / 16 + var(--bar));
+}
+#grid.focused {
+  grid-template-columns: 1fr repeat(
+      var(--cols),
+      calc(var(--side) / var(--cols))
+    );
+  grid-auto-rows: var(--tile-h);
+}
+#grid.focused::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1 / -1;
+} /* holds the first column so the small tiles flow into the side ones */
+#grid.focused.below::before {
+  grid-column: 1 / -1;
+  grid-row: 1;
+} /* portrait: holds the first row, the small tiles flow underneath */
+#grid.focused .tile.big {
+  @apply fixed;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  z-index: 5;
+} /* above the frames, info and drop zones of the small tiles scrolling underneath, below menus and the preview */
+#grid .tile.expanded,
+#grid.focused .tile.expanded {
+  @apply fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+}
+#grid .tile.expanded .bar {
+  @apply cursor-default;
+}
+#grid .tile.expanded .bar::before {
+  @apply hidden;
+}
+button,
+input,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #bf94ff;
+  outline-offset: 2px;
+}
+.action {
+  border: 1px solid var(--line);
+  @apply rounded-[6px];
+  background: var(--raised);
+  color: var(--fg);
+  padding: 8px 12px;
+  @apply cursor-pointer font-semibold;
+  transition:
+    border-color 0.2s var(--ease),
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+.action:hover {
+  border-color: #9147ff80;
+}
+#ctl #connect {
+  color: #bf94ff;
+}
+#connect svg {
+  fill: currentColor;
+}
+[hidden] {
+  display: none !important;
+}
+#notice,
+#list-empty,
+footer {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 16px;
+  text-wrap: pretty;
+}
+#notice:empty {
+  @apply hidden;
+}
+#notice {
+  @apply mt-[8px];
+}
+#list-empty {
+  @apply p-[16px];
+}
+footer {
+  @apply p-[12px];
+  border-top: 1px solid var(--line);
+}
+body.collapsed footer,
+body.collapsed #list-empty {
+  @apply hidden;
+}
+#search-actions {
+  @apply mt-[8px] flex;
+  @apply flex-col gap-[8px];
+}
+#search-state {
+  @apply mt-[8px];
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 16px;
+}
+#list.search-results li {
+  margin: 4px 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  @apply rounded-[8px];
+}
+#list.search-results li:hover {
+  border-color: #9147ff80;
+  background: var(--raised);
+}
+#list.search-results li.on {
+  border-color: var(--accent);
+}
+#list.search-results li.off {
+  opacity: 1;
+}
+#list.search-results img {
+  @apply w-[36px] h-[36px];
+}
+#list.search-results .name {
+  @apply block font-semibold;
+}
+#list.search-results .g {
+  @apply mt-[2px];
+}
+#list.search-results .v {
+  font-size: 12px;
+  color: #ff7775;
+}
+#list.search-results .favorite {
+  @apply p-[8px];
+}
+#list[aria-busy="true"] {
+  opacity: 0.65;
+}
+#list {
+  padding: 0;
+}
+#list .channel {
+  @apply flex items-center;
+  @apply gap-[8px];
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  @apply text-left cursor-pointer;
+}
+#list .channel:active:not(:disabled) {
+  transform: none;
+}
+#list .channel:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+#list .channel.blocked {
+  @apply cursor-not-allowed;
+}
+#list .favorite {
+  flex: none;
+  @apply flex;
+  border: 0;
+  @apply rounded-[4px];
+  background: none;
+  color: var(--dim);
+  @apply p-[6px] cursor-pointer;
+  transition:
+    color 0.2s var(--ease),
+    background-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+#list .favorite:hover {
+  color: var(--fg);
+  background: #ffffff14;
+}
+#list .favorite svg {
+  fill: none;
+  transition: fill 0.2s var(--ease);
+}
+#list .favorite[aria-pressed="true"] {
+  color: #bf94ff;
+}
+#list .favorite[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+@media (max-width: 700px) {
+  body {
+    --sb: 280px;
+  }
+  #side {
+    @apply absolute;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    box-shadow: 8px 0 30px #181818cc;
+  }
+  #main {
+    margin-left: 48px;
+  }
+  #update {
+    left: calc(50% + 24px);
+    max-width: calc(100vw - 72px);
+  }
+  body.collapsed #side {
+    box-shadow: none;
+  }
+  #empty {
+    @apply p-[20px];
+  }
+  #empty h1 {
+    font-size: 30px;
+    line-height: 36px;
+  }
+  #empty img {
+    @apply w-[70px] h-[70px];
+  }
+  #empty .gh {
+    top: 12px;
+    right: 12px;
+    padding: 4px 12px 4px 8px;
+    font-size: 12px;
+  }
+  #empty p {
+    font-size: 14px;
+    line-height: 20px;
+  }
+  #empty .start {
+    grid-template-columns: 1fr;
+    @apply gap-[8px];
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #empty .float,
+  dialog[open],
+  dialog[open]::backdrop,
+  .chat-menu,
+  .collaboration-menu,
+  .grid-menu,
+  #preview,
+  #update,
+  #audio-overlay,
+  .live-notification,
+  .preview-avatar::before,
+  #list li.skeleton,
+  #list li.pending .g {
+    animation: none;
+  }
+  #preview,
+  .tile .volume,
+  .tile:not(.full-player) .stream-info {
+    transition: none;
+    transform: none;
+  }
+}

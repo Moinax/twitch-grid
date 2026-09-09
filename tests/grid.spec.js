@@ -1,20 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const mockPlayer = `window.Twitch = { Player: class {
-  static READY = 'ready'; static PLAYING = 'playing';
-  constructor(el, options) { this.options = options; this.muted = true; this.paused = true; this.volume = 0.5;
-    this.listeners = {}; this.frame = document.createElement('iframe');
-    this.frame.dataset.controls = String(options.controls); el.appendChild(this.frame); }
-  addEventListener(event, callback) { (this.listeners[event] ||= []).push(callback);
-    if (event === 'ready') setTimeout(() => { if (!this.destroyed) callback(); }, 0); }
-  emit(event) { for (const callback of this.listeners[event] || []) callback(); }
-  getPlayerState() { return { playback: this.paused ? 'Paused' : 'Playing' }; }
-  setMuted(value) { this.muted = value; } getMuted() { return this.muted; }
-  setVolume(value) { this.volume = value; } getVolume() { return this.volume; }
-  setQuality(value) { this.quality = value; } getQuality() { return this.quality || 'auto'; }
-  play() { if (this.paused) { this.paused = false; this.emit('play'); this.emit('playing'); } }
-  pause() { if (!this.paused) { this.paused = true; this.emit('pause'); } }
-  destroy() { this.destroyed = true; this.frame.remove(); this.listeners = {}; }
-}};`;
+const { mockPlayer } = require('./fixtures.cjs');
 async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
@@ -272,6 +257,33 @@ test('a slow Twitch player script does not block account setup or overwrite the 
   await expect(page.locator('#grid [data-login="altair"]')).toHaveClass(/poster-only/);
   await expect(page.locator('#grid [data-login="altair"] iframe')).toHaveCount(0);
   expect(await page.evaluate(() => tiles.get('altair').paused)).toBe(true);
+  expect(errors).toEqual([]);
+});
+for (const [index, position] of ['navigation', 'hero', 'footer'].entries()) test(`landing ${position} connects on the first click after configuration loads`, async ({ page }) => {
+  const errors = await setup(page, true, true);
+  await api(page);
+  let config;
+  const holdConfig = route => { config = route; };
+  await page.route('**/config.json', holdConfig);
+  await page.route('https://id.twitch.tv/oauth2/authorize?**', route => route.fulfill({body:'Twitch authorization'}));
+  await page.goto('/');
+  const button = page.locator('#landing .landing-connect').nth(index);
+  await expect(button).toBeDisabled();
+  await expect.poll(() => !!config).toBe(true);
+  await config.fulfill({json:{twitchClientId:'test-client'}});
+  await page.unroute('**/config.json', holdConfig);
+  await expect(button).toBeEnabled();
+  const origin = new URL(page.url()).origin;
+  await button.click();
+  await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**', {timeout:5000});
+  const authorization = new URL(page.url()).searchParams;
+  expect(authorization.get('redirect_uri')).toBe(origin);
+  const state = authorization.get('state');
+  expect(state).toBeTruthy();
+  await page.goto(`${authorization.get('redirect_uri')}/#access_token=fake-token&state=${state}`);
+  await expect(page.locator('#disconnect')).toBeVisible();
+  await expect(page.locator('#landing')).toBeHidden();
+  await expect(page.locator('#list .channel')).toHaveCount(2);
   expect(errors).toEqual([]);
 });
 test('Twitch login still opens when the player script fails', async ({ page }) => {
@@ -1494,6 +1506,8 @@ for (const connected of [false,true]) test(`collaboration icons and participant 
   await expect(menu.locator('[data-participant="partner"] button')).toBeEnabled();
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.layout.'+layoutMode)).order)).toEqual(['live','third']);
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('tg.favorites')).map(s=>s.twitch))).toEqual(['live','sidebar']);
+  await menu.locator('[data-participant="partner"] button').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(3);
   expect(errors).toEqual([]);
 });
 test('collaboration menu fits mobile and disappears when sessions end or the API fails',async({page})=>{
@@ -2302,11 +2316,11 @@ test('dynamic grid preserves manual settings on return',async({page})=>{
 test('sidebar rapid return loads embed',async({page})=>{
   await setup(page); await page.clock.install();await page.goto('/');
   await page.evaluate(()=>{favorites=[channel({twitch:'live',online:true})];rebuild();});
-  await page.locator('#list [data-login="live"]').dispatchEvent('pointerenter',{pointerType:'mouse'});
+  await page.locator('#list [data-login="live"]').hover();
   await page.clock.runFor(100);
-  await page.locator('#list [data-login="live"]').dispatchEvent('pointerleave',{pointerType:'mouse'});
+  await page.mouse.move(900, 800);
   await page.clock.runFor(50);
-  await page.locator('#list [data-login="live"]').dispatchEvent('pointerenter',{pointerType:'mouse'});
+  await page.locator('#list [data-login="live"]').hover();
   await page.clock.runFor(2000);
   await expect(page.locator('#preview iframe')).toHaveCount(1);
 });

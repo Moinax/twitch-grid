@@ -19,5 +19,8 @@
     "api/search.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "buildCommand": "pnpm build",
+  "outputDirectory": "dist",
+  "framework": "vite"
 }

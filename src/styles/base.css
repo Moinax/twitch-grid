@@ -1,0 +1,81 @@
+:root {
+  --video-bg: #000;
+  --side: 22vw;
+  --bar: 34px;
+  --bg: #181818;
+  --panel: #1f1f1f;
+  --raised: #272727;
+  --line: #313131;
+  --fg: #efeff1;
+  --dim: #adadb8;
+  --accent: #9147ff;
+  --accent-soft: #9147ff26;
+  --live: #eb0400;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+* {
+  @apply box-border;
+  margin: 0;
+}
+/* Firefox uses its native thin width; Chromium and WebKit allow a precise 4px track. */
+:root {
+  --scrollbar-thumb: color-mix(in srgb, var(--dim) 25%, var(--panel));
+}
+:root[data-theme="light"] {
+  --scrollbar-thumb: color-mix(in srgb, var(--dim) 70%, var(--panel));
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+@supports selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  ::-webkit-scrollbar {
+    @apply w-[4px] h-[4px];
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    @apply rounded-[999px];
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--scrollbar-thumb) 75%, var(--dim));
+  }
+  ::-webkit-scrollbar-button {
+    @apply hidden;
+  }
+}
+@media (forced-colors: active) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: auto;
+  }
+}
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    500 14px/20px Manrope,
+    system-ui,
+    sans-serif;
+  @apply overflow-hidden;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+body {
+  @apply flex;
+}

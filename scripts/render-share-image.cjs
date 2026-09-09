@@ -25,7 +25,7 @@ async function render() {
     await page.goto(`http://localhost:${port}/`, { waitUntil: 'networkidle' });
     await page.addStyleTag({ content: card });
     await page.evaluate(() => { document.body.classList.add('landing'); return document.fonts.ready; });
-    const output = path.join(__dirname, '../assets/share-card.png');
+    const output = path.join(__dirname, '../public/assets/share-card.png');
     await page.screenshot({ path: output });
     console.log(output);
   } finally {
