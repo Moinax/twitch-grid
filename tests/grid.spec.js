@@ -1731,8 +1731,8 @@ test('a pause right after our own unmute counts as blocked playback, never as a 
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).paused.one)).toBe(false);
   await page.evaluate(() => { tiles.get('one').player.emit('play'); tiles.get('one').player.emit('playing'); });
   expect(await page.evaluate(() => tiles.get('one').playbackBlocked)).toBe(false);
-  await page.waitForTimeout(1100);
-  await page.evaluate(() => tiles.get('one').player.emit('pause'));
+  await page.waitForTimeout(2100); // Let the watchdog restore audio, then leave the unmute grace period.
+  await page.evaluate(() => tiles.get('one').player.pause());
   expect(await page.evaluate(() => tiles.get('one').paused)).toBe(true);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).paused.one)).toBe(true);
   expect(errors).toEqual([]);
@@ -2138,10 +2138,12 @@ for (const presentation of ['spotlight', 'single', 'expanded']) test(`pause stop
   await tile.locator('.pp').click(); await video.hover(); await page.clock.runFor(1500);
   await expect(video.locator('iframe')).toHaveCount(0);
   await tile.locator('.pp').click(); await page.clock.runFor(1500);
-  // A pause issued by the native player must also remain paused under the pointer.
+  // A native pause keeps its iframe and stays paused under the pointer.
   await page.evaluate(() => { const t=tiles.get('one'); t.unmutedAt=0; t.player.pause(); });
   await page.clock.runFor(1500);
-  await expect(video.locator('iframe')).toHaveCount(0);
+  await expect(video.locator('iframe')).toHaveCount(1);
+  await expect(tile.locator('.preview-cover')).toBeHidden();
+  expect(await page.evaluate(() => tiles.get('one').player.paused)).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -2563,4 +2565,41 @@ for (const savedRendering of ['current','trial-1']) test(`saved ${savedRendering
   await expect(page.locator('html')).toHaveAttribute('lang','en');
   await expect(page.locator('html')).toHaveAttribute('data-theme','light');
   expect(await page.evaluate(() => 'playerRendering' in preferences)).toBe(false);
+});
+
+test('native fullscreen keeps the iframe through a lasting pause, resize and exit', async ({ page }) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?**', r => r.fulfill({json:{data:[{broadcaster_login:'one',is_live:true}]}}));
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one']})));
+  await page.clock.install();
+  await page.goto('/'); await page.clock.runFor(2500);
+  await page.locator('#q').hover();
+  await page.evaluate(async () => {
+    const t = tiles.get('one');
+    window.originalPlayer = t.player;
+    window.originalFrame = t.player.frame;
+    t.player.pause();
+    await t.player.frame.requestFullscreen();
+  });
+  await page.clock.runFor(2500);
+  // Relayout must preserve the iframe while it owns fullscreen.
+  await page.evaluate(() => layout());
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => document.fullscreenElement === originalFrame)).toBe(true);
+  expect(await page.evaluate(() => tiles.get('one').player === originalPlayer && !originalPlayer.destroyed)).toBe(true);
+  await expect(page.locator('#grid .preview-cover')).toBeHidden();
+  await page.evaluate(() => document.exitFullscreen());
+  await page.clock.runFor(2000);
+  expect(await page.evaluate(() => tiles.get('one').player === originalPlayer && originalPlayer.paused)).toBe(true);
+  await expect(page.locator('#grid .preview-cover')).toBeHidden();
+  // Hovering a native pause must not turn it into an autoplay preview.
+  await page.locator('#grid .bar').hover(); await page.clock.runFor(1000);
+  expect(await page.evaluate(() => originalPlayer.paused)).toBe(true);
+  await page.evaluate(() => originalPlayer.play()); await page.clock.runFor(1500);
+  expect(await page.evaluate(() => ({same:tiles.get('one').player === originalPlayer,paused:tiles.get('one').paused}))).toEqual({same:true,paused:false});
+  // An explicit grid pause still releases the player to save resources.
+  await page.locator('#q').hover();
+  await page.locator('#playall').click(); await page.clock.runFor(1500);
+  await expect(page.locator('#grid iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

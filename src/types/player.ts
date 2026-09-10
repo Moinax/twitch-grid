@@ -67,6 +67,9 @@ export interface Tile {
   hasPlayed?: boolean;
   hoverSuppressed?: boolean;
   hovered?: boolean;
+  nativeHold?: boolean;
+  nativePaused?: boolean;
+  wasPlaying?: boolean;
   nativeAudio?: { muted: boolean; volume: number } | null;
   pendingMute?: { value: boolean; at: number } | null;
   nudged?: boolean;

@@ -93,6 +93,7 @@ export function startWorkspace(
   }
   function hoverPlayback(t: Tile) {
     if (
+      t.nativeHold ||
       t.hoverSuppressed ||
       tiles.size === 1 ||
       t.el.dataset.login === focused ||
@@ -588,7 +589,10 @@ export function startWorkspace(
   // a relayout flickers visibility for a frame or two: let it settle before touching the player
   // Expanded and front tiles sit fixed over the grid's box, outside its containing block, so the observer never sees
   // them: they are on screen by construction. A tile with its sound on keeps playing wherever it is, the sound is the point
+  const inFullscreen = (t: Tile) =>
+    !!document.fullscreenElement && t.el.contains(document.fullscreenElement);
   const seen = (t: Tile) =>
+    inFullscreen(t) ||
     t.visible ||
     t.el.classList.contains("big") ||
     expanded === t.el.dataset.login!;
@@ -639,6 +643,13 @@ export function startWorkspace(
   // the player also pauses on its own during some reflows: whatever should be playing gets nudged back every second
   function watchdog(t: Tile) {
     if (!t.ready) return;
+    const playingNow = t.player!.getPlayerState().playback === "Playing";
+    if (playingNow && !t.wasPlaying && activated) {
+      applyMuted(t, t.muted);
+      t.player!.setVolume(t.volume);
+      t.nativeAudio = { muted: t.muted, volume: t.volume };
+    }
+    t.wasPlaying = playingNow;
     if (t.controls) {
       readNativeControls(t);
       mark(t);
@@ -913,6 +924,7 @@ export function startWorkspace(
         onExpand={() => setExpanded(expanded === s.twitch ? null : s.twitch)}
         onPause={() => {
           if (t.channel.online === false) return;
+          t.nativeHold = false;
           if (allPaused || tilePaused(t)) resumeTile(t);
           else {
             t.paused = true;
@@ -1091,6 +1103,7 @@ export function startWorkspace(
   }
 
   function resumeTile(t: Tile) {
+    t.nativeHold = false;
     if (allPaused) {
       tiles.forEach((other) => {
         if (other !== t && other.channel.online !== false) {
@@ -1106,10 +1119,14 @@ export function startWorkspace(
   }
   // a still image instead of an idle iframe: paused without a hover
   function showPoster(t: Tile) {
+    // Keep the native player and its session through pauses and fullscreen transitions.
+    if (inFullscreen(t)) return false;
     return (
       t.channel.online === false ||
       t.waitingForStatus ||
-      ((allPaused || tilePaused(t)) && !hoverPlayback(t))
+      ((allPaused || tilePaused(t)) &&
+        !hoverPlayback(t) &&
+        !(t.nativeHold && t.controls && !allPaused))
     );
   }
   function updatePoster(t: Tile) {
@@ -1131,6 +1148,7 @@ export function startWorkspace(
       : "";
   }
   function releasePlayer(t: Tile) {
+    t.nativeHold = false;
     readNativeControls(t);
     if (t.ready && t.controls) t.quality = t.player!.getQuality?.();
     const player = t.player;
@@ -1154,6 +1172,9 @@ export function startWorkspace(
   // Twitch only accepts the controls option when creating an embed. Recreate the changed
   // tile, preserving its settings; all other iframes keep playing.
   function mountPlayer(t: Tile, controls: boolean) {
+    // Removing a fullscreen iframe also forces the browser to exit fullscreen.
+    if (t.player && inFullscreen(t)) return;
+    if (!controls) t.nativeHold = false;
     t.el.classList.toggle("full-player", controls);
     if (showPoster(t)) {
       releasePlayer(t);
@@ -1186,6 +1207,8 @@ export function startWorkspace(
     t.nativeAudio = null;
     t.pendingMute = null;
     t.nudged = false;
+    t.wasPlaying = false;
+    t.nativePaused = false;
     t.playbackBlocked = false;
     t.playbackError = false;
     t.el.classList.remove("offline", "partial");
@@ -1267,11 +1290,13 @@ export function startWorkspace(
             if (Date.now() - (t.unmutedAt || 0) < 1000)
               t.playbackBlocked = true;
             else {
+              t.nativeHold = true;
               t.paused = true;
               t.hoverSuppressed = true;
             }
           }
           if (event === "play" && !t.commandedPlay) {
+            t.nativeHold = false;
             t.paused = false;
             // A native Play resumes this stream even after the global pause.
             if (allPaused) {
@@ -1289,6 +1314,9 @@ export function startWorkspace(
           save();
         }
         if (event === "play") t.commandedPlay = false;
+        if (event === "pause") t.nativePaused = true;
+        else if (event === "play" || event === "playing")
+          t.nativePaused = false;
         if (event === "pause" && showPoster(t)) sync(t);
         mark(t);
       });
@@ -1301,7 +1329,14 @@ export function startWorkspace(
     paintSound(t);
   }
   function readNativeControls(t: Tile) {
-    if (!t.controls || !t.ready || !t.hasPlayed || t.previewing) return;
+    if (
+      !t.controls ||
+      !t.ready ||
+      !t.hasPlayed ||
+      t.previewing ||
+      (t.player!.getPlayerState().playback !== "Playing" && !t.nativePaused)
+    )
+      return;
     const audio = {
       muted: t.player!.getMuted(),
       volume: t.player!.getVolume(),
@@ -1769,6 +1804,7 @@ export function startWorkspace(
     // tile's own button can override it afterwards.
     allPaused = !gridPaused();
     tiles.forEach((t) => {
+      t.nativeHold = false;
       if (!allPaused && t.channel.online !== false) t.paused = false;
       if (allPaused) t.hoverSuppressed = !!t.hovered;
       t.ppIcon();
