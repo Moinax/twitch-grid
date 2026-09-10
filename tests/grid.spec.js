@@ -446,10 +446,11 @@ test('the spotlight button and a click on a small tile bring one stream in front
   await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'false');
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'two', muted: [true, false, true] });
-  // a stream from the sidebar takes the spotlight's place
+  // a stream from the sidebar joins the grid without changing the spotlight
   await favorite(page, 'four'); await page.locator('#list [data-login="four"] .channel').click();
-  expect(await page.evaluate(() => focused)).toBe('four');
-  await expect(page.locator('#grid [data-login="four"] iframe')).toHaveAttribute('data-controls', 'true');
+  expect(await page.evaluate(() => focused)).toBe('two');
+  await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'true');
+  await expect(page.locator('#grid [data-login="four"] iframe')).toHaveAttribute('data-controls', 'false');
   // Escape drops the spotlight once the sidebar preview is out of the way
   await page.locator('#q').focus(); await expect.poll(() => page.evaluate(() => previewRow)).toBeNull();
   await page.keyboard.press('Escape');

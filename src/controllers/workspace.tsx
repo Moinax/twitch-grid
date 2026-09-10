@@ -808,10 +808,7 @@ export function startWorkspace(
     leavePreview,
   } = previewController;
   function toggle(s: Channel) {
-    // the sidebar fills the grid; a spotlight hands its place to the stream clicked
-    if (focused && focused !== s.twitch) {
-      if (tiles.has(s.twitch) || add(s)) focus(s.twitch);
-    } else if (tiles.has(s.twitch)) {
+    if (tiles.has(s.twitch)) {
       if (isLiveGrid()) focus(s.twitch);
       else remove(s.twitch);
     } else add(s);
