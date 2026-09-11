@@ -2897,12 +2897,17 @@ export function startWorkspace(
       return 1;
     return wantMuted(t) ? 0.25 : 0.5;
   }
-  // Every minute credits each tile actually playing in front of the viewer: wantsPlayback accounts for the global
-  // pause, the landing, a blocked autoplay and tiles off-screen. Offline is checked here because showPoster lets a
-  // fullscreen tile through, and a confirmed-offline stream shows nothing however big it is.
+  // Every minute credits each tile actually playing in front of the viewer. The player has the last word: wantsPlayback
+  // is only an intention, and a stream still loading, blocked or errored must not earn a minute. wantsPlayback then
+  // accounts for the global pause, the landing, a blocked autoplay and tiles off-screen; offline is checked here
+  // because showPoster lets a fullscreen tile through.
   setInterval(() => {
     const playing = [...tiles.values()].filter(
-      (t) => wantsPlayback(t) && t.channel.online !== false,
+      (t) =>
+        t.ready &&
+        t.player?.getPlayerState().playback === "Playing" &&
+        wantsPlayback(t) &&
+        t.channel.online !== false,
     );
     if (!playing.length) return;
     watched = loadWatched();

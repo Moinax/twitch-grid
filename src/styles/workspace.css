@@ -619,6 +619,9 @@ dialog input:focus-visible {
 }
 [data-theme="light"] .open-grid[aria-current="true"] strong,
 [data-theme="light"] #grid-switcher summary > svg:first-child,
+[data-theme="light"] #list-order-menu:not([data-order="popular"]) summary,
+[data-theme="light"] #list-order-menu[open] summary,
+[data-theme="light"] .grid-menu .open-grid[aria-pressed="true"],
 [data-theme="light"] #grid-lock[aria-pressed="true"],
 [data-theme="light"] #soundfollow[aria-pressed="true"],
 [data-theme="light"] .tile .bar .spotlight[aria-pressed="true"] {

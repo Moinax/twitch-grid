@@ -2946,6 +2946,11 @@ test('watch time only accrues while a tile actually plays', async ({ page }) => 
   await page.clock.runFor(60_000);
   await expect.poll(score).toBeGreaterThan(0);
   const played = await score();
+  // A player that stalls or is blocked reports Paused while the app still intends to play: no credit either.
+  await page.evaluate(() => { tiles.get('alpha').player.paused = true; });
+  await page.clock.runFor(120_000);
+  expect(await score()).toBe(played);
+  await page.evaluate(() => { tiles.get('alpha').player.paused = false; });
   await page.locator('#playall').click(); // global pause leaves t.paused untouched, so the tile must stop earning
   await page.clock.runFor(180_000);
   expect(await score()).toBe(played);
