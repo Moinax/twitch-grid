@@ -286,8 +286,8 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
             type="button"
             onClick={() => actions.toggleSoundFollow?.()}
             aria-pressed="false"
-            title="Son au survol"
-            data-i18n-title="Son au survol"
+            title="Son au survol (Shift)"
+            data-i18n-title="Son au survol (Shift)"
             aria-label="Son au survol"
             data-i18n-aria-label="Son au survol"
           >

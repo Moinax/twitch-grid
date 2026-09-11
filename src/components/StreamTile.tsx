@@ -1,13 +1,13 @@
 import { CollaborationMenu } from "./CollaborationMenu";
 import { StreamPoster } from "./StreamPoster";
-import type { PointerEventHandler } from "react";
+import type { MouseEventHandler, PointerEventHandler } from "react";
 import type { ChatPosition } from "../types/domain";
 interface Props {
   display: string;
   onSpotlight: () => void;
   onExpand: () => void;
   onPause: () => void;
-  onPlayerClick: () => void;
+  onPlayerClick: MouseEventHandler<HTMLDivElement>;
   onPlayerFullscreen: () => void;
   onVolume: (value: number) => void;
   onSound: () => void;
@@ -307,6 +307,12 @@ export function StreamTile({
       <div className="tile-body">
         <div
           className="player"
+          onClickCapture={(event) => {
+            if (event.shiftKey) {
+              event.stopPropagation();
+              onSpotlight();
+            }
+          }}
           onClick={onPlayerClick}
           onDoubleClick={onPlayerFullscreen}
         >
@@ -336,6 +342,15 @@ export function StreamTile({
           </div>
         </div>
         <section className="chat" hidden></section>
+        <div
+          className="chat-resize"
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize chat"
+          data-i18n-aria-label="Resize chat"
+          aria-valuemin={10}
+          aria-valuemax={90}
+        />
       </div>
       <div className="drop" data-i18n="Déposer ici">
         Drop here

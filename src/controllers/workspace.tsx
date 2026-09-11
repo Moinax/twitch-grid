@@ -4,6 +4,7 @@ import { WordReveal } from "../components/WordReveal";
 import { watchForUpdates } from "./updates";
 import { syncPlayerTooltips } from "./tooltips";
 import { createPreviewController } from "./preview";
+import { setupChatResize } from "./chatResize";
 import { fit, layoutChat, nameFrame, previewImageURL } from "./videoLayout";
 import { createLifecycle } from "./lifecycle";
 import type {
@@ -191,6 +192,7 @@ export function startWorkspace(
             "paused",
             "chatOpen",
             "chatPosition",
+            "chatSize",
           ] as const
         ).map((key) => [
           key,
@@ -240,7 +242,12 @@ export function startWorkspace(
       chatPosition,
       automatic,
     );
-    if (tiles.has(login)) tiles.get(login)!.waitingForStatus = s.online == null;
+    if (tiles.has(login)) {
+      const t = tiles.get(login)!;
+      t.waitingForStatus = s.online == null;
+      t.chatSize = snapshot.chatSize?.[login];
+      if (!t.chat.hidden) layoutChat(t);
+    }
     const before = snapshot.spotlightMuted?.[login];
     if (typeof before === "boolean" && tiles.has(login))
       tiles.get(login)!.spotlightMuted = before; // what the spotlight gives back on the way out
@@ -1099,6 +1106,7 @@ export function startWorkspace(
       chat: el.querySelector<HTMLElement>(".chat")!,
       chatOptions: el.querySelector<HTMLDetailsElement>(".chat-options")!,
     };
+    setupChatResize(t, save);
     t.poster.onerror = () => {
       t.poster.hidden = true;
     };
@@ -3235,7 +3243,6 @@ export function startWorkspace(
       if (
         e.key !== "Shift" ||
         e.repeat ||
-        soundFollow ||
         !restored ||
         (e.target instanceof HTMLElement &&
           (e.target.isContentEditable ||
@@ -3243,10 +3250,13 @@ export function startWorkspace(
         document.querySelector("dialog[open]")
       )
         return;
+      document.body.classList.add("shift-spotlight");
+      if (soundFollow) return;
       shiftStartedFollow = true;
       actions.toggleSoundFollow?.();
     });
     const releaseShiftFollow = () => {
+      document.body.classList.remove("shift-spotlight");
       if (!shiftStartedFollow) return;
       shiftStartedFollow = false;
       if (soundFollow) actions.toggleSoundFollow?.();

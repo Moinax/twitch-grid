@@ -57,6 +57,7 @@ export interface LayoutSnapshot {
   volume?: Record<string, number>;
   paused?: Record<string, boolean | null>;
   chatOpen?: Record<string, boolean> | boolean;
+  chatSize?: Record<string, { horizontal?: number; vertical?: number }>;
   chatPosition?:
     Record<string, ChatPosition | "below"> | ChatPosition | "below";
 }

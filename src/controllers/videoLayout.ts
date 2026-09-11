@@ -67,10 +67,37 @@ export function layoutChat(t: Tile) {
         : "right"
       : t.chatPosition;
   t.body.dataset.chatPosition = position;
-  t.body.style.setProperty("--chat-width", chatWidth + "px");
+  const horizontal = position === "left" || position === "right";
+  const saved = t.chatSize?.[horizontal ? "horizontal" : "vertical"];
+  const fraction =
+    typeof saved === "number" && Number.isFinite(saved)
+      ? Math.min(0.9, Math.max(0.1, saved))
+      : undefined;
+  const size =
+    fraction === undefined
+      ? horizontal
+        ? chatWidth
+        : height - Math.min(width / ratio, height - chatHeight)
+      : fraction * (horizontal ? width : height);
+  t.body.style.setProperty(
+    "--chat-width",
+    (horizontal ? size : chatWidth) + "px",
+  );
+  t.body.style.setProperty("--chat-height", size + "px");
+  const handle = t.body.querySelector<HTMLElement>(".chat-resize")!;
+  handle.setAttribute(
+    "aria-orientation",
+    horizontal ? "vertical" : "horizontal",
+  );
+  handle.setAttribute(
+    "aria-valuenow",
+    String(Math.round((size / (horizontal ? width : height)) * 100)),
+  );
   t.body.style.setProperty(
     "--video-height",
-    Math.min(width / ratio, height - chatHeight) + "px",
+    (horizontal
+      ? Math.min(width / ratio, height - chatHeight)
+      : height - size) + "px",
   );
   fit(t.el.querySelector<HTMLDivElement>(".player")!);
 }

@@ -57,6 +57,7 @@ export interface Tile {
   paused: boolean | null;
   chatOpen: boolean;
   chatPosition: ChatPosition;
+  chatSize?: { horizontal?: number; vertical?: number };
   ready: boolean;
   timer?: number | null;
   offlineTimer?: number | null;

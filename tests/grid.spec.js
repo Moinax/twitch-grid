@@ -669,10 +669,16 @@ test('Shift and the follow button temporarily release global mute', async ({ pag
   await expect(follow).toHaveAttribute('aria-pressed', 'true');
   await expect(mute).toHaveAttribute('aria-pressed', 'false');
   await expect.poll(() => muted('one')).toBe(false);
+  await expect(follow).toHaveAttribute('data-tip', /Shift/);
+  const one = page.locator('#grid [data-login="one"]');
+  await one.locator('.player').click();
+  await expect(one).toHaveClass(/big/);
   await page.keyboard.up('Shift');
   await expect(follow).toHaveAttribute('aria-pressed', 'false');
   await expect(mute).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => muted('one')).toBe(true);
+  await one.locator('.spotlight').click();
+  await expect(one).not.toHaveClass(/big/);
   await follow.click();
   await expect(mute).toHaveAttribute('aria-pressed', 'false');
   await page.keyboard.press('Shift');
@@ -2762,5 +2768,47 @@ test('native fullscreen keeps the iframe through a lasting pause, resize and exi
   await page.locator('#q').hover();
   await page.locator('#playall').click(); await page.clock.runFor(1500);
   await expect(page.locator('#grid iframe')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('chat resizes on both axes without reloading frames and remembers each size', async ({page}) => {
+  const errors = await setup(page); await mockChat(page);
+  await page.setViewportSize({width:1600,height:1000});
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tg.layout.guest')) localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one'],chatOpen:true}));
+  });
+  await page.goto('/'); await readyPlayers(page);
+  const tile = page.locator('#grid .tile'), handle = tile.locator('.chat-resize');
+  await page.evaluate(() => {window.resizePlayer=tiles.get('one').player;window.resizeChat=tiles.get('one').chat.firstElementChild;});
+  for (const position of ['right','left','bottom','top']) {
+    await selectChatPosition(tile, position);
+    const before = await tile.locator('.chat').boundingBox();
+    const grip = await handle.boundingBox();
+    const horizontal = ['left','right'].includes(position);
+    const sign = ['left','top'].includes(position) ? 1 : -1;
+    await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x+grip.width/2+(horizontal ? sign*80 : 0),grip.y+grip.height/2+(horizontal ? 0 : sign*80),{steps:8});
+    await page.mouse.up();
+    const after = await tile.locator('.chat').boundingBox();
+    expect(after[horizontal?'width':'height']-before[horizontal?'width':'height']).toBeCloseTo(80,0);
+    await expect(tile.locator('.tile-body')).not.toHaveClass(/resizing-chat/);
+    expect(await page.evaluate(() => tiles.get('one').player===window.resizePlayer && tiles.get('one').chat.firstElementChild===window.resizeChat)).toBe(true);
+  }
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).chatSize.one);
+  expect(saved.horizontal).toBeGreaterThan(0.1);
+  expect(saved.vertical).toBeGreaterThan(0.1);
+  await page.reload(); await readyPlayers(page);
+  for (const position of ['right','bottom']) {
+    await selectChatPosition(tile,position);
+    const body=await tile.locator('.tile-body').boundingBox(),chat=await tile.locator('.chat').boundingBox();
+    expect(position==='right'?chat.width/body.width:chat.height/body.height).toBeCloseTo(saved[position==='right'?'horizontal':'vertical'],2);
+  }
+  await handle.focus(); await page.keyboard.press('Home');
+  await expect(handle).toHaveAttribute('aria-valuenow','10');
+  await page.keyboard.press('End');
+  await expect(handle).toHaveAttribute('aria-valuenow','90');
+  await tile.locator('.chat-toggle').click();
+  await expect(handle).toBeHidden();
   expect(errors).toEqual([]);
 });

@@ -1581,3 +1581,57 @@ body.dragging #grid video {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
+
+.tile-body {
+  position: relative;
+}
+.chat-resize {
+  display: none;
+  position: absolute;
+  z-index: 5;
+  touch-action: none;
+  user-select: none;
+}
+.tile-body[data-chat-position] > .chat-resize {
+  display: block;
+}
+.chat-resize:hover,
+.chat-resize:focus-visible,
+.resizing-chat > .chat-resize {
+  background: var(--accent, #9146ff);
+  outline: none;
+}
+[data-chat-position="right"] > .chat-resize,
+[data-chat-position="left"] > .chat-resize {
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+[data-chat-position="right"] > .chat-resize {
+  right: calc(var(--chat-width) - 4px);
+}
+[data-chat-position="left"] > .chat-resize {
+  left: calc(var(--chat-width) - 4px);
+}
+[data-chat-position="top"] > .chat-resize,
+[data-chat-position="bottom"] > .chat-resize {
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: row-resize;
+}
+[data-chat-position="top"] > .chat-resize {
+  top: calc(var(--chat-height) - 4px);
+}
+[data-chat-position="bottom"] > .chat-resize {
+  bottom: calc(var(--chat-height) - 4px);
+}
+.resizing-chat iframe {
+  pointer-events: none;
+}
+
+/* Let Shift-click reach the player container instead of the Twitch embed. */
+body.shift-spotlight .tile .player iframe {
+  pointer-events: none;
+}

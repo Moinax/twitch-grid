@@ -114,6 +114,7 @@ export const translations: Record<string, [string, string]> = {
   "Afficher le chat": ["Show chat", "Chat tonen"],
   "Masquer le chat": ["Hide chat", "Chat verbergen"],
   "Options du chat": ["Chat options", "Chatopties"],
+  "Resize chat": ["Resize chat", "Chatgrootte aanpassen"],
   "Position du chat": ["Chat position", "Chatpositie"],
   "Ouvrir sur Twitch ↗": ["Open on Twitch ↗", "Openen op Twitch ↗"],
   Auto: ["Auto", "Auto"],
@@ -126,6 +127,10 @@ export const translations: Record<string, [string, string]> = {
   "Couper tous les sons": ["Mute every stream", "Alle geluiden dempen"],
   Réglages: ["Settings", "Instellingen"],
   "Table de mixage": ["Sound board", "Mengpaneel"],
+  "Son au survol (Shift)": [
+    "Sound follows the mouse (Shift)",
+    "Geluid volgt de muis (Shift)",
+  ],
   "Son au survol": ["Sound follows the mouse", "Geluid volgt de muis"],
   "Aucun stream dans la grille.": [
     "No stream in the grid.",
