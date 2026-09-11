@@ -14,7 +14,9 @@ export function fit(p: HTMLElement) {
   };
   const poster = p.querySelector<HTMLImageElement>(".stream-poster")!;
   if (poster) Object.assign(poster.style, bounds);
-  const frame = p.querySelector<HTMLIFrameElement>("iframe")!;
+  const frame = p.querySelector<HTMLIFrameElement | HTMLVideoElement>(
+    "iframe, video",
+  )!;
   if (!frame) return;
   if (document.fullscreenElement === frame) {
     for (const property of ["width", "height", "left", "top"])

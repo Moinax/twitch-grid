@@ -1,3 +1,4 @@
+import { playerConstructor } from "../services/player";
 import type { WorkspaceActions } from "../types/actions";
 import { WordReveal } from "../components/WordReveal";
 import { watchForUpdates } from "./updates";
@@ -93,6 +94,7 @@ export function startWorkspace(
   }
   function hoverPlayback(t: Tile) {
     if (
+      preferences.player === "custom" ||
       t.nativeHold ||
       t.hoverSuppressed ||
       tiles.size === 1 ||
@@ -232,7 +234,7 @@ export function startWorkspace(
       tiles.get(login)!.spotlightMuted = before; // what the spotlight gives back on the way out
   }
   function restore() {
-    if (!layoutMode || restored || !window.Twitch?.Player) return;
+    if (!layoutMode || restored || !playerConstructor()) return;
     const st =
       gridStore?.active.layout ||
       readStored<LayoutSnapshot>("tg.layout." + layoutMode, {});
@@ -307,9 +309,12 @@ export function startWorkspace(
   function loadPlayer() {
     const script = document.createElement("script");
     script.src = "https://player.twitch.tv/js/embed/v1.js";
-    script.onload = restore;
+    script.onload = () => {
+      restore();
+      for (const t of tiles.values()) sync(t);
+    };
     script.onerror = () => {
-      if (!$("#notice").textContent)
+      if (preferences.player === "embed" && !$("#notice").textContent)
         notice(
           tr(
             "Le lecteur Twitch est indisponible. La connexion et la recherche restent accessibles.",
@@ -352,7 +357,9 @@ export function startWorkspace(
       button.title = visible ? tr("Masquer le chat") : tr("Afficher le chat");
       button.setAttribute("aria-label", button.title);
       if (!visible) {
-        t.chat.querySelector<HTMLIFrameElement>("iframe")?.remove();
+        t.chat
+          .querySelector<HTMLIFrameElement | HTMLVideoElement>("iframe, video")
+          ?.remove();
         delete t.body.dataset.chatPosition;
         continue;
       }
@@ -361,14 +368,24 @@ export function startWorkspace(
         (document.documentElement.dataset.theme === "dark"
           ? "&darkpopout=1"
           : "");
-      if (!t.chat.querySelector<HTMLIFrameElement>("iframe")!) {
+      if (
+        !t.chat.querySelector<HTMLIFrameElement | HTMLVideoElement>(
+          "iframe, video",
+        )!
+      ) {
         const frame = document.createElement("iframe");
         frame.src = chatSrc;
         frame.title = tr("Chat de {name}", { name: t.channel.display });
         t.chat.append(frame);
       }
-      if (t.chat.querySelector<HTMLIFrameElement>("iframe")!.src !== chatSrc)
-        t.chat.querySelector<HTMLIFrameElement>("iframe")!.src = chatSrc;
+      if (
+        t.chat.querySelector<HTMLIFrameElement | HTMLVideoElement>(
+          "iframe, video",
+        )!.src !== chatSrc
+      )
+        t.chat.querySelector<HTMLIFrameElement | HTMLVideoElement>(
+          "iframe, video",
+        )!.src = chatSrc;
       layoutChat(t);
     }
   }
@@ -711,10 +728,18 @@ export function startWorkspace(
         Date.now() - (t.readyAt || Date.now()) > 8000);
     t.el.classList.toggle("stalled", stalled);
     if (playing) t.hasPlayed = true;
-    // Keep the still until playback, beneath the embed.
+    const pauseOverlay =
+      preferences.player === "custom" &&
+      paused &&
+      !playing &&
+      !offline &&
+      !t.waitingForStatus &&
+      t.hasPlayed;
+    t.cover.classList.toggle("pause-overlay", pauseOverlay);
+    // Reuse the cover over the frozen video while a custom player is paused.
     t.cover.classList.toggle(
       "gone",
-      !offline && !showPoster(t) && (playing || t.hasPlayed),
+      !pauseOverlay && !offline && !showPoster(t) && (playing || t.hasPlayed),
     ); // a class, so the still fades instead of vanishing
     t.el.classList.toggle("player-ready", t.ready);
     // An offline channel shows its avatar and status over its banner, or over the dark tile when it has none.
@@ -902,7 +927,7 @@ export function startWorkspace(
       );
       return false;
     }
-    if (!window.Twitch?.Player) {
+    if (!playerConstructor()) {
       notice(
         tr(
           "Le lecteur Twitch est indisponible. Recharge la page pour réessayer.",
@@ -1114,7 +1139,7 @@ export function startWorkspace(
     t.ppIcon();
     paintPlayAll();
   }
-  // a still image instead of an idle iframe: paused without a hover
+  // Paused embeds use posters; mounted custom players retain their last frame.
   function showPoster(t: Tile) {
     // Keep the native player and its session through pauses and fullscreen transitions.
     if (inFullscreen(t)) return false;
@@ -1122,6 +1147,7 @@ export function startWorkspace(
       t.channel.online === false ||
       t.waitingForStatus ||
       ((allPaused || tilePaused(t)) &&
+        !(preferences.player === "custom" && t.player) &&
         !hoverPlayback(t) &&
         !(t.nativeHold && t.controls && !allPaused))
     );
@@ -1171,6 +1197,7 @@ export function startWorkspace(
   function mountPlayer(t: Tile, controls: boolean) {
     // Removing a fullscreen iframe also forces the browser to exit fullscreen.
     if (t.player && inFullscreen(t)) return;
+    if (!playerConstructor()) return;
     if (!controls) t.nativeHold = false;
     t.el.classList.toggle("full-player", controls);
     if (showPoster(t)) {
@@ -1180,6 +1207,11 @@ export function startWorkspace(
       return;
     }
     if (t.player && t.controls === controls) return;
+    if (t.player?.setControls) {
+      t.player.setControls(controls);
+      t.controls = controls;
+      return;
+    }
     readNativeControls(t);
     if (t.ready && t.controls) t.quality = t.player!.getQuality?.();
     clearTimeout(t.timer);
@@ -1211,7 +1243,7 @@ export function startWorkspace(
     t.el.classList.remove("offline", "partial");
     t.el.classList.toggle("loading", !allPaused && !tilePaused(t));
     t.commandedPlay = wantsPlayback(t);
-    const player = new window.Twitch!.Player(embed, {
+    const player = new (playerConstructor()!)(embed, {
       channel: t.el.dataset.login!,
       parent: [location.hostname],
       width: "100%",
@@ -1222,13 +1254,12 @@ export function startWorkspace(
     });
     t.player = player;
     // The cover is outside Twitch's mount node, so iframe initialization cannot remove it.
-    container.querySelector<HTMLIFrameElement>("iframe")!.title = tr(
-      "Stream de {name}",
-      { name: t.channel.display },
-    );
+    container.querySelector<HTMLIFrameElement | HTMLVideoElement>(
+      "iframe, video",
+    )!.title = tr("Stream de {name}", { name: t.channel.display });
     fit(container); // Size the iframe before READY so it fits the tile from the first frame.
     const current = () => t.player === player && t.el.isConnected;
-    player.addEventListener(window.Twitch!.Player.READY, () => {
+    player.addEventListener(playerConstructor()!.READY, () => {
       if (!current()) return;
       t.ready = true;
       t.readyAt = Date.now();
@@ -1237,7 +1268,7 @@ export function startWorkspace(
       player.setVolume(t.volume);
       t.nativeAudio = { muted: player.getMuted(), volume: t.volume };
       if (activated) applyMuted(t, t.muted);
-      if (controls && t.quality) player.setQuality(t.quality);
+      if (t.controls && t.quality) player.setQuality(t.quality);
       sync(t);
       mark(t);
     });
@@ -1272,7 +1303,7 @@ export function startWorkspace(
           if (activated) applyMuted(t, t.muted);
         }
         if (
-          controls &&
+          t.controls &&
           !hoverPlayback(t) &&
           !(event === "pause" && (allPaused || tilePaused(t))) &&
           (t.hasPlayed || (event === "play" && t.ready))
@@ -1396,7 +1427,7 @@ export function startWorkspace(
     copy.setAttribute("aria-hidden", "true");
     copy
       .querySelectorAll<HTMLElement>(
-        "iframe, .chat, .volume, .load, .chat-menu, .collaboration-menu",
+        "iframe, video, .chat, .volume, .load, .chat-menu, .collaboration-menu",
       )
       .forEach((el) => el.remove());
     copy
@@ -2942,7 +2973,18 @@ export function startWorkspace(
     gridAction = null;
     $<HTMLDialogElement>("#grids-dialog").close();
   }
+  let currentPlayerMode = preferences.player;
   function refreshPreferences() {
+    if (currentPlayerMode !== preferences.player) {
+      currentPlayerMode = preferences.player;
+      hidePreview();
+      for (const t of tiles.values()) releasePlayer(t);
+      if (playerConstructor()) {
+        restore();
+        layout();
+        refresh();
+      } else loadPlayer();
+    }
     notice(relocalizeMessage($("#notice").textContent));
     searchError = relocalizeMessage(searchError);
     $("#grid-form-error").textContent = relocalizeMessage(
@@ -2970,13 +3012,13 @@ export function startWorkspace(
         tr("Chat de {name}", { name: t.channel.display }),
       );
       t.el
-        .querySelector<HTMLElement>(".player iframe")
+        .querySelector<HTMLElement>(".player iframe, .player video")
         ?.setAttribute(
           "title",
           tr("Stream de {name}", { name: t.channel.display }),
         );
       t.chat
-        .querySelector<HTMLIFrameElement>("iframe")
+        .querySelector<HTMLIFrameElement | HTMLVideoElement>("iframe, video")
         ?.setAttribute(
           "title",
           tr("Chat de {name}", { name: t.channel.display }),
@@ -3009,6 +3051,7 @@ export function startWorkspace(
     paintMuteAll();
     $<HTMLSelectElement>("#language-setting").value = preferences.language;
     $<HTMLSelectElement>("#theme-setting").value = preferences.theme;
+    $<HTMLSelectElement>("#player-setting").value = preferences.player;
   }
   function initWorkspace() {
     translateTree();
@@ -3032,7 +3075,9 @@ export function startWorkspace(
     };
     $<HTMLSelectElement>("#language-setting").value = preferences.language;
     $<HTMLSelectElement>("#theme-setting").value = preferences.theme;
+    $<HTMLSelectElement>("#player-setting").value = preferences.player;
     actions.setLanguage = (value) => setPreference("language", value);
+    actions.setPlayer = (value) => setPreference("player", value);
     actions.setTheme = (value) => setPreference("theme", value);
     actions.copyGrid = () => openGridForm("copy");
     actions.newGrid = () => openGridForm("new");

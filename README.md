@@ -68,6 +68,18 @@ The connected mode also has a locked Live follows grid. New live follows join au
 
 Locking a grid prevents additions and keeps offline tiles in place. The collapsed sidebar retains grid and lock controls, playback and sound controls, the avatar rail, and account links. A highlighted avatar identifies a channel already in the grid; offline avatars are dimmed.
 
+## Custom player
+
+The sidebar includes a Video player setting. Twitch embed remains the default. Selecting Custom player switches both tiles and sidebar previews to HTML5 video with HLS.js. The choice persists in this browser. Switching recreates active players while retaining tile order, volume, mute, pause, spotlight, and chat preferences.
+
+The custom player uses the existing tile controls and the browser's video controls on larger tiles. Controls can change on resize without replacing the video. Pausing a custom player keeps its last frame and video element, including global pause. The usual dimmed overlay displays a centered Play button to resume the tile. Hovering a paused tile does not resume it. Tiles restored in a paused state keep a poster until first playback. HLS.js selects quality automatically. Failed playback offers a retry button; switching back to Twitch embed remains available in settings.
+
+`GET /api/stream?channel=…` obtains an anonymous playback token from Twitch GraphQL and retrieves the HLS master playlist from Usher. Variant playlists and media segments load directly from Twitch's CDN. No login token or application secret is sent to this endpoint. Responses are not cached, upstream calls have timeouts, and requests are limited to 120 per minute per socket address within each server instance. No additional environment variables are required.
+
+This uses an undocumented playback mechanism, also used by [Streamlink](https://github.com/streamlink/streamlink/blob/master/src/streamlink/plugins/twitch.py). [Helix Get Streams](https://dev.twitch.tv/docs/api/reference/#get-streams) only provides stream metadata. Twitch can refuse playback or change its query, require client integrity, or change CDN CORS behavior. Anonymous playback does not inherit subscriptions or other account entitlements. Ads remain part of the supplied stream. Browser autoplay rules and codec support still apply; chat remains an iframe. The custom player does not remove all Twitch or browser constraints.
+
+Validated with real Twitch playback in headless Chromium on this development machine. Deployment from a different IP and Safari native HLS still need verification. Browser tests use a small generated HLS media fixture to check playback and switching without depending on live channels.
+
 ## Playback, spotlight, and dragging
 
 One tile uses the complete Twitch player and fills the grid. With multiple tiles, the spotlight button enlarges one stream and enables its sound. Leaving spotlight restores its previous audio intent. Each tile has playback and sound controls; its horizontal volume slider appears while hovering the sound control or slider. Global pause and mute remain separate from each tile's saved choices.

@@ -304,6 +304,25 @@ export function StreamTile({
         <div className="player" onClick={onResume}>
           <div className="preview-cover">
             <StreamPoster />
+            <button
+              className="pause-play"
+              aria-label="Lecture"
+              data-i18n-aria-label="Lecture"
+              onClick={(event) => {
+                event.stopPropagation();
+                onResume();
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="30"
+                height="30"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M7 4v16l13-8z" />
+              </svg>
+            </button>
           </div>
         </div>
         <section className="chat" hidden></section>

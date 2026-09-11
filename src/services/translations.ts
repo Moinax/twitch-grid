@@ -1,4 +1,12 @@
 export const translations: Record<string, [string, string]> = {
+  "Lecteur vidéo": ["Video player", "Videospeler"],
+  "Embed Twitch": ["Twitch embed", "Twitch-embed"],
+  "Lecteur custom": ["Custom player", "Eigen speler"],
+  "Flux indisponible. Réessayer": [
+    "Stream unavailable. Retry",
+    "Stream niet beschikbaar. Opnieuw proberen",
+  ],
+  "Démarrer la lecture": ["Start playback", "Afspelen starten"],
   "Grille dynamique": ["Dynamic grid", "Dynamisch raster"],
   "Follows en direct": ["Live follows", "Live follows"],
   "Chargement du lecteur…": ["Loading player…", "Speler laden…"],

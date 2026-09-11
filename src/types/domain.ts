@@ -5,6 +5,7 @@ export type Theme = "system" | "light" | "dark";
 export interface Preferences {
   language: Language;
   theme: Theme;
+  player: "embed" | "custom";
 }
 export interface Channel {
   twitch: string;

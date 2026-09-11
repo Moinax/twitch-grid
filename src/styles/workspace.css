@@ -495,3 +495,7 @@ dialog input:focus-visible {
 [data-theme="light"] .grid-menu {
   box-shadow: 0 12px 32px #20202726;
 }
+
+#preferences .player-preference {
+  flex-basis: 100%;
+}

@@ -8,11 +8,12 @@ export interface TwitchPlayer {
   getVolume(): number;
   setQuality(value: string): void;
   getQuality?(): string;
+  setControls?(value: boolean): void;
   play(): void;
   pause(): void;
   destroy(): void;
 }
-interface PlayerConstructor {
+export interface PlayerConstructor {
   new (
     element: HTMLElement,
     options: {

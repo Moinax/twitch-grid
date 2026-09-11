@@ -1,3 +1,4 @@
+import { playerConstructor } from "../services/player";
 import type { Channel } from "../types/domain";
 import type { TwitchPlayer } from "../types/player";
 import type { createLifecycle } from "./lifecycle";
@@ -133,7 +134,7 @@ export function createPreviewController({
     positionPreview();
     void preview.offsetWidth; // commit the hidden state so the entrance transitions
     preview.classList.add("in");
-    if (!window.Twitch?.Player) {
+    if (!playerConstructor()) {
       message.textContent = tr("Aperçu indisponible");
       return;
     }
@@ -154,7 +155,7 @@ export function createPreviewController({
       return;
     const status = preview.querySelector<HTMLElement>(".status")!,
       message = status.querySelector<HTMLElement>("span")!;
-    const player = new window.Twitch!.Player(previewVideo, {
+    const player = new (playerConstructor()!)(previewVideo, {
       channel: s.twitch,
       parent: [location.hostname],
       width: 640,
@@ -165,12 +166,14 @@ export function createPreviewController({
     });
     previewPlayer = player;
     previewNudgedAt = Date.now();
-    const frame = previewVideo.querySelector<HTMLIFrameElement>("iframe")!;
+    const frame = previewVideo.querySelector<
+      HTMLIFrameElement | HTMLVideoElement
+    >("iframe, video")!;
     frame.tabIndex = -1;
     frame.title = tr("Aperçu de {name}", { name: s.display });
     fit(previewVideo);
     const current = () => previewPlayer === player && !preview.hidden;
-    player.addEventListener(window.Twitch!.Player.READY, () => {
+    player.addEventListener(playerConstructor()!.READY, () => {
       if (!current()) return;
       previewReady = true;
       preview.classList.add("player-ready");
@@ -187,7 +190,7 @@ export function createPreviewController({
         }
       }, 400);
     });
-    player.addEventListener(window.Twitch!.Player.PLAYING, () => {
+    player.addEventListener(playerConstructor()!.PLAYING, () => {
       if (current()) markPreview();
     }); // the overlay fades out in CSS
     for (const event of ["offline", "playbackBlocked", "error"])

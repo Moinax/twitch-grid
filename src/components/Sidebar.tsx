@@ -298,6 +298,25 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
         <p id="list-empty"></p>
         <footer>
           <div id="preferences">
+            <label
+              className="player-preference"
+              title="Lecteur vidéo"
+              data-i18n-title="Lecteur vidéo"
+            >
+              <select
+                id="player-setting"
+                aria-label="Lecteur vidéo"
+                data-i18n-aria-label="Lecteur vidéo"
+                onChange={(e) => actions.setPlayer?.(e.currentTarget.value)}
+              >
+                <option value="embed" data-i18n="">
+                  Embed Twitch
+                </option>
+                <option value="custom" data-i18n="">
+                  Lecteur custom
+                </option>
+              </select>
+            </label>
             <label title="Langue" data-i18n-title="Langue">
               <svg
                 viewBox="0 0 24 24"

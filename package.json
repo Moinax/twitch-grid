@@ -5,10 +5,10 @@
   "packageManager": "pnpm@11.25.0",
   "scripts": {
     "test": "playwright test",
-    "check": "tsc --noEmit && node --check api/search.js && node --check server.cjs",
+    "check": "tsc --noEmit && node --check api/stream.js && node --check api/search.js && node --check server.cjs",
     "dev": "node --env-file-if-exists=.env.local server.cjs",
     "og:generate": "node scripts/render-share-image.cjs",
-    "test:server": "node --test tests/search.test.cjs tests/i18n.test.cjs",
+    "test:server": "node --test tests/stream.test.cjs tests/search.test.cjs tests/i18n.test.cjs",
     "build": "pnpm check && vite build",
     "preview": "vite preview --host localhost --port 8765",
     "format": "prettier --write src vite.config.mts"
@@ -26,6 +26,7 @@
     "vite": "^8.2.2"
   },
   "dependencies": {
+    "hls.js": "^1.7.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
