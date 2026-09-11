@@ -13,6 +13,7 @@ const preferenceValues = {
   latency: ["stable", "low"],
   spotlightChat: ["on", "off"],
   spotlightChatPosition: ["auto", "top", "bottom", "left", "right"],
+  listOrder: ["popular", "watched", "recent"],
   theme: ["system", "light", "dark"],
 };
 const preferences: Preferences = {
@@ -26,6 +27,10 @@ const preferences: Preferences = {
     )
       ? stored.spotlightChatPosition
       : "auto",
+  listOrder:
+    stored.listOrder && preferenceValues.listOrder.includes(stored.listOrder)
+      ? stored.listOrder
+      : "popular",
   language:
     stored.language && preferenceValues.language.includes(stored.language)
       ? stored.language
@@ -101,6 +106,8 @@ function setPreference(key: keyof Preferences, value: string) {
     preferences.latency = value as Preferences["latency"];
   else if (key === "spotlightChat")
     preferences.spotlightChat = value as Preferences["spotlightChat"];
+  else if (key === "listOrder")
+    preferences.listOrder = value as Preferences["listOrder"];
   else if (key === "spotlightChatPosition")
     preferences.spotlightChatPosition =
       value as Preferences["spotlightChatPosition"];

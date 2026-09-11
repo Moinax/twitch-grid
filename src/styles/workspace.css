@@ -9,6 +9,7 @@
 }
 #grid-lock,
 #grid-clear,
+#list-order-menu summary,
 #side footer button,
 #side footer a {
   flex: none;
@@ -27,6 +28,7 @@
 }
 #grid-lock:hover:not(:disabled),
 #grid-clear:hover:not(:disabled),
+#list-order-menu summary:hover,
 #side footer button:hover:not(:disabled),
 #side footer a:hover {
   border-color: #9147ff80;

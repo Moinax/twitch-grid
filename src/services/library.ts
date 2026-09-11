@@ -50,6 +50,7 @@ function channel(data: TwitchChannelData): Channel {
     online: data.online ?? data.is_live ?? null,
     game: data.game || data.game_name || "",
     title: data.title || "",
+    startedAt: Date.parse(data.started_at || "") || data.startedAt || 0,
     viewersAmount: {
       number: data.viewer_count || 0,
       formatted:
@@ -304,6 +305,7 @@ class TwitchLibrary {
             title: stream?.title,
             previewUrl: stream?.thumbnail_url,
             viewer_count: stream?.viewer_count,
+            started_at: stream?.started_at,
           }),
         );
       }

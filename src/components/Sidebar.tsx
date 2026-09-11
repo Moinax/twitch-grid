@@ -169,41 +169,90 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
             </button>
           </div>
           <div className="search-field">
-            <input
-              id="q"
-              onInput={() => actions.searchInput?.()}
-              onKeyDown={(e) => actions.searchKey?.(e)}
-              type="search"
-              aria-label="Rechercher un streamer"
-              data-i18n-aria-label="Rechercher un streamer"
-              placeholder="Rechercher un streamer…"
-              data-i18n-placeholder="Rechercher un streamer…"
-              autoComplete="off"
-              maxLength={100}
-            />
-            <button
-              id="clear-search"
-              onClick={() => actions.clearSearch?.()}
-              type="button"
-              aria-label="Effacer la recherche"
-              data-i18n-aria-label="Effacer la recherche"
-              title="Effacer la recherche"
-              data-i18n-title="Effacer la recherche"
-              hidden
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                aria-hidden="true"
+            <div className="search-input">
+              <input
+                id="q"
+                onInput={() => actions.searchInput?.()}
+                onKeyDown={(e) => actions.searchKey?.(e)}
+                type="search"
+                aria-label="Rechercher un streamer"
+                data-i18n-aria-label="Rechercher un streamer"
+                placeholder="Rechercher un streamer…"
+                data-i18n-placeholder="Rechercher un streamer…"
+                autoComplete="off"
+                maxLength={100}
+              />
+              <button
+                id="clear-search"
+                onClick={() => actions.clearSearch?.()}
+                type="button"
+                aria-label="Effacer la recherche"
+                data-i18n-aria-label="Effacer la recherche"
+                title="Effacer la recherche"
+                data-i18n-title="Effacer la recherche"
+                hidden
               >
-                <path d="m6 6 12 12M18 6 6 18" />
-              </svg>
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 6 12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+            <details
+              id="list-order-menu"
+              data-order="popular"
+              onToggle={(e) => actions.toggleGridMenu?.(e.currentTarget)}
+            >
+              <summary
+                title="Trier la liste"
+                data-i18n-title="Trier la liste"
+                aria-label="Trier la liste"
+                data-i18n-aria-label="Trier la liste"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="15"
+                  height="15"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m3 16 4 4 4-4M7 20V4m14 4-4-4-4 4M17 4v16" />
+                </svg>
+              </summary>
+              <div className="grid-menu">
+                {(
+                  [
+                    ["popular", "Les plus populaires"],
+                    ["watched", "Les plus regardées"],
+                    ["recent", "Les plus récentes"],
+                  ] as const
+                ).map(([order, label]) => (
+                  <button
+                    key={order}
+                    type="button"
+                    className="open-grid"
+                    aria-pressed={order === "popular"}
+                    data-order={order}
+                    onClick={() => actions.setListOrder?.(order)}
+                    data-i18n={label}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </details>
           </div>
           <div id="search-actions" hidden>
             <button
