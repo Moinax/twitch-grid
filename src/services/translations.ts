@@ -6,6 +6,14 @@ export const translations: Record<string, [string, string]> = {
   Stable: ["Stable", "Stabiel"],
   Faible: ["Low", "Laag"],
   "Latence stable": ["Stable latency", "Stabiele latentie"],
+  "Faible latence : passer en stable": [
+    "Low latency: switch to stable",
+    "Lage latentie: overschakelen naar stabiel",
+  ],
+  "Latence stable : passer en faible latence": [
+    "Stable latency: switch to low latency",
+    "Stabiele latentie: overschakelen naar lage latentie",
+  ],
   "Faible latence": ["Low latency", "Lage latentie"],
   "Flux indisponible. Réessayer": [
     "Stream unavailable. Retry",
@@ -115,6 +123,13 @@ export const translations: Record<string, [string, string]> = {
   "Masquer le chat": ["Hide chat", "Chat verbergen"],
   "Options du chat": ["Chat options", "Chatopties"],
   "Resize chat": ["Resize chat", "Chatgrootte aanpassen"],
+  "Chat en spotlight": ["Chat in spotlight", "Chat in spotlight"],
+  "Position du chat en spotlight": [
+    "Spotlight chat position",
+    "Chatpositie in spotlight",
+  ],
+  Actif: ["On", "Aan"],
+  Inactif: ["Off", "Uit"],
   "Position du chat": ["Chat position", "Chatpositie"],
   "Ouvrir sur Twitch ↗": ["Open on Twitch ↗", "Openen op Twitch ↗"],
   Auto: ["Auto", "Auto"],
@@ -124,6 +139,18 @@ export const translations: Record<string, [string, string]> = {
   Right: ["Right", "Rechts"],
   "Chat de {name}": ["Chat for {name}", "Chat van {name}"],
   "Stream de {name}": ["Stream by {name}", "Stream van {name}"],
+  "Play/pause tous les streams (Espace)": [
+    "Play/pause all streams (Space)",
+    "Alle streams afspelen/pauzeren (Spatie)",
+  ],
+  "Couper tous les sons (Shift+M)": [
+    "Mute every stream (Shift+M)",
+    "Alle geluiden dempen (Shift+M)",
+  ],
+  "Réactiver le son (Shift+M)": [
+    "Unmute (Shift+M)",
+    "Geluid herstellen (Shift+M)",
+  ],
   "Couper tous les sons": ["Mute every stream", "Alle geluiden dempen"],
   Réglages: ["Settings", "Instellingen"],
   "Table de mixage": ["Sound board", "Mengpaneel"],
@@ -143,6 +170,10 @@ export const translations: Record<string, [string, string]> = {
   "Revenir à la grille": ["Back to grid", "Terug naar het raster"],
   "Déposer ici": ["Drop here", "Hier neerzetten"],
   Spotlight: ["Spotlight", "Spotlight"],
+  "Spotlight (SHIFT+CLICK)": [
+    "Spotlight (SHIFT+CLICK)",
+    "Spotlight (SHIFT+CLICK)",
+  ],
   "Verrouiller la grille": ["Lock the grid", "Raster vergrendelen"],
   "Déverrouiller la grille": ["Unlock the grid", "Raster ontgrendelen"],
   "Grille verrouillée": ["Locked grid", "Vergrendeld raster"],

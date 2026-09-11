@@ -489,6 +489,39 @@ dialog input:focus-visible {
   opacity: 0;
   transition: opacity 0.3s var(--ease);
 }
+#tooltip.has-shortcut {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 7px 10px;
+}
+#tooltip .tooltip-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+#tooltip kbd {
+  min-width: 24px;
+  padding: 1px 5px 2px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 1px 1px #0002;
+}
+#tooltip .tooltip-plus {
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 400;
+}
 #tooltip.in {
   opacity: 1;
 }

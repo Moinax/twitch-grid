@@ -33,6 +33,47 @@ export function SettingsDialog({ actions }: { actions: WorkspaceActions }) {
           </select>
         </label>
         <label>
+          <span data-i18n="Chat en spotlight">Chat in spotlight</span>
+          <select
+            id="spotlight-chat-setting"
+            onChange={(e) => actions.setSpotlightChat?.(e.currentTarget.value)}
+          >
+            <option value="off" data-i18n="Inactif">
+              Off
+            </option>
+            <option value="on" data-i18n="Actif">
+              On
+            </option>
+          </select>
+        </label>
+        <label>
+          <span data-i18n="Position du chat en spotlight">
+            Spotlight chat position
+          </span>
+          <select
+            id="spotlight-chat-position-setting"
+            onChange={(e) =>
+              actions.setSpotlightChatPosition?.(e.currentTarget.value)
+            }
+          >
+            <option value="auto" data-i18n="Auto">
+              Auto
+            </option>
+            <option value="top" data-i18n="Top">
+              Top
+            </option>
+            <option value="bottom" data-i18n="Bottom">
+              Bottom
+            </option>
+            <option value="left" data-i18n="Left">
+              Left
+            </option>
+            <option value="right" data-i18n="Right">
+              Right
+            </option>
+          </select>
+        </label>
+        <label>
           <span data-i18n="Langue">Langue</span>
           <select
             id="language-setting"

@@ -40,7 +40,7 @@ body.collapsed #side footer a {
   background: var(--raised);
 }
 body.collapsed #toggle {
-  order: -4;
+  order: -5;
   margin: 8px 0 0;
 }
 body.collapsed #ctl .github {

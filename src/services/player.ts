@@ -1,4 +1,5 @@
 import type Hls from "hls.js";
+import type { Latency } from "../types/domain";
 import type { TwitchPlayer, PlayerConstructor } from "../types/player";
 import { preferences, setPreference, tr } from "./preferences";
 
@@ -17,6 +18,7 @@ export class CustomPlayer implements TwitchPlayer {
   private qualityHeight = 0;
   private qualityTimer?: ReturnType<typeof setTimeout>;
   private source: string;
+  private latency: Latency;
   private retry = document.createElement("button");
   private error = document.createElement("div");
   private fallback = document.createElement("button");
@@ -27,6 +29,7 @@ export class CustomPlayer implements TwitchPlayer {
   private slider = document.createElement("input");
 
   constructor(element: HTMLElement, options: Options) {
+    this.latency = options.latency ?? preferences.latency;
     const video = this.video;
     video.className = "custom-video";
     video.playsInline = true;
@@ -110,11 +113,24 @@ export class CustomPlayer implements TwitchPlayer {
     );
     this.qualityBadge.className = "custom-quality-badge";
     this.qualityBadge.hidden = true;
-    const lowLatency = preferences.latency === "low";
-    const latencyIcon = document.createElement("span");
+    const lowLatency = this.latency === "low";
+    const latencyIcon = document.createElement("button");
+    latencyIcon.type = "button";
+    latencyIcon.disabled = !options.onLatencyChange;
     latencyIcon.className = `custom-latency ${lowLatency ? "low" : "stable"}`;
-    latencyIcon.title = tr(lowLatency ? "Faible latence" : "Latence stable");
-    latencyIcon.setAttribute("aria-label", latencyIcon.title);
+    label(
+      latencyIcon,
+      lowLatency
+        ? "Faible latence : passer en stable"
+        : "Latence stable : passer en faible latence",
+    );
+    latencyIcon.addEventListener("click", (event) => {
+      event.stopPropagation();
+      options.onLatencyChange?.(lowLatency ? "stable" : "low");
+    });
+    latencyIcon.addEventListener("dblclick", (event) =>
+      event.stopPropagation(),
+    );
     latencyIcon.innerHTML = lowLatency
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 9-12h-7z"/></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
@@ -191,7 +207,7 @@ export class CustomPlayer implements TwitchPlayer {
     const video = this.video;
     if (Hls.isSupported()) {
       const latencyConfig =
-        preferences.latency === "low"
+        this.latency === "low"
           ? {
               liveSyncDurationCount: 2,
               liveMaxLatencyDurationCount: 4,

@@ -191,6 +191,7 @@ export function startWorkspace(
             "volume",
             "paused",
             "chatOpen",
+            "chatOverride",
             "chatPosition",
             "chatSize",
           ] as const
@@ -245,6 +246,10 @@ export function startWorkspace(
     if (tiles.has(login)) {
       const t = tiles.get(login)!;
       t.waitingForStatus = s.online == null;
+      t.chatOverride =
+        snapshot.chatOverride?.[login] ??
+        (perTile(snapshot.chatOpen) === true || chatPosition !== "auto");
+      if (!t.chatOverride) t.chatPosition = preferences.spotlightChatPosition;
       t.chatSize = snapshot.chatSize?.[login];
       if (!t.chat.hidden) layoutChat(t);
     }
@@ -364,7 +369,11 @@ export function startWorkspace(
   function syncChat() {
     for (const [login, t] of tiles) {
       const allowed = t.controls && t.chatFits,
-        visible = restored && t.chatOpen && allowed;
+        open =
+          !t.chatOverride && focused === login
+            ? preferences.spotlightChat === "on"
+            : t.chatOpen,
+        visible = restored && open && allowed;
       t.chat.hidden = !visible;
       t.chatOptions.hidden = !allowed;
       if (!allowed) t.chatOptions.open = false;
@@ -936,7 +945,7 @@ export function startWorkspace(
     volume = 0.5,
     paused: boolean | null = false,
     chatOpen = false,
-    chatPosition: ChatPosition = "auto",
+    chatPosition: ChatPosition = preferences.spotlightChatPosition,
     automatic = false,
   ) {
     if (tiles.has(s.twitch)) return true;
@@ -1008,12 +1017,14 @@ export function startWorkspace(
           renderList();
         }}
         onChat={() => {
-          t.chatOpen = !t.chatOpen;
+          t.chatOpen = !!t.chat.hidden;
+          t.chatOverride = true;
           syncChat();
           save();
         }}
         onChatPosition={(position) => {
           t.chatPosition = position;
+          t.chatOverride = true;
           t.chatOpen = true;
           t.chatOptions.open = false;
           syncChat();
@@ -1099,6 +1110,7 @@ export function startWorkspace(
       volume,
       paused,
       chatOpen,
+      chatOverride: false,
       chatPosition,
       ready: false,
       ppIcon,
@@ -1287,6 +1299,13 @@ export function startWorkspace(
       muted: true,
       autoplay: false,
       controls,
+      latency: t.latency ?? preferences.latency,
+      onLatencyChange: (latency) => {
+        if (t.player !== player) return;
+        t.latency = latency;
+        releasePlayer(t);
+        mountPlayer(t, controls);
+      },
     });
     t.player = player;
     // The cover is outside Twitch's mount node, so iframe initialization cannot remove it.
@@ -1602,7 +1621,7 @@ export function startWorkspace(
   function paint(t: Tile) {
     const spot = t.el.querySelector<HTMLButtonElement>(".spotlight")!,
       front = focused === t.el.dataset.login!;
-    spot.title = tr(front ? "Revenir à la grille" : "Spotlight");
+    spot.title = `${tr(front ? "Revenir à la grille" : "Spotlight")} (SHIFT+CLICK)`;
     spot.setAttribute("aria-label", spot.title);
     spot.setAttribute("aria-pressed", String(front));
     paintSound(t);
@@ -1879,7 +1898,11 @@ export function startWorkspace(
   function paintMuteAll() {
     const button = $<HTMLButtonElement>("#muteall");
     button.setAttribute("aria-pressed", String(!!mutedAll));
-    button.title = tr(mutedAll ? "Réactiver le son" : "Couper tous les sons");
+    button.title = tr(
+      mutedAll
+        ? "Réactiver le son (Shift+M)"
+        : "Couper tous les sons (Shift+M)",
+    );
     button.setAttribute("aria-label", button.title);
     tiles.forEach(paint);
     renderSoundBoard();
@@ -3090,6 +3113,8 @@ export function startWorkspace(
       currentPlayerMode !== preferences.player ||
       currentLatency !== preferences.latency
     ) {
+      if (currentLatency !== preferences.latency)
+        for (const t of tiles.values()) delete t.latency;
       currentPlayerMode = preferences.player;
       currentLatency = preferences.latency;
       hidePreview();
@@ -3167,6 +3192,10 @@ export function startWorkspace(
     $<HTMLSelectElement>("#language-setting").value = preferences.language;
     $<HTMLSelectElement>("#theme-setting").value = preferences.theme;
     $<HTMLSelectElement>("#player-setting").value = preferences.player;
+    $<HTMLSelectElement>("#spotlight-chat-setting").value =
+      preferences.spotlightChat;
+    $<HTMLSelectElement>("#spotlight-chat-position-setting").value =
+      preferences.spotlightChatPosition;
     $<HTMLSelectElement>("#latency-setting").value = preferences.latency;
     $<HTMLSelectElement>("#latency-setting").disabled =
       preferences.player !== "custom";
@@ -3201,6 +3230,10 @@ export function startWorkspace(
     $<HTMLSelectElement>("#language-setting").value = preferences.language;
     $<HTMLSelectElement>("#theme-setting").value = preferences.theme;
     $<HTMLSelectElement>("#player-setting").value = preferences.player;
+    $<HTMLSelectElement>("#spotlight-chat-setting").value =
+      preferences.spotlightChat;
+    $<HTMLSelectElement>("#spotlight-chat-position-setting").value =
+      preferences.spotlightChatPosition;
     $<HTMLSelectElement>("#latency-setting").value = preferences.latency;
     $<HTMLSelectElement>("#latency-setting").disabled =
       preferences.player !== "custom";
@@ -3241,15 +3274,31 @@ export function startWorkspace(
     };
     listenDocument("keydown", (e) => {
       if (
-        e.key !== "Shift" ||
-        e.repeat ||
         !restored ||
+        e.isComposing ||
+        e.defaultPrevented ||
+        e.ctrlKey ||
+        e.altKey ||
+        e.metaKey ||
         (e.target instanceof HTMLElement &&
           (e.target.isContentEditable ||
-            e.target.closest("input, textarea, select"))) ||
+            e.target.closest("input, textarea, select, [role='textbox']"))) ||
         document.querySelector("dialog[open]")
       )
         return;
+      const playback = e.code === "Space" && !e.shiftKey;
+      const mute = e.shiftKey && e.key.toLowerCase() === "m";
+      if (playback || mute) {
+        e.preventDefault();
+        if (e.repeat) return;
+        if (mute) {
+          // End temporary Shift audio before toggling, so keyup cannot undo the mute.
+          releaseShiftFollow();
+          actions.toggleMute?.();
+        } else actions.togglePlayback?.();
+        return;
+      }
+      if (e.key !== "Shift" || e.repeat) return;
       document.body.classList.add("shift-spotlight");
       if (soundFollow) return;
       shiftStartedFollow = true;
@@ -3275,7 +3324,34 @@ export function startWorkspace(
       renderSoundBoard();
     };
     actions.setPlayer = (value) => setPreference("player", value);
-    actions.setLatency = (value) => setPreference("latency", value);
+    actions.setLatency = (value) => {
+      if (value !== "stable" && value !== "low") return;
+      for (const t of tiles.values()) {
+        if (t.latency && t.latency !== value) releasePlayer(t);
+        delete t.latency;
+      }
+      setPreference("latency", value);
+      layout();
+    };
+    const resetSpotlightChat = () => {
+      for (const t of tiles.values()) {
+        t.chatOverride = false;
+        t.chatOpen = false;
+        t.chatPosition = preferences.spotlightChatPosition;
+      }
+      syncChat();
+      save();
+    };
+    actions.setSpotlightChat = (value) => {
+      if (value !== "on" && value !== "off") return;
+      setPreference("spotlightChat", value);
+      resetSpotlightChat();
+    };
+    actions.setSpotlightChatPosition = (value) => {
+      if (!["auto", "top", "bottom", "left", "right"].includes(value)) return;
+      setPreference("spotlightChatPosition", value);
+      resetSpotlightChat();
+    };
     actions.setTheme = (value) => setPreference("theme", value);
     actions.copyGrid = () => openGridForm("copy");
     actions.newGrid = () => openGridForm("new");

@@ -225,8 +225,8 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
           <button
             id="playall"
             onClick={() => actions.togglePlayback?.()}
-            title="Play/pause tous les streams"
-            data-i18n-title="Play/pause tous les streams"
+            title="Play/pause tous les streams (Espace)"
+            data-i18n-title="Play/pause tous les streams (Espace)"
             aria-label="Play/pause tous les streams"
             data-i18n-aria-label="Play/pause tous les streams"
             aria-pressed="false"
@@ -253,8 +253,8 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
           <button
             id="muteall"
             onClick={() => actions.toggleMute?.()}
-            title="Couper tous les sons"
-            data-i18n-title="Couper tous les sons"
+            title="Couper tous les sons (Shift+M)"
+            data-i18n-title="Couper tous les sons (Shift+M)"
             aria-label="Couper tous les sons"
             data-i18n-aria-label="Couper tous les sons"
             aria-pressed="false"

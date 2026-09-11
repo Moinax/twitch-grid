@@ -1,4 +1,4 @@
-import type { Channel, ChatPosition } from "./domain";
+import type { Channel, ChatPosition, Latency } from "./domain";
 export interface TwitchPlayer {
   addEventListener(event: string, callback: () => void): void;
   getPlayerState(): { playback: string };
@@ -24,6 +24,8 @@ export interface PlayerConstructor {
       muted: boolean;
       autoplay: boolean;
       controls: boolean;
+      latency?: Latency;
+      onLatencyChange?: (latency: Latency) => void;
     },
   ): TwitchPlayer;
   READY: string;
@@ -55,7 +57,9 @@ export interface Tile {
   muted: boolean;
   volume: number;
   paused: boolean | null;
+  latency?: Latency;
   chatOpen: boolean;
+  chatOverride?: boolean;
   chatPosition: ChatPosition;
   chatSize?: { horizontal?: number; vertical?: number };
   ready: boolean;

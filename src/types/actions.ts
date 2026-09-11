@@ -16,6 +16,8 @@ export interface WorkspaceActions {
   showLanding?: () => void;
   setLanguage?: (value: string) => void;
   setPlayer?: (value: string) => void;
+  setSpotlightChat?: (value: string) => void;
+  setSpotlightChatPosition?: (value: string) => void;
   setLatency?: (value: string) => void;
   setTheme?: (value: string) => void;
   openGrids?: () => void;

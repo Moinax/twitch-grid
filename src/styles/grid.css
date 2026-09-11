@@ -1355,12 +1355,31 @@ body.collapsed #list-empty {
   display: none;
 }
 .custom-quality-badge.visible,
-.tile:hover .custom-quality-badge {
+.tile:hover .custom-quality-badge,
+.custom-quality-badge:focus-within {
   opacity: 1;
 }
 .custom-latency {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: -2px 0 -2px -3px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
   color: #c8c8cc;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.custom-latency:hover {
+  background: #ffffff20;
+}
+.custom-latency:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .custom-latency.low {
   color: #b68cff;
@@ -1608,6 +1627,7 @@ body.dragging #grid video {
   height: 100%;
 }
 .chat-resize::after {
+  opacity: 0;
   width: 10px;
   height: 36px;
   border: 1px solid var(--line);
@@ -1618,6 +1638,7 @@ body.dragging #grid video {
     var(--panel);
   box-shadow: 0 1px 4px #0003;
   transition:
+    opacity 0.15s ease,
     color 0.15s ease,
     border-color 0.15s ease;
 }
@@ -1632,6 +1653,7 @@ body.dragging #grid video {
 .chat-resize:hover::after,
 .chat-resize:focus-visible::after,
 .resizing-chat > .chat-resize::after {
+  opacity: 1;
   color: var(--accent);
   border-color: var(--accent);
 }
@@ -1654,27 +1676,27 @@ body.dragging #grid video {
 [data-chat-position="left"] > .chat-resize {
   top: 0;
   bottom: 0;
-  width: 8px;
+  width: 20px;
   cursor: col-resize;
 }
 [data-chat-position="right"] > .chat-resize {
-  right: calc(var(--chat-width) - 4px);
+  right: calc(var(--chat-width) - 10px);
 }
 [data-chat-position="left"] > .chat-resize {
-  left: calc(var(--chat-width) - 4px);
+  left: calc(var(--chat-width) - 10px);
 }
 [data-chat-position="top"] > .chat-resize,
 [data-chat-position="bottom"] > .chat-resize {
   left: 0;
   right: 0;
-  height: 8px;
+  height: 20px;
   cursor: row-resize;
 }
 [data-chat-position="top"] > .chat-resize {
-  top: calc(var(--chat-height) - 4px);
+  top: calc(var(--chat-height) - 10px);
 }
 [data-chat-position="bottom"] > .chat-resize {
-  bottom: calc(var(--chat-height) - 4px);
+  bottom: calc(var(--chat-height) - 10px);
 }
 .resizing-chat iframe {
   pointer-events: none;

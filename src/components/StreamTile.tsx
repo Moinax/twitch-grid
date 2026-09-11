@@ -231,8 +231,8 @@ export function StreamTile({
           </div>
         </span>
         <button
-          title="Spotlight"
-          data-i18n-title="Spotlight"
+          title="Spotlight (SHIFT+CLICK)"
+          data-i18n-title="Spotlight (SHIFT+CLICK)"
           aria-pressed="false"
           className="spotlight"
           onClick={(e) => {

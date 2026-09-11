@@ -41,6 +41,40 @@ export function syncPlayerTooltips(
     if (root instanceof HTMLElement && root.matches(selector)) apply(root);
     for (const el of root.querySelectorAll<HTMLElement>(selector)) apply(el);
   }
+  function renderTip(text: string) {
+    const shortcut = text.match(
+      /^(.*) \((Shift(?:\+(?:Click|M))?|Space|Espace|Spatie)\)$/i,
+    );
+    tooltip.classList.toggle("has-shortcut", !!shortcut);
+    tooltip.replaceChildren();
+    if (!shortcut) {
+      tooltip.textContent = text;
+      return;
+    }
+    const label = document.createElement("span");
+    label.textContent = shortcut[1];
+    const keys = document.createElement("span");
+    keys.className = "tooltip-keys";
+    const keyNames = shortcut[2]
+      .split("+")
+      .map((key) =>
+        key.length === 1
+          ? key.toUpperCase()
+          : key[0].toUpperCase() + key.slice(1).toLowerCase(),
+      );
+    for (const [index, key] of keyNames.entries()) {
+      if (index) {
+        const plus = document.createElement("span");
+        plus.className = "tooltip-plus";
+        plus.textContent = "+";
+        keys.append(plus);
+      }
+      const cap = document.createElement("kbd");
+      cap.textContent = key;
+      keys.append(cap);
+    }
+    tooltip.append(label, keys);
+  }
   function showTip(el: HTMLElement, delay: number) {
     hideTip();
     stashTitle(el);
@@ -55,7 +89,7 @@ export function syncPlayerTooltips(
         ? `${Math.min(320, side.width - 16)}px`
         : "";
       tooltip.classList.toggle("sidebar-tip", !!contained);
-      tooltip.textContent = el.dataset.tip!;
+      renderTip(el.dataset.tip!);
       tooltip.hidden = false;
       const box = el.getBoundingClientRect(),
         width = tooltip.offsetWidth,
@@ -136,8 +170,7 @@ export function syncPlayerTooltips(
         (suppressed() || record.target === tipTarget)
       ) {
         stashTitle(record.target);
-        if (record.target === tipTarget)
-          tooltip.textContent = record.target.dataset.tip!;
+        if (record.target === tipTarget) renderTip(record.target.dataset.tip!);
       }
     }
   }).observe(document.documentElement, {

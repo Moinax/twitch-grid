@@ -11,11 +11,21 @@ const preferenceValues = {
   language: ["fr", "en", "nl"],
   player: ["embed", "custom"],
   latency: ["stable", "low"],
+  spotlightChat: ["on", "off"],
+  spotlightChatPosition: ["auto", "top", "bottom", "left", "right"],
   theme: ["system", "light", "dark"],
 };
 const preferences: Preferences = {
   player: stored.player === "embed" ? "embed" : "custom",
   latency: stored.latency === "low" ? "low" : "stable",
+  spotlightChat: stored.spotlightChat === "on" ? "on" : "off",
+  spotlightChatPosition:
+    stored.spotlightChatPosition &&
+    preferenceValues.spotlightChatPosition.includes(
+      stored.spotlightChatPosition,
+    )
+      ? stored.spotlightChatPosition
+      : "auto",
   language:
     stored.language && preferenceValues.language.includes(stored.language)
       ? stored.language
@@ -89,6 +99,11 @@ function setPreference(key: keyof Preferences, value: string) {
     preferences.player = value as Preferences["player"];
   else if (key === "latency")
     preferences.latency = value as Preferences["latency"];
+  else if (key === "spotlightChat")
+    preferences.spotlightChat = value as Preferences["spotlightChat"];
+  else if (key === "spotlightChatPosition")
+    preferences.spotlightChatPosition =
+      value as Preferences["spotlightChatPosition"];
   else preferences.theme = value as Preferences["theme"];
   try {
     localStorage.setItem("tg.preferences", JSON.stringify(preferences));

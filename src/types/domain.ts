@@ -8,6 +8,8 @@ export interface Preferences {
   theme: Theme;
   player: "embed" | "custom";
   latency: Latency;
+  spotlightChat: "on" | "off";
+  spotlightChatPosition: ChatPosition;
 }
 export interface Channel {
   twitch: string;
@@ -57,6 +59,7 @@ export interface LayoutSnapshot {
   volume?: Record<string, number>;
   paused?: Record<string, boolean | null>;
   chatOpen?: Record<string, boolean> | boolean;
+  chatOverride?: Record<string, boolean>;
   chatSize?: Record<string, { horizontal?: number; vertical?: number }>;
   chatPosition?:
     Record<string, ChatPosition | "below"> | ChatPosition | "below";

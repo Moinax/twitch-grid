@@ -88,7 +88,7 @@ test("switches between embed and HLS while preserving tile settings", async ({
   // With no iframe to cover, the styled tooltips come back on every action, the player's own included.
   await expect(page.locator("#grid .tile .spotlight")).toHaveAttribute(
     "title",
-    "Spotlight",
+    "Spotlight (SHIFT+CLICK)",
   );
   await expect(page.locator("#grid .custom-fullscreen")).toHaveAttribute(
     "title",
@@ -97,6 +97,7 @@ test("switches between embed and HLS while preserving tile settings", async ({
   await expect(page.locator("#grid .tile [data-tip]")).toHaveCount(0);
   await page.locator("#grid .custom-fullscreen").hover();
   await expect(page.locator("#tooltip")).toHaveText("Fullscreen");
+  await expect(page.locator("#tooltip kbd")).toHaveCount(0);
   await expect(page.locator("#grid .custom-fullscreen")).not.toHaveAttribute(
     "title",
   ); // no native tooltip on top of ours
@@ -131,7 +132,7 @@ test("switches between embed and HLS while preserving tile settings", async ({
   await expect(page.locator("[title]:not(iframe)")).toHaveCount(0);
   await expect(page.locator("#grid .tile .spotlight")).toHaveAttribute(
     "data-tip",
-    "Spotlight",
+    "Spotlight (SHIFT+CLICK)",
   );
   expect(errors).toEqual([]);
 });
@@ -153,7 +154,7 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
   );
   await expect(page.locator("#grid .custom-latency.stable")).toHaveAttribute(
     "title",
-    "Stable latency",
+    "Stable latency: switch to low latency",
   );
   await expect(page.locator("#grid .custom-quality-badge")).not.toHaveClass(
     /visible/,
@@ -224,7 +225,7 @@ test("low latency persists and remounts custom players with a tighter live targe
   await choose(page, "#latency-setting", "low");
   await expect(page.locator("#grid .custom-latency.low")).toHaveAttribute(
     "title",
-    "Low latency",
+    "Low latency: switch to stable",
   );
   await expect
     .poll(() =>
@@ -356,3 +357,94 @@ for (const pauseMode of ["tile", "global", "native"]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("shortcut tooltips render keycaps and the collapsed toggle stays above GitHub", async ({
+  page,
+}) => {
+  const errors = await setup(page, "custom");
+  await page.evaluate(() =>
+    add({
+      ...tiles.get("example").channel,
+      twitch: "second",
+      display: "Second",
+    }),
+  );
+  await page.locator('#grid [data-login="example"] .spotlight').hover();
+  await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "Click"]);
+  await page.locator("#soundfollow").hover();
+  await expect(page.locator("#tooltip kbd")).toHaveText(["Shift"]);
+  await page.locator("#playall").hover();
+  await expect(page.locator("#tooltip kbd")).toHaveText(["Space"]);
+  await page.locator("#muteall").hover();
+  await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "M"]);
+  await page.locator("#toggle").click();
+  await expect(page.locator("body")).toHaveClass(/collapsed/);
+  const toggle = await page.locator("#toggle").boundingBox();
+  const github = await page.locator("#ctl .github").boundingBox();
+  expect(toggle.y + toggle.height).toBeLessThanOrEqual(github.y);
+  await page.locator("#toggle").click();
+  await expect(page.locator("body")).not.toHaveClass(/collapsed/);
+  expect(errors).toEqual([]);
+});
+
+test("tile latency switches independently and global settings replace overrides", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1900, height: 1000 });
+  const errors = await setup(page, "custom");
+  await page.evaluate(() =>
+    add({
+      ...tiles.get("example").channel,
+      twitch: "second",
+      display: "Second",
+    }),
+  );
+  const first = page.locator('#grid [data-login="example"]');
+  const second = page.locator('#grid [data-login="second"]');
+  await expect(first.locator(".custom-quality")).toHaveValue("auto");
+  await expect
+    .poll(() => page.evaluate(() => [...tiles.values()].every((t) => t.ready)))
+    .toBe(true);
+  await expect
+    .poll(() => first.locator("video").evaluate((video) => video.currentTime))
+    .toBeGreaterThan(0);
+  await page.evaluate(() => {
+    const t = tiles.get("example");
+    t.player.setVolume(0.3);
+    t.player.setQuality("90p");
+    window.otherLatencyPlayer = tiles.get("second").player;
+  });
+  await first.locator(".custom-latency").click();
+  await expect(first.locator(".custom-latency")).toHaveClass(/low/);
+  await expect(second.locator(".custom-latency")).toHaveClass(/stable/);
+  await expect(first.locator("video")).toHaveJSProperty("volume", 0.3);
+  expect(
+    await page.evaluate(() => tiles.get("example").player.getQuality()),
+  ).toBe("90p");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => tiles.get("example").player?.hls?.config.liveSyncDurationCount,
+      ),
+    )
+    .toBe(2);
+  expect(
+    await page.evaluate(
+      () => tiles.get("second").player === window.otherLatencyPlayer,
+    ),
+  ).toBe(true);
+  await expect(page.locator("#latency-setting")).toHaveValue("stable");
+  await choose(page, "#latency-setting", "low");
+  await expect(page.locator("#grid .custom-latency.low")).toHaveCount(2);
+  await first.locator(".custom-latency").click();
+  await expect(first.locator(".custom-latency")).toHaveClass(/stable/);
+  await expect(second.locator(".custom-latency")).toHaveClass(/low/);
+  await choose(page, "#latency-setting", "stable");
+  await expect(page.locator("#grid .custom-latency.stable")).toHaveCount(2);
+  expect(
+    await page.evaluate(() =>
+      [...tiles.values()].every((t) => t.latency === undefined),
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
