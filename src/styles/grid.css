@@ -1595,11 +1595,60 @@ body.dragging #grid video {
 .tile-body[data-chat-position] > .chat-resize {
   display: block;
 }
-.chat-resize:hover,
-.chat-resize:focus-visible,
-.resizing-chat > .chat-resize {
-  background: var(--accent, #9146ff);
+.chat-resize::before,
+.chat-resize::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.chat-resize::before {
+  width: 1px;
+  height: 100%;
+}
+.chat-resize::after {
+  width: 10px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  background:
+    linear-gradient(currentColor, currentColor) center / 2px 16px no-repeat,
+    var(--panel);
+  box-shadow: 0 1px 4px #0003;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.chat-resize:focus-visible {
   outline: none;
+}
+.chat-resize:hover::before,
+.chat-resize:focus-visible::before,
+.resizing-chat > .chat-resize::before {
+  background: var(--accent);
+}
+.chat-resize:hover::after,
+.chat-resize:focus-visible::after,
+.resizing-chat > .chat-resize::after {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.chat-resize:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+[data-chat-position="top"] > .chat-resize::before,
+[data-chat-position="bottom"] > .chat-resize::before {
+  width: 100%;
+  height: 1px;
+}
+[data-chat-position="top"] > .chat-resize::after,
+[data-chat-position="bottom"] > .chat-resize::after {
+  width: 36px;
+  height: 10px;
+  background-size: 16px 2px;
 }
 [data-chat-position="right"] > .chat-resize,
 [data-chat-position="left"] > .chat-resize {
