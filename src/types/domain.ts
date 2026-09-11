@@ -2,10 +2,12 @@ export type AccountMode = "guest" | "connected";
 export type ChatPosition = "auto" | "top" | "bottom" | "left" | "right";
 export type Language = "fr" | "en" | "nl";
 export type Theme = "system" | "light" | "dark";
+export type Latency = "stable" | "low";
 export interface Preferences {
   language: Language;
   theme: Theme;
   player: "embed" | "custom";
+  latency: Latency;
 }
 export interface Channel {
   twitch: string;

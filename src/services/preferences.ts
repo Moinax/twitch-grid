@@ -10,10 +10,12 @@ try {
 const preferenceValues = {
   language: ["fr", "en", "nl"],
   player: ["embed", "custom"],
+  latency: ["stable", "low"],
   theme: ["system", "light", "dark"],
 };
 const preferences: Preferences = {
   player: stored.player === "embed" ? "embed" : "custom",
+  latency: stored.latency === "low" ? "low" : "stable",
   language:
     stored.language && preferenceValues.language.includes(stored.language)
       ? stored.language
@@ -85,6 +87,8 @@ function setPreference(key: keyof Preferences, value: string) {
     preferences.language = value as Preferences["language"];
   else if (key === "player")
     preferences.player = value as Preferences["player"];
+  else if (key === "latency")
+    preferences.latency = value as Preferences["latency"];
   else preferences.theme = value as Preferences["theme"];
   try {
     localStorage.setItem("tg.preferences", JSON.stringify(preferences));

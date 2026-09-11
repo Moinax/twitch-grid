@@ -12,7 +12,7 @@ body.collapsed {
   background: var(--panel);
   border-right: 1px solid var(--line);
 }
-/* collapsed: header, row and controls dissolve so every button becomes a column item; the rail sits between the grid and playback groups and the account group pinned at the bottom */
+/* collapsed: header, row and controls dissolve so every button becomes a column item; the footer keeps its DOM order, so the account group sits at the bottom in both modes */
 body.collapsed #side header,
 body.collapsed #side header .row,
 body.collapsed #ctl,
@@ -26,10 +26,10 @@ body.collapsed #grid-switcher {
   @apply hidden;
 }
 body.collapsed #ctl button,
-body.collapsed #ctl a,
 body.collapsed #grid-clear,
 body.collapsed #grid-lock,
-body.collapsed #side footer button {
+body.collapsed #side footer button,
+body.collapsed #side footer a {
   flex: none;
   align-self: center;
   @apply w-[32px] h-[32px];
@@ -54,9 +54,8 @@ body.collapsed #grid-lock[aria-pressed="true"],
 body.collapsed #soundfollow[aria-pressed="true"] {
   background: var(--accent-soft);
 }
-body.collapsed #side footer #settings {
+body.collapsed #side footer #soundfollow {
   margin-left: 0; /* the footer's push to the right has no meaning in the rail */
-  @apply mb-[4px];
 }
 body.collapsed #playall,
 body.collapsed #muteall {
@@ -67,12 +66,7 @@ body.collapsed #playall {
 }
 body.collapsed #connect,
 body.collapsed #disconnect {
-  order: 1;
-  @apply mt-[8px];
-}
-body.collapsed #ctl a {
-  order: 2;
-  @apply mb-[8px];
+  @apply mt-[8px] mb-[8px];
 }
 /* collapsed: the list stays as a rail of avatars; the hover preview and the tooltip carry the names */
 body.collapsed #list {
@@ -119,8 +113,7 @@ body:not(.collapsed) #toggle .out {
 #ctl {
   @apply flex gap-[4px];
 }
-#ctl button,
-#ctl a {
+#ctl button {
   @apply flex items-center;
   @apply justify-center w-[26px];
   @apply h-[26px];
@@ -135,8 +128,7 @@ body:not(.collapsed) #toggle .out {
     color 0.2s var(--ease),
     transform 0.2s var(--ease);
 }
-#ctl button:hover,
-#ctl a:hover {
+#ctl button:hover {
   background: var(--line);
 }
 #ctl button:disabled {
@@ -154,7 +146,7 @@ body:not(.collapsed) #toggle .out {
 #muteall[aria-pressed="false"] .off {
   @apply hidden;
 }
-#ctl a svg {
+#side footer a svg {
   fill: currentColor;
 }
 #side header {

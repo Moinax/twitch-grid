@@ -1121,7 +1121,7 @@ summary:focus-visible {
 .action:hover {
   border-color: #9147ff80;
 }
-#ctl #connect {
+#connect {
   color: #bf94ff;
 }
 #connect svg {

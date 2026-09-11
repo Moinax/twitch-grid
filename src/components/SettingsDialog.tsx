@@ -19,6 +19,20 @@ export function SettingsDialog({ actions }: { actions: WorkspaceActions }) {
           </select>
         </label>
         <label>
+          <span data-i18n="Latence">Latence</span>
+          <select
+            id="latency-setting"
+            onChange={(e) => actions.setLatency?.(e.currentTarget.value)}
+          >
+            <option value="stable" data-i18n="Stable">
+              Stable
+            </option>
+            <option value="low" data-i18n="Faible">
+              Faible
+            </option>
+          </select>
+        </label>
+        <label>
           <span data-i18n="Langue">Langue</span>
           <select
             id="language-setting"

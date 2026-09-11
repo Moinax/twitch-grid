@@ -45,18 +45,18 @@ export interface SoundRow {
   login: string;
   display: string;
   profileUrl: string;
-  sound: "muted" | "hover" | "on";
+  sound: "muted" | "on";
   label: string;
   volume: number;
 }
 export function SoundBoard({
   rows,
-  mutedAll,
+  locked,
   onSound,
   onVolume,
 }: {
   rows: SoundRow[];
-  mutedAll: boolean;
+  locked: boolean; // the global mute or the sound follow holds the intents
   onSound: (login: string) => void;
   onVolume: (login: string, value: number) => void;
 }) {
@@ -82,7 +82,7 @@ export function SoundBoard({
             data-sound={row.sound}
             title={row.label}
             aria-label={row.label}
-            aria-disabled={mutedAll}
+            aria-disabled={locked}
             onClick={() => onSound(row.login)}
           >
             <svg
@@ -113,7 +113,7 @@ export function SoundBoard({
             max="1"
             step="0.05"
             value={row.volume}
-            disabled={mutedAll}
+            disabled={locked}
             aria-label={tr("Volume")}
             onChange={(e) => onVolume(row.login, Number(e.currentTarget.value))}
           />

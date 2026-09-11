@@ -80,7 +80,7 @@ test('OAuth callback validates state, loads every follows page, searches and dis
   await page.goto('/#access_token=fake-token&state=expected');
   await expect(page.locator('#disconnect')).toBeVisible();
   await expect(page.locator('#connect')).toBeHidden();
-  await expect(page.locator('#ctl #disconnect')).toBeVisible();
+  await expect(page.locator('#side footer #disconnect')).toBeVisible();
   expect(await page.locator('#disconnect').innerText()).toBe('');
   await expect(page.locator('#empty')).toBeVisible();
   await expect(page.locator('#top')).toBeHidden();
@@ -653,44 +653,57 @@ test('a portrait grid keeps the small tiles in a strip under the front row', asy
   await expect.poll(async () => { const a = await one.boundingBox(), b = await two.boundingBox(); return b.x > a.x + a.width && b.y < a.y + 1; }).toBe(true);
   expect(errors).toEqual([]);
 });
-test('sound follows the mouse and the sound board mixes every tile', async ({ page }) => {
+test('sound follows the mouse, silencing every other tile until the mode is left, and the sound board mixes every tile', async ({ page }) => {
   const errors = await setup(page);
   await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], muted: { one: true, two: false } })));
   await page.goto('/'); await page.locator('#audio-overlay').click();
   const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]');
   const muted = login => page.evaluate(login => tiles.get(login).player?.getMuted(), login);
+  const intents = () => page.evaluate(() => [...tiles.values()].map(t => t.muted));
   await expect.poll(() => muted('one')).toBe(true);
   await expect.poll(() => muted('two')).toBe(false);
   // off by default: a hover changes nothing
   await one.hover(); await page.waitForTimeout(1200); expect(await muted('one')).toBe(true);
+  // entering the mode silences the audible tile and remembers it
   await page.locator('#soundfollow').click();
   await expect(page.locator('#soundfollow')).toHaveAttribute('aria-pressed', 'true');
-  await one.hover(); await expect.poll(() => muted('one')).toBe(false);
-  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound', 'hover');
-  await page.locator('#q').hover(); await expect.poll(() => muted('one')).toBe(true);
-  expect(await page.evaluate(() => tiles.get('one').muted)).toBe(true);
-  // a tile whose sound was on keeps it after the pointer leaves
-  await two.hover(); await page.locator('#q').hover(); await page.waitForTimeout(1200); expect(await muted('two')).toBe(false);
-  // a click on the lit icon pins the sound
-  await one.hover(); await expect.poll(() => muted('one')).toBe(false);
-  await one.locator('.bar .snd').click(); await page.locator('#q').hover(); await page.waitForTimeout(1200);
-  expect(await muted('one')).toBe(false);
-  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound', 'on');
-  await page.reload(); await page.locator('#audio-overlay').click();
+  await expect.poll(() => muted('two')).toBe(true);
+  expect(await intents()).toEqual([true, true]);
+  // only the hovered tile is audible, and only while the pointer is on it
+  await one.hover(); await expect.poll(() => muted('one')).toBe(false); expect(await muted('two')).toBe(true);
+  await two.hover(); await expect.poll(() => muted('two')).toBe(false); await expect.poll(() => muted('one')).toBe(true);
+  await page.locator('#q').hover(); await expect.poll(() => muted('two')).toBe(true);
+  expect(await intents()).toEqual([true, true]);
+  // the tile sound buttons step aside and say why
+  await expect(one.locator('.bar .snd')).toHaveAttribute('aria-disabled', 'true');
+  await expect(one.locator('.bar .snd')).toHaveAttribute('aria-label', 'Son au survol');
+  await one.locator('.bar .snd').click({ force: true }); await page.locator('#q').hover(); await page.waitForTimeout(1200);
+  expect(await intents()).toEqual([true, true]);
+  // the spotlight stays silent under the mode, and gives nothing back on the way out
+  await two.locator('.spotlight').click(); await expect(two).toHaveClass(/big/);
+  await page.locator('#q').hover(); await page.waitForTimeout(1200); expect(await muted('two')).toBe(true);
+  await two.locator('.spotlight').click(); await expect(two).not.toHaveClass(/big/);
+  // the mode survives a reload; leaving it gives the sound back to the tile that had it
+  await page.reload();
   await expect(page.locator('#soundfollow')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#audio-overlay')).toBeHidden();   // everything is silent: nothing to ask
+  await page.locator('#soundfollow').click();
+  await expect(page.locator('#soundfollow')).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => muted('two')).toBe(false); expect(await muted('one')).toBe(true);
+  expect(await intents()).toEqual([true, false]);
   // the sound board lists every tile with its state and drives it
   await page.locator('#soundboard').click();
   const rows = page.locator('#sound-board .sound-row');
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0).locator('.snd')).toHaveAttribute('data-sound', 'on');
-  await rows.nth(0).locator('.snd').click();
-  await expect.poll(() => muted('one')).toBe(true);
-  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound', 'muted');
-  await expect(rows.nth(0).locator('.snd')).toHaveAttribute('data-sound', 'muted');
-  await rows.nth(1).locator('input').fill('0.2');
-  await expect.poll(() => page.evaluate(() => [tiles.get('two').volume, tiles.get('two').player.getVolume()])).toEqual([0.2, 0.2]);
-  await expect(two.locator('.volume input')).toHaveValue('0.2');
+  await expect(rows.nth(1).locator('.snd')).toHaveAttribute('data-sound', 'on');
+  await rows.nth(1).locator('.snd').click();
+  await expect.poll(() => muted('two')).toBe(true);
+  await expect(two.locator('.bar .snd')).toHaveAttribute('data-sound', 'muted');
+  await expect(rows.nth(1).locator('.snd')).toHaveAttribute('data-sound', 'muted');
+  await rows.nth(0).locator('input').fill('0.2');
+  await expect.poll(() => page.evaluate(() => [tiles.get('one').volume, tiles.get('one').player.getVolume()])).toEqual([0.2, 0.2]);
+  await expect(one.locator('.volume input')).toHaveValue('0.2');
   // a click outside dismisses the board; reopened under the global mute, its controls step aside too
   await page.locator('#muteall').click();
   await expect(page.locator('#sound-board')).toBeHidden();

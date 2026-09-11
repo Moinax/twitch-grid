@@ -9,7 +9,8 @@
 }
 #grid-lock,
 #grid-clear,
-#side footer button {
+#side footer button,
+#side footer a {
   flex: none;
   @apply w-[32px] h-[32px];
   padding: 0;
@@ -26,7 +27,8 @@
 }
 #grid-lock:hover:not(:disabled),
 #grid-clear:hover:not(:disabled),
-#side footer button:hover:not(:disabled) {
+#side footer button:hover:not(:disabled),
+#side footer a:hover {
   border-color: #9147ff80;
   color: var(--fg);
 }
@@ -40,8 +42,8 @@
   border-color: #9147ff80;
   color: #bf94ff;
 }
-#side footer #settings {
-  margin-left: auto;
+#side footer #soundfollow {
+  margin-left: auto; /* GitHub sits alone on the left; the controls group on the right */
 }
 /* the sound board floats beside the sidebar's footer, over the grid, and dismisses on a click outside */
 #sound-board {
@@ -109,14 +111,9 @@
   @apply cursor-default;
 }
 .sound-row .snd[data-sound="muted"] .on,
-.sound-row .snd:not([data-sound="muted"]) .off,
-.tile .snd[data-sound="hover"] .off {
+.sound-row .snd:not([data-sound="muted"]) .off {
   @apply hidden;
 }
-.tile .snd[data-sound="hover"],
-.sound-row .snd[data-sound="hover"] {
-  opacity: 0.6;
-} /* lit by the hover only: a click keeps it on */
 #sound-board input {
   width: 96px;
   margin: 0;
@@ -513,8 +510,7 @@ dialog input:focus-visible {
 [data-theme="light"] .preview-cover .preview-status {
   text-shadow: none;
 }
-[data-theme="light"] #ctl button:hover,
-[data-theme="light"] #ctl a:hover {
+[data-theme="light"] #ctl button:hover {
   background: #dadae3;
 }
 [data-theme="light"] #list .favorite:hover {

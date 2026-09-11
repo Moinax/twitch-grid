@@ -2,6 +2,9 @@ export const translations: Record<string, [string, string]> = {
   "Lecteur vidéo": ["Video player", "Videospeler"],
   "Embed Twitch": ["Twitch embed", "Twitch-embed"],
   "Lecteur custom": ["Custom player", "Eigen speler"],
+  Latence: ["Latency", "Latentie"],
+  Stable: ["Stable", "Stabiel"],
+  Faible: ["Low", "Laag"],
   "Flux indisponible. Réessayer": [
     "Stream unavailable. Retry",
     "Stream niet beschikbaar. Opnieuw proberen",
@@ -122,7 +125,6 @@ export const translations: Record<string, [string, string]> = {
   Réglages: ["Settings", "Instellingen"],
   "Table de mixage": ["Sound board", "Mengpaneel"],
   "Son au survol": ["Sound follows the mouse", "Geluid volgt de muis"],
-  "Garder le son": ["Keep the sound on", "Geluid aan laten"],
   "Aucun stream dans la grille.": [
     "No stream in the grid.",
     "Geen stream in het raster.",

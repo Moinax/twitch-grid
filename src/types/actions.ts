@@ -16,6 +16,7 @@ export interface WorkspaceActions {
   showLanding?: () => void;
   setLanguage?: (value: string) => void;
   setPlayer?: (value: string) => void;
+  setLatency?: (value: string) => void;
   setTheme?: (value: string) => void;
   openGrids?: () => void;
   openGridManager?: () => void;

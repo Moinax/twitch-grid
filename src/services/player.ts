@@ -172,10 +172,19 @@ export class CustomPlayer implements TwitchPlayer {
     if (this.destroyed) return;
     const video = this.video;
     if (Hls.isSupported()) {
+      const latencyConfig =
+        preferences.latency === "low"
+          ? {
+              liveSyncDurationCount: 2,
+              liveMaxLatencyDurationCount: 4,
+              maxLiveSyncPlaybackRate: 1.05,
+            }
+          : {};
       const hls = (this.hls = new Hls({
         lowLatencyMode: true,
         backBufferLength: 15,
         maxBufferLength: 20,
+        ...latencyConfig,
       }));
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data.fatal) return;

@@ -9,58 +9,6 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
             <b>Twitch grid</b>
             <div id="ctl">
               <button
-                id="connect"
-                onClick={() => actions.connect?.()}
-                title="Connecter Twitch"
-                data-i18n-title="Connecter Twitch"
-                aria-label="Connecter Twitch"
-                data-i18n-aria-label="Connecter Twitch"
-                hidden
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                >
-                  <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6V1.714h14.571Z" />
-                </svg>
-              </button>
-              <button
-                id="disconnect"
-                onClick={() => actions.disconnect?.()}
-                title="Déconnecter Twitch"
-                data-i18n-title="Déconnecter Twitch"
-                aria-label="Déconnecter Twitch"
-                data-i18n-aria-label="Déconnecter Twitch"
-                hidden
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-                </svg>
-              </button>
-              <a
-                href="https://github.com/Moinax/twitch-grid"
-                target="_blank"
-                rel="noopener"
-                title="Mettre une étoile sur GitHub"
-                data-i18n-title="Mettre une étoile sur GitHub"
-              >
-                <svg viewBox="0 0 16 16" width="15" height="15">
-                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
-                </svg>
-              </a>
-              <button
                 id="grids-shortcut"
                 onClick={() => actions.openGrids?.()}
                 className="workspace-shortcut"
@@ -321,6 +269,17 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
         ></ul>
         <p id="list-empty"></p>
         <footer>
+          <a
+            href="https://github.com/Moinax/twitch-grid"
+            target="_blank"
+            rel="noopener"
+            title="Mettre une étoile sur GitHub"
+            data-i18n-title="Mettre une étoile sur GitHub"
+          >
+            <svg viewBox="0 0 16 16" width="15" height="15">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+            </svg>
+          </a>
           <button
             id="soundfollow"
             type="button"
@@ -390,6 +349,44 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
             >
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
               <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <button
+            id="connect"
+            type="button"
+            onClick={() => actions.connect?.()}
+            title="Connecter Twitch"
+            data-i18n-title="Connecter Twitch"
+            aria-label="Connecter Twitch"
+            data-i18n-aria-label="Connecter Twitch"
+            hidden
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6V1.714h14.571Z" />
+            </svg>
+          </button>
+          <button
+            id="disconnect"
+            type="button"
+            onClick={() => actions.disconnect?.()}
+            title="Déconnecter Twitch"
+            data-i18n-title="Déconnecter Twitch"
+            aria-label="Déconnecter Twitch"
+            data-i18n-aria-label="Déconnecter Twitch"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04" />
             </svg>
           </button>
         </footer>
