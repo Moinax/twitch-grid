@@ -14,11 +14,15 @@ export class CustomPlayer implements TwitchPlayer {
   private failed = false;
   private playing = false;
   private quality = "auto";
+  private qualityHeight = 0;
+  private qualityTimer?: ReturnType<typeof setTimeout>;
   private source: string;
   private retry = document.createElement("button");
   private error = document.createElement("div");
   private fallback = document.createElement("button");
   private bar = document.createElement("div");
+  private qualityBadge = document.createElement("span");
+  private qualityText = document.createElement("span");
   private levels = document.createElement("select");
   private slider = document.createElement("input");
 
@@ -104,6 +108,20 @@ export class CustomPlayer implements TwitchPlayer {
     this.levels.addEventListener("change", () =>
       this.setQuality(this.levels.value),
     );
+    this.qualityBadge.className = "custom-quality-badge";
+    this.qualityBadge.hidden = true;
+    const lowLatency = preferences.latency === "low";
+    const latencyIcon = document.createElement("span");
+    latencyIcon.className = `custom-latency ${lowLatency ? "low" : "stable"}`;
+    latencyIcon.title = tr(lowLatency ? "Faible latence" : "Latence stable");
+    latencyIcon.setAttribute("aria-label", latencyIcon.title);
+    latencyIcon.innerHTML = lowLatency
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 9-12h-7z"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    this.qualityBadge.append(latencyIcon, this.qualityText);
+    video.addEventListener("resize", () =>
+      this.paintQuality(video.videoHeight),
+    );
     // Fullscreen the whole tile, so its bar keeps offering the chat, the spotlight and the rest.
     const fullscreen = button(
       "fullscreen",
@@ -114,7 +132,7 @@ export class CustomPlayer implements TwitchPlayer {
     this.bar.append(playPause, sound, this.slider, this.levels, fullscreen);
     element.append(video, this.error);
     // Above the pause overlay, which sits outside the embed's stacking context.
-    (element.closest(".player") || element).append(this.bar);
+    (element.closest(".player") || element).append(this.qualityBadge, this.bar);
     for (const event of [
       "play",
       "playing",
@@ -182,6 +200,7 @@ export class CustomPlayer implements TwitchPlayer {
           : {};
       const hls = (this.hls = new Hls({
         lowLatencyMode: true,
+        capLevelToPlayerSize: true,
         backBufferLength: 15,
         maxBufferLength: 20,
         ...latencyConfig,
@@ -199,6 +218,9 @@ export class CustomPlayer implements TwitchPlayer {
         );
         this.setQuality(this.quality); // a quality kept across a remount only lands once the levels are known
       });
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) =>
+        this.paintQuality(hls.levels[data.level]?.height),
+      );
       hls.loadSource(this.source);
       hls.attachMedia(video);
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -214,6 +236,18 @@ export class CustomPlayer implements TwitchPlayer {
   private emit(event: string) {
     if (!this.destroyed)
       for (const callback of this.listeners.get(event) || []) callback();
+  }
+  private paintQuality(height: number | undefined) {
+    if (!height || height === this.qualityHeight) return;
+    this.qualityHeight = height;
+    this.qualityText.textContent = `${height}p`;
+    this.qualityBadge.hidden = false;
+    this.qualityBadge.classList.add("visible");
+    clearTimeout(this.qualityTimer);
+    this.qualityTimer = setTimeout(
+      () => this.qualityBadge.classList.remove("visible"),
+      3000,
+    );
   }
   addEventListener(event: string, callback: () => void) {
     this.listeners.set(event, [...(this.listeners.get(event) || []), callback]);
@@ -274,12 +308,14 @@ export class CustomPlayer implements TwitchPlayer {
   destroy() {
     this.destroyed = true;
     this.listeners.clear();
+    clearTimeout(this.qualityTimer);
     this.hls?.destroy();
     this.video.pause();
     this.video.removeAttribute("src");
     this.video.load();
     this.video.remove();
     this.error.remove();
+    this.qualityBadge.remove();
     this.bar.remove();
   }
 }

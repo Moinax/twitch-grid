@@ -1332,6 +1332,48 @@ body.collapsed #list-empty {
   object-fit: contain;
   background: transparent;
 }
+.custom-quality-badge {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 4;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #181818b3;
+  color: #fff;
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+.custom-quality-badge[hidden] {
+  display: none;
+}
+.custom-quality-badge.visible,
+.tile:hover .custom-quality-badge {
+  opacity: 1;
+}
+.custom-latency {
+  display: flex;
+  color: #c8c8cc;
+}
+.custom-latency.low {
+  color: #b68cff;
+}
+.custom-latency svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 body.dragging #grid video {
   pointer-events: none;
 }

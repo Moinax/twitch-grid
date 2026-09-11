@@ -147,6 +147,23 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
   // The themed bar replaces the browser chrome and fullscreens the tile, so its own bar stays reachable.
   await expect(page.locator("#grid video")).toHaveJSProperty("controls", false);
   await expect(page.locator("#grid .custom-quality")).toHaveValue("auto");
+  await expect(page.locator("#grid .custom-quality-badge")).toHaveText("90p");
+  await expect(page.locator("#grid .custom-quality-badge")).toHaveClass(
+    /visible/,
+  );
+  await expect(page.locator("#grid .custom-latency.stable")).toHaveAttribute(
+    "title",
+    "Stable latency",
+  );
+  await expect(page.locator("#grid .custom-quality-badge")).not.toHaveClass(
+    /visible/,
+    { timeout: 4000 },
+  );
+  await page.locator("#grid .tile").hover();
+  await expect(page.locator("#grid .custom-quality-badge")).toHaveCSS(
+    "opacity",
+    "1",
+  );
   // Its play, sound and volume drive the media element, and the tile reads the change back.
   await expect
     .poll(() => page.evaluate(() => tiles.get("example").wasPlaying))
@@ -205,6 +222,10 @@ test("low latency persists and remounts custom players with a tighter live targe
     window.stableVideo = document.querySelector("#grid video");
   });
   await choose(page, "#latency-setting", "low");
+  await expect(page.locator("#grid .custom-latency.low")).toHaveAttribute(
+    "title",
+    "Low latency",
+  );
   await expect
     .poll(() =>
       page.evaluate(
@@ -219,12 +240,14 @@ test("low latency persists and remounts custom players with a tighter live targe
     await page.evaluate(() => {
       const config = tiles.get("example").player.hls.config;
       return {
+        capLevelToPlayerSize: config.capLevelToPlayerSize,
         liveSyncDurationCount: config.liveSyncDurationCount,
         liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
         maxLiveSyncPlaybackRate: config.maxLiveSyncPlaybackRate,
       };
     }),
   ).toEqual({
+    capLevelToPlayerSize: true,
     liveSyncDurationCount: 2,
     liveMaxLatencyDurationCount: 4,
     maxLiveSyncPlaybackRate: 1.05,

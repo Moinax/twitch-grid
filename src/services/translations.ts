@@ -5,6 +5,8 @@ export const translations: Record<string, [string, string]> = {
   Latence: ["Latency", "Latentie"],
   Stable: ["Stable", "Stabiel"],
   Faible: ["Low", "Laag"],
+  "Latence stable": ["Stable latency", "Stabiele latentie"],
+  "Faible latence": ["Low latency", "Lage latentie"],
   "Flux indisponible. Réessayer": [
     "Stream unavailable. Retry",
     "Stream niet beschikbaar. Opnieuw proberen",

@@ -27,6 +27,12 @@ export function fit(p: HTMLElement) {
       right: (box.width - width) / 2 + 10 + "px",
       bottom: (box.height - height) / 2 + 10 + "px",
     });
+  const quality = p.querySelector<HTMLElement>(".custom-quality-badge");
+  if (quality)
+    Object.assign(quality.style, {
+      right: (box.width - width) / 2 + 8 + "px",
+      top: (box.height - height) / 2 + 8 + "px",
+    });
   const frame = p.querySelector<HTMLIFrameElement | HTMLVideoElement>(
     "iframe, video",
   )!;
