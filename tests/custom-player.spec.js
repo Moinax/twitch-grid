@@ -42,6 +42,12 @@ test('switches between embed and HLS while preserving tile settings', async ({ p
   await page.locator('#q').hover();
   await expect(page.locator('#tooltip')).toBeHidden();
   await expect(page.locator('#grid .custom-fullscreen')).toHaveAttribute('title', 'Fullscreen');
+  // the video is named for assistive tech, not with a title that would hang a tooltip over the stream
+  await expect(page.locator('#grid video')).toHaveAttribute('aria-label', 'Stream by Example');
+  await expect(page.locator('#grid video')).not.toHaveAttribute('title');
+  await page.locator('#grid video').hover();
+  await page.waitForTimeout(700);
+  await expect(page.locator('#tooltip')).toBeHidden();
   await page.evaluate(() => { window.originalVideo = document.querySelector('#grid video'); });
   await page.selectOption('#theme-setting', 'light');
   expect(await page.evaluate(() => originalVideo === document.querySelector('#grid video'))).toBe(true);

@@ -14,8 +14,8 @@ test('rejects invalid channels and methods before contacting Twitch', async () =
   assert.equal((await request('/api/stream?channel=../private')).statusCode, 400);
   assert.equal((await request('/api/stream?channel=example', 'POST')).statusCode, 405);
 });
-test('resolves the playback token and returns the unmodified master playlist', async () => {
-  const playlist = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\nhttps://video.example/live.m3u8\n';
+test('resolves the playback token and routes the variant playlists back through this endpoint', async () => {
+  const playlist = '#EXTM3U\n#EXT-X-SESSION-DATA:DATA-ID="NODE",VALUE="https://node.example"\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\nhttps://euc13.playlist.ttvnw.net/v1/playlist/abc.m3u8\n';
   global.fetch = async (url, options) => {
     if (String(url).includes('gql.twitch.tv')) {
       assert.equal(JSON.parse(options.body).variables.login, 'example');
@@ -27,8 +27,21 @@ test('resolves the playback token and returns the unmodified master playlist', a
     return new Response(playlist);
   };
   const res = await request();
-  assert.equal(res.body, playlist);
+  // Twitch's playlist hosts refuse the deployed Origin, so only the segment URLs stay direct
+  assert.equal(res.body, '#EXTM3U\n#EXT-X-SESSION-DATA:DATA-ID="NODE",VALUE="https://node.example"\n#EXT-X-STREAM-INF:BANDWIDTH=2000000\n/api/stream?playlist=https%3A%2F%2Feuc13.playlist.ttvnw.net%2Fv1%2Fplaylist%2Fabc.m3u8\n');
   assert.equal(res.headers['Cache-Control'], 'no-store');
+});
+test('proxies a Twitch variant playlist and refuses any other target', async () => {
+  const media = '#EXTM3U\n#EXTINF:2,\nhttps://cdn.hls.ttvnw.net/segment.ts\n';
+  let requested;
+  global.fetch = async url => { requested = String(url); return new Response(media); };
+  const res = await request('/api/stream?playlist=' + encodeURIComponent('https://euc13.playlist.ttvnw.net/v1/playlist/abc.m3u8'));
+  assert.equal(requested, 'https://euc13.playlist.ttvnw.net/v1/playlist/abc.m3u8');
+  assert.equal(res.body, media);   // segments carry an open CORS policy and need no proxy
+  assert.equal(res.headers['Content-Type'], 'application/vnd.apple.mpegurl');
+  global.fetch = () => { throw new Error('Unexpected request'); };
+  for (const target of ['https://evil.example/internal', 'http://euc13.playlist.ttvnw.net/x.m3u8', 'not-a-url', 'https://playlist.ttvnw.net.evil.example/x'])
+    assert.deepEqual((await request('/api/stream?playlist=' + encodeURIComponent(target))).body, { error: 'INVALID_PLAYLIST_URL' });
 });
 test('access refusals stay errors and do not leak upstream data', async () => {
   global.fetch = async () => Response.json({ errors: [{ message: 'private upstream detail' }] });

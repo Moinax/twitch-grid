@@ -1,6 +1,12 @@
 import type { Tile } from "../types/player";
 import type { Channel } from "../types/domain";
 
+// An iframe needs a title for its accessible name; on a video that same title would hang a tooltip
+// over the stream, so the name goes to the label instead.
+export function nameFrame(frame: HTMLElement, name: string) {
+  frame.setAttribute(frame.tagName === "IFRAME" ? "title" : "aria-label", name);
+}
+
 export function fit(p: HTMLElement) {
   // Grid cells can have fractional dimensions. clientWidth/clientHeight round up and can clip the iframe.
   const box = p.getBoundingClientRect();

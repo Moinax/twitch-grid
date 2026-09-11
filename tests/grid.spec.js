@@ -1710,6 +1710,8 @@ test('workspace controls work collapsed on mobile and dialogs keep focus without
   expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
   await page.locator('#toggle').click();
   await expect(page.locator('#grid .big')).toHaveAttribute('data-login','one');
+  // the rail sizes every control the same way, clear included
+  expect(await page.locator('#grid-clear').boundingBox()).toMatchObject({width:32,height:32});
   await page.locator('#grids-shortcut').click();await expect(page.locator('#saved-grids .saved-grid')).toHaveCount(1);
   await page.locator('#grid-new').click();await nameGrid(page,'Mobile');
   await expect(page.locator('#grid .tile')).toHaveCount(0);

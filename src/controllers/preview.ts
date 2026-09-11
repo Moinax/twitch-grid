@@ -3,7 +3,7 @@ import type { Channel } from "../types/domain";
 import type { TwitchPlayer } from "../types/player";
 import type { createLifecycle } from "./lifecycle";
 import { tr } from "../services/preferences";
-import { fit, previewImageURL } from "./videoLayout";
+import { fit, nameFrame, previewImageURL } from "./videoLayout";
 interface PreviewOptions {
   element: HTMLElement;
   side: HTMLElement;
@@ -170,7 +170,7 @@ export function createPreviewController({
       HTMLIFrameElement | HTMLVideoElement
     >("iframe, video")!;
     frame.tabIndex = -1;
-    frame.title = tr("Aperçu de {name}", { name: s.display });
+    nameFrame(frame, tr("Aperçu de {name}", { name: s.display }));
     fit(previewVideo);
     const current = () => previewPlayer === player && !preview.hidden;
     player.addEventListener(playerConstructor()!.READY, () => {

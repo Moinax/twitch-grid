@@ -26,6 +26,7 @@ body.collapsed #grid-switcher {
 }
 body.collapsed #ctl button,
 body.collapsed #ctl a,
+body.collapsed #grid-clear,
 body.collapsed #grid-lock {
   flex: none;
   align-self: center;
@@ -43,6 +44,7 @@ body.collapsed #grids-shortcut {
   order: -3;
   @apply mt-[12px];
 }
+body.collapsed #grid-clear,
 body.collapsed #grid-lock {
   order: -3;
 }

@@ -4,7 +4,7 @@ import { WordReveal } from "../components/WordReveal";
 import { watchForUpdates } from "./updates";
 import { syncPlayerTooltips } from "./tooltips";
 import { createPreviewController } from "./preview";
-import { fit, layoutChat, previewImageURL } from "./videoLayout";
+import { fit, layoutChat, nameFrame, previewImageURL } from "./videoLayout";
 import { createLifecycle } from "./lifecycle";
 import type {
   AccountMode,
@@ -1271,9 +1271,12 @@ export function startWorkspace(
     });
     t.player = player;
     // The cover is outside Twitch's mount node, so iframe initialization cannot remove it.
-    container.querySelector<HTMLIFrameElement | HTMLVideoElement>(
-      "iframe, video",
-    )!.title = tr("Stream de {name}", { name: t.channel.display });
+    nameFrame(
+      container.querySelector<HTMLIFrameElement | HTMLVideoElement>(
+        "iframe, video",
+      )!,
+      tr("Stream de {name}", { name: t.channel.display }),
+    );
     fit(container); // Size the iframe before READY so it fits the tile from the first frame.
     const current = () => t.player === player && t.el.isConnected;
     player.addEventListener(playerConstructor()!.READY, () => {
@@ -3030,12 +3033,11 @@ export function startWorkspace(
         "aria-label",
         tr("Chat de {name}", { name: t.channel.display }),
       );
-      t.el
-        .querySelector<HTMLElement>(".player iframe, .player video")
-        ?.setAttribute(
-          "title",
-          tr("Stream de {name}", { name: t.channel.display }),
-        );
+      const frame = t.el.querySelector<HTMLElement>(
+        ".player iframe, .player video",
+      );
+      if (frame)
+        nameFrame(frame, tr("Stream de {name}", { name: t.channel.display }));
       t.chat
         .querySelector<HTMLIFrameElement | HTMLVideoElement>("iframe, video")
         ?.setAttribute(
