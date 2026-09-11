@@ -185,7 +185,7 @@ export function LandingDemo() {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9" />
+              <path d="M8 5v14M16 5v14" />
             </svg>
             <svg
               viewBox="0 0 24 24"
@@ -249,9 +249,6 @@ export function LandingDemo() {
                 <path d="M11 5 6 9H2v6h4l5 4z" />
                 <path d="M15.5 8.5a5 5 0 0 1 0 7" />
                 <path d="M19 5a10 10 0 0 1 0 14" />
-                <g transform="translate(11 -2) scale(.55)" strokeWidth="3.5">
-                  <path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9" />
-                </g>
               </svg>
             </span>
             <svg
@@ -264,7 +261,7 @@ export function LandingDemo() {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9" />
+              <path d="M8 5v14M16 5v14" />
             </svg>
             <svg
               viewBox="0 0 24 24"
@@ -328,7 +325,7 @@ export function LandingDemo() {
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M9 3h6M10 3v5l-3 4h10l-3-4V3M12 12v9" />
+              <path d="M8 5v14M16 5v14" />
             </svg>
             <svg
               viewBox="0 0 24 24"

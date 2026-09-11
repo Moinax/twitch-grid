@@ -132,11 +132,11 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                     <path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14" />
                   </svg>
                 </span>
-                <h3 data-i18n="">Un seul son à la fois</h3>
+                <h3 data-i18n="">Le son suit ta souris</h3>
                 <p data-i18n="">
-                  Le stream en spotlight a le son, les autres restent muets.
-                  Épingle le son d’une tuile pour le garder quand le spotlight
-                  change.
+                  Maintiens Shift : seule la tuile sous ta souris a le son.
+                  Relâche, et chaque stream retrouve son réglage. Le spotlight
+                  allume son stream, la table de mixage règle chaque volume.
                 </p>
               </article>
               <article className="card">
@@ -158,8 +158,8 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 </span>
                 <h3 data-i18n="">Une grille qui se souvient</h3>
                 <p data-i18n="">
-                  Son épinglé, grilles nommées, chat et disposition : tout est
-                  enregistré dans ton navigateur et revient tel quel.
+                  Son, volume, grilles nommées, position et taille du chat :
+                  tout est enregistré dans ton navigateur et revient tel quel.
                 </p>
               </article>
             </div>
@@ -208,7 +208,8 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 <h3 data-i18n="">Follows en direct</h3>
                 <p data-i18n="">
                   Connecte Twitch : tes chaînes suivies apparaissent, directs en
-                  premier, rafraîchies toutes les 30 secondes.
+                  premier, rafraîchies toutes les 30 secondes. La grille Follows
+                  en direct accueille chaque nouveau direct toute seule.
                 </p>
               </article>
               <article className="card">
@@ -252,9 +253,9 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 </span>
                 <h3 data-i18n="">Spotlight</h3>
                 <p data-i18n="">
-                  Passe un stream en spotlight : grand, avec le son et le
-                  lecteur Twitch complet. Toute autre tuile assez large reçoit
-                  aussi le lecteur complet.
+                  Shift+clic sur une vidéo, ou son bouton : elle passe en grand,
+                  avec le son et les commandes complètes. Toute autre tuile
+                  assez large reçoit aussi les commandes complètes.
                 </p>
               </article>
               <article className="card">
@@ -274,11 +275,59 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                     <path d="M15.5 8.5a5 5 0 0 1 0 7" />
                   </svg>
                 </span>
-                <h3 data-i18n="">Son en trois états</h3>
+                <h3 data-i18n="">Son et volume par tuile</h3>
                 <p data-i18n="">
-                  Muet ou allumé, sur chaque tuile. Le spotlight allume le son
-                  et le rend en repartant. Un bouton coupe tout, un autre met
-                  tout en pause.
+                  Muet ou allumé, avec un curseur de volume sur chaque tuile. La
+                  table de mixage rassemble tous les niveaux dans un seul
+                  panneau. Shift+M coupe tout, Espace met tout en pause.
+                </p>
+              </article>
+              <article className="card">
+                <span className="icon">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 4.1 12 6M5.1 8l-2.9-.8M6 12l-1.9 2M7.2 2.2 8 5.1" />
+                    <path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z" />
+                  </svg>
+                </span>
+                <h3 data-i18n="">Son au survol</h3>
+                <p data-i18n="">
+                  Un bouton, ou Shift maintenu : seule la tuile sous ta souris a
+                  le son. En quittant le mode, chaque stream retrouve son
+                  réglage.
+                </p>
+              </article>
+              <article className="card">
+                <span className="icon">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m13 2-9 12h7l-1 8 9-12h-7z" />
+                  </svg>
+                </span>
+                <h3 data-i18n="">Lecteur custom</h3>
+                <p data-i18n="">
+                  Les tuiles lisent le flux HLS de Twitch dans un lecteur aux
+                  couleurs du site : choix de la qualité, faible latence en un
+                  clic, plein écran. Le lecteur Twitch reste disponible dans les
+                  réglages.
                 </p>
               </article>
               <article className="card">
@@ -370,7 +419,9 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 <h3 data-i18n="">Chat intégré</h3>
                 <p data-i18n="">
                   Le chat s’ouvre à côté de toute tuile assez large : auto,
-                  haut, bas, gauche ou droite, mémorisé par stream.
+                  haut, bas, gauche ou droite. Glisse sa poignée pour le
+                  redimensionner ; position et taille sont mémorisées par
+                  stream.
                 </p>
               </article>
               <article className="card">
@@ -393,7 +444,8 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 <h3 data-i18n="">Grille verrouillée</h3>
                 <p data-i18n="">
                   Verrouille la grille pour qu’aucun stream ne s’ajoute par
-                  erreur. Un stream terminé quitte la grille après une minute.
+                  erreur, ou vide-la d’un bouton. Un stream terminé quitte la
+                  grille après une minute.
                 </p>
               </article>
               <article className="card">
@@ -415,7 +467,32 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 <h3 data-i18n="">Agrandir</h3>
                 <p data-i18n="">
                   Étends le stream en spotlight à toute la fenêtre du
-                  navigateur. Échap pour revenir.
+                  navigateur, ou double-clique une vidéo pour la mettre en plein
+                  écran. Échap pour revenir.
+                </p>
+              </article>
+              <article className="card">
+                <span className="icon">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="2" y="6" width="20" height="12" rx="2" />
+                    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+                  </svg>
+                </span>
+                <h3 data-i18n="">Raccourcis clavier</h3>
+                <p data-i18n="">
+                  Espace joue ou met tout en pause, Shift+M coupe tout,
+                  Shift+clic met en spotlight, Échap ramène la grille. Chaque
+                  bouton rappelle sa touche au survol.
                 </p>
               </article>
               <article className="card">
@@ -438,7 +515,8 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 <h3 data-i18n="">Trois langues, deux thèmes</h3>
                 <p data-i18n="">
                   Français, anglais, néerlandais. Clair, sombre ou selon le
-                  système, sans recharger les vidéos.
+                  système. Lecteur, latence et chat en spotlight se règlent au
+                  même endroit, sans recharger les vidéos.
                 </p>
               </article>
               <article className="card">
@@ -493,8 +571,8 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 <b>3</b>
                 <h3 data-i18n="">Choisis le spotlight et le son</h3>
                 <p data-i18n="">
-                  Passe une vidéo en spotlight. Le son la suit, le reste se
-                  tait.
+                  Shift+clic sur une vidéo la passe en spotlight, avec le son.
+                  Maintiens Shift et le son suit ta souris.
                 </p>
               </li>
             </ol>
@@ -559,8 +637,19 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 </summary>
                 <p data-i18n="">
                   Il n’y a pas de limite fixée. Chaque tuile est un lecteur
-                  Twitch officiel, donc la limite vient de ton écran et de ta
-                  connexion.
+                  vidéo à part entière, donc la limite vient de ton écran et de
+                  ta connexion.
+                </p>
+              </details>
+              <details className="qa">
+                <summary data-i18n="">
+                  Le lecteur custom, quelle différence avec le lecteur Twitch ?
+                </summary>
+                <p data-i18n="">
+                  Il lit le même flux que Twitch, demandé sans ta session. Tu
+                  choisis la qualité et la latence. Les publicités restent et
+                  les avantages d’abonnement ne s’appliquent pas. Le lecteur
+                  Twitch reste disponible dans les réglages.
                 </p>
               </details>
               <details className="qa">
@@ -603,13 +692,14 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
               </details>
               <details className="qa">
                 <summary data-i18n="">
-                  Pourquoi certaines tuiles ont le lecteur Twitch complet et
+                  Pourquoi certaines tuiles ont les commandes complètes et
                   d’autres non ?
                 </summary>
                 <p data-i18n="">
-                  Dès qu’une tuile est assez large, elle reçoit le lecteur
-                  complet et, plus large encore, son chat. Réduis la fenêtre et
-                  elle repasse aux commandes simplifiées, sans rien perdre.
+                  Dès qu’une tuile est assez large, elle reçoit la barre
+                  complète du lecteur et, plus large encore, son chat. Réduis la
+                  fenêtre et elle repasse aux commandes simplifiées, sans rien
+                  perdre.
                 </p>
               </details>
               <details className="qa">

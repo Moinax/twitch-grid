@@ -374,20 +374,23 @@ export const translations: Record<string, [string, string]> = {
       "Live channels move to the top of the list, with their status checked every 30 seconds. One click adds the stream to the grid; a stream that ends leaves it by itself after a minute.",
       "Live kanalen staan bovenaan de lijst, met een statuscontrole elke 30 seconden. Eén klik zet de stream in het raster; een afgelopen stream verlaat het vanzelf na een minuut.",
     ],
-  "Un seul son à la fois": ["One sound at a time", "Eén geluid tegelijk"],
-  "Le stream en spotlight a le son, les autres restent muets. Épingle le son d’une tuile pour le garder quand le spotlight change.":
+  "Le son suit ta souris": [
+    "The sound follows your mouse",
+    "Het geluid volgt je muis",
+  ],
+  "Maintiens Shift : seule la tuile sous ta souris a le son. Relâche, et chaque stream retrouve son réglage. Le spotlight allume son stream, la table de mixage règle chaque volume.":
     [
-      "The spotlighted stream has the sound, the others stay muted. Pin a tile’s sound to keep it when the spotlight moves.",
-      "De stream in de spotlight heeft het geluid, de andere blijven stil. Zet het geluid van een tegel vast om het te houden als de spotlight verandert.",
+      "Hold Shift: only the tile under your mouse has the sound. Let go, and every stream gets its own setting back. The spotlight turns on its stream, the sound board sets every volume.",
+      "Houd Shift ingedrukt: alleen de tegel onder je muis heeft geluid. Laat los, en elke stream krijgt zijn eigen instelling terug. De spotlight zet zijn stream aan, het mengpaneel regelt elk volume.",
     ],
   "Une grille qui se souvient": [
     "A grid that remembers",
     "Een raster dat onthoudt",
   ],
-  "Son épinglé, grilles nommées, chat et disposition : tout est enregistré dans ton navigateur et revient tel quel.":
+  "Son, volume, grilles nommées, position et taille du chat : tout est enregistré dans ton navigateur et revient tel quel.":
     [
-      "Pinned sound, named grids, chat and layout: everything is saved in your browser and comes back as you left it.",
-      "Vastgezet geluid, benoemde rasters, chat en indeling: alles wordt in je browser bewaard en komt terug zoals je het achterliet.",
+      "Sound, volume, named grids, chat position and size: everything is saved in your browser and comes back as you left it.",
+      "Geluid, volume, benoemde rasters, positie en grootte van de chat: alles wordt in je browser bewaard en komt terug zoals je het achterliet.",
     ],
   "Twitch grid en une phrase": [
     "Twitch grid in one sentence",
@@ -407,10 +410,10 @@ export const translations: Record<string, [string, string]> = {
       "Every feature exists for a real situation: an evening with several streams, a tournament, a stream running while you work.",
       "Elke functie bestaat voor een concrete situatie: een avond met meerdere streams, een toernooi, een stream op de achtergrond tijdens het werk.",
     ],
-  "Connecte Twitch : tes chaînes suivies apparaissent, directs en premier, rafraîchies toutes les 30 secondes.":
+  "Connecte Twitch : tes chaînes suivies apparaissent, directs en premier, rafraîchies toutes les 30 secondes. La grille Follows en direct accueille chaque nouveau direct toute seule.":
     [
-      "Connect Twitch: the channels you follow appear, live ones first, refreshed every 30 seconds.",
-      "Verbind Twitch: je gevolgde kanalen verschijnen, live eerst, elke 30 seconden vernieuwd.",
+      "Connect Twitch: the channels you follow appear, live ones first, refreshed every 30 seconds. The Live follows grid takes in every new live stream on its own.",
+      "Verbind Twitch: je gevolgde kanalen verschijnen, live eerst, elke 30 seconden vernieuwd. Het raster Live follows neemt elke nieuwe livestream vanzelf op.",
     ],
   "Favoris sans compte": [
     "Favorites without an account",
@@ -421,16 +424,29 @@ export const translations: Record<string, [string, string]> = {
       "Search a username or paste a Twitch link. The list stays in this browser.",
       "Zoek een gebruikersnaam of plak een Twitch-link. De lijst blijft in deze browser.",
     ],
-  "Passe un stream en spotlight : grand, avec le son et le lecteur Twitch complet. Toute autre tuile assez large reçoit aussi le lecteur complet.":
+  "Shift+clic sur une vidéo, ou son bouton : elle passe en grand, avec le son et les commandes complètes. Toute autre tuile assez large reçoit aussi les commandes complètes.":
     [
-      "Spotlight a stream: big, with the sound and the full Twitch player. Any other tile wide enough gets the full player too.",
-      "Zet een stream in de spotlight: groot, met geluid en de volledige Twitch-speler. Elke andere tegel die breed genoeg is, krijgt de volledige speler ook.",
+      "Shift+click a video, or use its button: it goes big, with the sound and the full controls. Any other tile wide enough gets the full controls too.",
+      "Shift+klik op een video, of gebruik zijn knop: hij wordt groot, met geluid en de volledige bediening. Elke andere tegel die breed genoeg is, krijgt de volledige bediening ook.",
     ],
-  "Son en trois états": ["Sound in three states", "Geluid in drie standen"],
-  "Muet ou allumé, sur chaque tuile. Le spotlight allume le son et le rend en repartant. Un bouton coupe tout, un autre met tout en pause.":
+  "Son et volume par tuile": [
+    "Sound and volume per tile",
+    "Geluid en volume per tegel",
+  ],
+  "Muet ou allumé, avec un curseur de volume sur chaque tuile. La table de mixage rassemble tous les niveaux dans un seul panneau. Shift+M coupe tout, Espace met tout en pause.":
     [
-      "Muted or on, on every tile. The spotlight turns the sound on and gives it back on the way out. One button mutes everything, another pauses everything.",
-      "Stil of aan, op elke tegel. De spotlight zet het geluid aan en geeft het terug bij het verlaten. Eén knop dempt alles, een andere pauzeert alles.",
+      "Muted or on, with a volume slider on every tile. The sound board gathers every level in one panel. Shift+M mutes everything, Space pauses everything.",
+      "Stil of aan, met een volumeschuif op elke tegel. Het mengpaneel brengt alle niveaus samen in één paneel. Shift+M dempt alles, spatie pauzeert alles.",
+    ],
+  "Un bouton, ou Shift maintenu : seule la tuile sous ta souris a le son. En quittant le mode, chaque stream retrouve son réglage.":
+    [
+      "A button, or Shift held down: only the tile under your mouse has the sound. Leave the mode, and every stream gets its own setting back.",
+      "Een knop, of Shift ingedrukt: alleen de tegel onder je muis heeft geluid. Verlaat de modus, en elke stream krijgt zijn eigen instelling terug.",
+    ],
+  "Les tuiles lisent le flux HLS de Twitch dans un lecteur aux couleurs du site : choix de la qualité, faible latence en un clic, plein écran. Le lecteur Twitch reste disponible dans les réglages.":
+    [
+      "Tiles play Twitch’s HLS stream in a player styled like the site: quality choice, low latency in one click, fullscreen. The Twitch player stays available in the settings.",
+      "Tegels spelen de HLS-stream van Twitch af in een speler in de stijl van de site: keuze van kwaliteit, lage latentie met één klik, volledig scherm. De Twitch-speler blijft beschikbaar in de instellingen.",
     ],
   "Notifications de direct": ["Live notifications", "Livemeldingen"],
   "Quand une chaîne suivie démarre, une notification l’ajoute à la grille en un clic.":
@@ -451,30 +467,36 @@ export const translations: Record<string, [string, string]> = {
       "De gedeelde chat van Twitch toont de partners van een stream. Voeg alle live deelnemers in één keer toe.",
     ],
   "Chat intégré": ["Built in chat", "Ingebouwde chat"],
-  "Le chat s’ouvre à côté de toute tuile assez large : auto, haut, bas, gauche ou droite, mémorisé par stream.":
+  "Le chat s’ouvre à côté de toute tuile assez large : auto, haut, bas, gauche ou droite. Glisse sa poignée pour le redimensionner ; position et taille sont mémorisées par stream.":
     [
-      "The chat opens next to any tile wide enough: auto, top, bottom, left or right, remembered per stream.",
-      "De chat opent naast elke tegel die breed genoeg is: auto, boven, onder, links of rechts, onthouden per stream.",
+      "The chat opens next to any tile wide enough: auto, top, bottom, left or right. Drag its handle to resize it; position and size are remembered per stream.",
+      "De chat opent naast elke tegel die breed genoeg is: auto, boven, onder, links of rechts. Sleep de greep om de grootte aan te passen; positie en grootte worden per stream onthouden.",
     ],
-  "Verrouille la grille pour qu’aucun stream ne s’ajoute par erreur. Un stream terminé quitte la grille après une minute.":
+  "Verrouille la grille pour qu’aucun stream ne s’ajoute par erreur, ou vide-la d’un bouton. Un stream terminé quitte la grille après une minute.":
     [
-      "Lock the grid so no stream joins by accident. A stream that ends leaves the grid after a minute.",
-      "Vergrendel het raster zodat geen stream per ongeluk wordt toegevoegd. Een afgelopen stream verlaat het raster na een minuut.",
+      "Lock the grid so no stream joins by accident, or clear it with one button. A stream that ends leaves the grid after a minute.",
+      "Vergrendel het raster zodat geen stream per ongeluk wordt toegevoegd, of maak het leeg met één knop. Een afgelopen stream verlaat het raster na een minuut.",
     ],
   Agrandir: ["Enlarge", "Vergroten"],
-  "Étends le stream en spotlight à toute la fenêtre du navigateur. Échap pour revenir.":
+  "Étends le stream en spotlight à toute la fenêtre du navigateur, ou double-clique une vidéo pour la mettre en plein écran. Échap pour revenir.":
     [
-      "Stretch the spotlighted stream to the whole browser window. Escape brings you back.",
-      "Rek de uitgelichte stream uit tot het hele browservenster. Escape brengt je terug.",
+      "Stretch the spotlighted stream to the whole browser window, or double-click a video to make it fullscreen. Escape brings you back.",
+      "Rek de uitgelichte stream uit tot het hele browservenster, of dubbelklik op een video voor volledig scherm. Escape brengt je terug.",
+    ],
+  "Raccourcis clavier": ["Keyboard shortcuts", "Sneltoetsen"],
+  "Espace joue ou met tout en pause, Shift+M coupe tout, Shift+clic met en spotlight, Échap ramène la grille. Chaque bouton rappelle sa touche au survol.":
+    [
+      "Space plays or pauses everything, Shift+M mutes everything, Shift+click spotlights, Escape brings the grid back. Every button shows its key on hover.",
+      "Spatie speelt alles af of pauzeert alles, Shift+M dempt alles, Shift+klik zet in de spotlight, Escape brengt het raster terug. Elke knop toont zijn toets bij aanwijzen.",
     ],
   "Trois langues, deux thèmes": [
     "Three languages, two themes",
     "Drie talen, twee thema’s",
   ],
-  "Français, anglais, néerlandais. Clair, sombre ou selon le système, sans recharger les vidéos.":
+  "Français, anglais, néerlandais. Clair, sombre ou selon le système. Lecteur, latence et chat en spotlight se règlent au même endroit, sans recharger les vidéos.":
     [
-      "French, English, Dutch. Light, dark or system, without reloading the videos.",
-      "Frans, Engels, Nederlands. Licht, donker of systeem, zonder de video’s te herladen.",
+      "French, English, Dutch. Light, dark or system. Player, latency and spotlight chat are set in the same place, without reloading the videos.",
+      "Frans, Engels, Nederlands. Licht, donker of systeem. Speler, latentie en chat in spotlight stel je op dezelfde plek in, zonder de video’s te herladen.",
     ],
   "Sidebar en rail": ["Sidebar as a rail", "Zijbalk als rail"],
   "Repliée, la liste devient un rail d’avatars, chaînes hors ligne estompées. Le survol ouvre un aperçu du stream avec son titre et sa catégorie.":
@@ -505,10 +527,11 @@ export const translations: Record<string, [string, string]> = {
     "Pick the spotlight and the sound",
     "Kies de uitgelichte stream en het geluid",
   ],
-  "Passe une vidéo en spotlight. Le son la suit, le reste se tait.": [
-    "Spotlight a video. The sound follows it, the rest goes quiet.",
-    "Klik op een video om hem uit te lichten. Het geluid volgt, de rest zwijgt.",
-  ],
+  "Shift+clic sur une vidéo la passe en spotlight, avec le son. Maintiens Shift et le son suit ta souris.":
+    [
+      "Shift+click a video to spotlight it, with the sound. Hold Shift and the sound follows your mouse.",
+      "Shift+klik op een video om hem uit te lichten, met geluid. Houd Shift ingedrukt en het geluid volgt je muis.",
+    ],
   "Rien à installer, rien à créer": [
     "Nothing to install, nothing to create",
     "Niets te installeren, niets aan te maken",
@@ -559,10 +582,19 @@ export const translations: Record<string, [string, string]> = {
     "How many streams at once?",
     "Hoeveel streams tegelijk?",
   ],
-  "Il n’y a pas de limite fixée. Chaque tuile est un lecteur Twitch officiel, donc la limite vient de ton écran et de ta connexion.":
+  "Il n’y a pas de limite fixée. Chaque tuile est un lecteur vidéo à part entière, donc la limite vient de ton écran et de ta connexion.":
     [
-      "There is no set limit. Each tile is an official Twitch player, so the limit comes from your screen and your connection.",
-      "Er is geen vaste limiet. Elke tegel is een officiële Twitch-speler, dus de grens ligt bij je scherm en je verbinding.",
+      "There is no set limit. Each tile is a full video player, so the limit comes from your screen and your connection.",
+      "Er is geen vaste limiet. Elke tegel is een volwaardige videospeler, dus de grens ligt bij je scherm en je verbinding.",
+    ],
+  "Le lecteur custom, quelle différence avec le lecteur Twitch ?": [
+    "The custom player, how is it different from the Twitch player?",
+    "De eigen speler, wat is het verschil met de Twitch-speler?",
+  ],
+  "Il lit le même flux que Twitch, demandé sans ta session. Tu choisis la qualité et la latence. Les publicités restent et les avantages d’abonnement ne s’appliquent pas. Le lecteur Twitch reste disponible dans les réglages.":
+    [
+      "It plays the same stream as Twitch, requested without your session. You choose the quality and the latency. Ads remain and subscription perks do not apply. The Twitch player stays available in the settings.",
+      "Hij speelt dezelfde stream als Twitch af, opgevraagd zonder je sessie. Je kiest de kwaliteit en de latentie. Advertenties blijven en abonnementsvoordelen gelden niet. De Twitch-speler blijft beschikbaar in de instellingen.",
     ],
   "Pourquoi le son est coupé après un rechargement ?": [
     "Why is the sound off after a reload?",
@@ -597,14 +629,14 @@ export const translations: Record<string, [string, string]> = {
       "Yes. The list folds away, the chat moves under the video and the grids stay within reach. A large screen remains more comfortable for several streams.",
       "Ja. De lijst klapt in, de chat gaat onder de video en de rasters blijven bereikbaar. Een groot scherm blijft comfortabeler voor meerdere streams.",
     ],
-  "Pourquoi certaines tuiles ont le lecteur Twitch complet et d’autres non ?": [
-    "Why do some tiles have the full Twitch player and others not?",
-    "Waarom hebben sommige tegels de volledige Twitch-speler en andere niet?",
+  "Pourquoi certaines tuiles ont les commandes complètes et d’autres non ?": [
+    "Why do some tiles have the full controls and others not?",
+    "Waarom hebben sommige tegels de volledige bediening en andere niet?",
   ],
-  "Dès qu’une tuile est assez large, elle reçoit le lecteur complet et, plus large encore, son chat. Réduis la fenêtre et elle repasse aux commandes simplifiées, sans rien perdre.":
+  "Dès qu’une tuile est assez large, elle reçoit la barre complète du lecteur et, plus large encore, son chat. Réduis la fenêtre et elle repasse aux commandes simplifiées, sans rien perdre.":
     [
-      "As soon as a tile is wide enough it gets the full player and, wider still, its chat. Shrink the window and it goes back to the simplified controls without losing anything.",
-      "Zodra een tegel breed genoeg is, krijgt hij de volledige speler en, nog breder, zijn chat. Verklein het venster en hij gaat terug naar de vereenvoudigde knoppen zonder iets te verliezen.",
+      "As soon as a tile is wide enough it gets the player’s full bar and, wider still, its chat. Shrink the window and it goes back to the simplified controls without losing anything.",
+      "Zodra een tegel breed genoeg is, krijgt hij de volledige balk van de speler en, nog breder, zijn chat. Verklein het venster en hij gaat terug naar de vereenvoudigde knoppen zonder iets te verliezen.",
     ],
   "C’est gratuit ?": ["Is it free?", "Is het gratis?"],
   "Oui, sans publicité ni version payante. Le code est public sous licence MIT ; tu peux aussi l’héberger de ton côté.":

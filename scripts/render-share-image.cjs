@@ -18,6 +18,13 @@ const card = `
 
 async function render() {
   const server = spawn(process.execPath, ['server.cjs', String(port)], { cwd: path.join(__dirname, '..'), stdio: 'ignore' });
+  // Vite takes a moment to listen; wait for the port instead of racing it.
+  for (let attempt = 0; ; attempt++) {
+    try { await fetch(`http://localhost:${port}/`); break; } catch (error) {
+      if (attempt === 100) throw error;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, colorScheme: 'dark' });
