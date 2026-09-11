@@ -3,6 +3,10 @@ const { mockPlayer } = require('./fixtures.cjs');
 async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
+  await page.addInitScript(() => {   // this suite covers the Twitch embed; the custom player has its own
+    const stored = JSON.parse(localStorage.getItem('tg.preferences') || '{}');
+    localStorage.setItem('tg.preferences', JSON.stringify({ ...stored, player: 'embed' }));
+  });
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({ contentType: 'text/javascript', body: mockPlayer }));
   await page.route('**/api/search?**', route => {
     const params = new URL(route.request().url()).searchParams;
@@ -707,6 +711,46 @@ test('a locked grid refuses new streams until unlocked and remembers it', async 
   await two.click();
   await expect(page.locator('#grid .tile')).toHaveCount(2);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).locked)).toBe(false);
+  expect(errors).toEqual([]);
+});
+test('clearing empties an unlocked grid and stays out of reach otherwise', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'] })));
+  await page.goto('/');
+  const clear = page.locator('#grid-clear'), lock = page.locator('#grid-lock');
+  await expect(page.locator('#grid .tile')).toHaveCount(2);
+  await expect(clear).toBeEnabled();
+  await lock.click();
+  await expect(clear).toBeDisabled();   // a locked grid keeps its streams
+  await lock.click();
+  await expect(clear).toBeEnabled();
+  await clear.click();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(clear).toBeDisabled();   // nothing left to clear
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual([]);
+  await page.reload();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test('a miniature plays and pauses on click and fullscreens on double click', async ({ page }) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'] })));
+  await page.goto('/');
+  const tile = page.locator('#grid [data-login="two"]'), player = tile.locator('.player');
+  await expect(tile).not.toHaveClass(/full-player/);
+  await player.click();
+  await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => tiles.get('two').paused)).toBe(true);
+  await player.click();
+  await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'false');
+  // the double click fullscreens the tile instead of toggling playback twice
+  await player.dblclick();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.dataset.login)).toBe('two');
+  await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'false');
+  await player.dblclick();
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   expect(errors).toEqual([]);
 });
 test('volume opens on hover and keyboard adjustment enables and saves sound', async ({ page }) => {
@@ -2558,7 +2602,7 @@ test('the global play and pause button is a shortcut every tile can override',as
 
 for (const savedRendering of ['current','trial-1']) test(`saved ${savedRendering} preferences cannot select a retired renderer`, async ({page}) => {
   await setup(page);
-  await page.addInitScript(savedRendering => localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:savedRendering,language:'en',theme:'light'})), savedRendering);
+  await page.addInitScript(savedRendering => localStorage.setItem('tg.preferences',JSON.stringify({playerRendering:savedRendering,player:'embed',language:'en',theme:'light'})), savedRendering);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one']})));
   await page.goto('/');
   await expect(page.locator('#grid .player iframe')).toHaveCSS('transform','none');

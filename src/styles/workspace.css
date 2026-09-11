@@ -7,7 +7,8 @@
   flex: 1;
   min-width: 0;
 }
-#grid-lock {
+#grid-lock,
+#grid-clear {
   flex: none;
   @apply w-[32px] h-[32px];
   padding: 0;
@@ -22,11 +23,13 @@
     color 0.2s var(--ease),
     border-color 0.2s var(--ease);
 }
-#grid-lock:hover:not(:disabled) {
+#grid-lock:hover:not(:disabled),
+#grid-clear:hover:not(:disabled) {
   border-color: #9147ff80;
   color: var(--fg);
 }
-#grid-lock:disabled {
+#grid-lock:disabled,
+#grid-clear:disabled {
   opacity: 0.5;
   @apply cursor-default;
 }
@@ -400,6 +403,33 @@ dialog input:focus-visible {
   background: #9147ff40;
   border-color: #9147ff80;
 }
+#tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  max-width: 320px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  @apply rounded-[6px];
+  background: var(--raised);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 16px;
+  @apply font-semibold;
+  text-wrap: pretty;
+  box-shadow: 0 8px 24px #18181880;
+  @apply pointer-events-none;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease);
+}
+#tooltip.in {
+  opacity: 1;
+}
+#tooltip.sidebar-tip,
+[data-theme] #tooltip.sidebar-tip {
+  box-shadow: none;
+}
 :root[data-theme="light"] {
   --video-bg: #fff;
   --bg: #f4f4f7;
@@ -412,8 +442,6 @@ dialog input:focus-visible {
   --accent-soft: #7734d81a;
 }
 [data-theme="light"] .preview-cover .preview-status {
-  background: #ffffffb3;
-  color: var(--fg);
   text-shadow: none;
 }
 [data-theme="light"] #ctl button:hover,
@@ -433,6 +461,9 @@ dialog input:focus-visible {
 }
 [data-theme="light"] #empty .gh {
   box-shadow: 0 6px 22px #20202714;
+}
+[data-theme="light"] #tooltip {
+  box-shadow: 0 8px 24px #20202726;
 }
 [data-theme="light"] #preview {
   box-shadow: 0 12px 40px #20202733;

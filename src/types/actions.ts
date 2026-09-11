@@ -21,6 +21,7 @@ export interface WorkspaceActions {
   openGridManager?: () => void;
   toggleGridMenu?: (element: HTMLDetailsElement) => void;
   toggleLock?: () => void;
+  clearGrid?: () => void;
   copyGrid?: () => void;
   newGrid?: () => void;
   cancelGridForm?: () => void;

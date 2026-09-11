@@ -13,7 +13,7 @@ const preferenceValues = {
   theme: ["system", "light", "dark"],
 };
 const preferences: Preferences = {
-  player: stored.player === "custom" ? "custom" : "embed",
+  player: stored.player === "embed" ? "embed" : "custom",
   language:
     stored.language && preferenceValues.language.includes(stored.language)
       ? stored.language

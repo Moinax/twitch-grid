@@ -7,6 +7,8 @@ interface Props {
   onSpotlight: () => void;
   onExpand: () => void;
   onPause: () => void;
+  onPlayerClick: () => void;
+  onPlayerFullscreen: () => void;
   onVolume: (value: number) => void;
   onSound: () => void;
   onResume: () => void;
@@ -25,6 +27,8 @@ export function StreamTile({
   onSpotlight,
   onExpand,
   onPause,
+  onPlayerClick,
+  onPlayerFullscreen,
   onVolume,
   onSound,
   onResume,
@@ -301,11 +305,17 @@ export function StreamTile({
         </button>
       </div>
       <div className="tile-body">
-        <div className="player" onClick={onResume}>
+        <div
+          className="player"
+          onClick={onPlayerClick}
+          onDoubleClick={onPlayerFullscreen}
+        >
           <div className="preview-cover">
             <StreamPoster />
             <button
               className="pause-play"
+              title="Lecture"
+              data-i18n-title="Lecture"
               aria-label="Lecture"
               data-i18n-aria-label="Lecture"
               onClick={(event) => {

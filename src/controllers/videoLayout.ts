@@ -14,6 +14,13 @@ export function fit(p: HTMLElement) {
   };
   const poster = p.querySelector<HTMLImageElement>(".stream-poster")!;
   if (poster) Object.assign(poster.style, bounds);
+  // Keep the custom player's controls against the video, not the letterbox around it.
+  const controls = p.querySelector<HTMLElement>(".custom-controls");
+  if (controls)
+    Object.assign(controls.style, {
+      right: (box.width - width) / 2 + 10 + "px",
+      bottom: (box.height - height) / 2 + 10 + "px",
+    });
   const frame = p.querySelector<HTMLIFrameElement | HTMLVideoElement>(
     "iframe, video",
   )!;

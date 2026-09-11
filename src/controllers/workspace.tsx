@@ -2,7 +2,7 @@ import { playerConstructor } from "../services/player";
 import type { WorkspaceActions } from "../types/actions";
 import { WordReveal } from "../components/WordReveal";
 import { watchForUpdates } from "./updates";
-import { suppressPlayerTooltips } from "./tooltips";
+import { syncPlayerTooltips } from "./tooltips";
 import { createPreviewController } from "./preview";
 import { fit, layoutChat, previewImageURL } from "./videoLayout";
 import { createLifecycle } from "./lifecycle";
@@ -938,24 +938,41 @@ export function startWorkspace(
     const el = document.createElement("div");
     el.className = "tile loading";
     el.dataset.login = s.twitch;
+    let clickTimer: ReturnType<typeof setTimeout> | undefined;
+    const togglePause = () => {
+      if (t.channel.online === false) return;
+      t.nativeHold = false;
+      if (allPaused || tilePaused(t)) resumeTile(t);
+      else {
+        t.paused = true;
+        t.hoverSuppressed = true;
+      }
+      ppIcon();
+      sync(t);
+      // sync() waits 400ms for the layout to settle before touching the player: fine to start
+      // playing, far too slow to stop, the stream keeps running and sounding under the overlay.
+      if (t.player && t.ready && !wantsPlayback(t)) t.player.pause();
+      mark(t);
+      save();
+    };
     views.render(
       el,
       <StreamTile
         display={s.display}
         onSpotlight={() => focus(s.twitch)}
         onExpand={() => setExpanded(expanded === s.twitch ? null : s.twitch)}
-        onPause={() => {
-          if (t.channel.online === false) return;
-          t.nativeHold = false;
-          if (allPaused || tilePaused(t)) resumeTile(t);
-          else {
-            t.paused = true;
-            t.hoverSuppressed = true;
-          }
-          ppIcon();
-          sync(t);
-          mark(t);
-          save();
+        onPause={togglePause}
+        onPlayerClick={() => {
+          clearTimeout(clickTimer);
+          // A paused embed is torn down and remounted, so there it is worth waiting out a possible
+          // double click. The custom player only pauses its video: answer the click at once.
+          if (preferences.player === "custom") togglePause();
+          else clickTimer = setTimeout(togglePause, 250);
+        }}
+        onPlayerFullscreen={() => {
+          clearTimeout(clickTimer);
+          if (document.fullscreenElement) void document.exitFullscreen();
+          else void t.el.requestFullscreen();
         }}
         onVolume={(value) => {
           t.volume = value;
@@ -1847,7 +1864,7 @@ export function startWorkspace(
     saveCurrentLayout();
   });
   // Keep accessible labels while suppressing tooltips that would cover Twitch players.
-  suppressPlayerTooltips(lifecycle);
+  syncPlayerTooltips(lifecycle);
   addEventListener("pageshow", () => {
     unloading = false;
   });
@@ -2761,6 +2778,8 @@ export function startWorkspace(
     $("#current-grid-name").textContent = gridStore
       ? gridStore!.label()
       : tr("Grille par défaut");
+    $<HTMLButtonElement>("#grid-clear").disabled =
+      !restored || locked || isLiveGrid() || !tiles.size;
     const lock = $<HTMLButtonElement>("#grid-lock");
     lock.setAttribute("aria-pressed", String(locked));
     lock.disabled = !restored || isLiveGrid();
@@ -3066,6 +3085,13 @@ export function startWorkspace(
         closeTileMenus(false, menu);
         hidePreview();
       }
+    };
+    actions.clearGrid = () => {
+      if (!restored || locked || isLiveGrid() || !tiles.size) return;
+      clearTiles();
+      layout();
+      renderList();
+      save();
     };
     actions.toggleLock = () => {
       if (!restored || isLiveGrid()) return;

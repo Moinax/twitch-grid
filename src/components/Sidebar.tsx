@@ -217,6 +217,30 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
               </div>
             </details>
             <button
+              id="grid-clear"
+              onClick={() => actions.clearGrid?.()}
+              type="button"
+              title="Vider la grille"
+              data-i18n-title="Vider la grille"
+              aria-label="Vider la grille"
+              data-i18n-aria-label="Vider la grille"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="m9 9 6 6M15 9l-6 6" />
+              </svg>
+            </button>
+            <button
               id="grid-lock"
               onClick={() => actions.toggleLock?.()}
               type="button"

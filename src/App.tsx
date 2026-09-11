@@ -18,6 +18,7 @@ export function App({
     <>
       <Landing actions={actions} />
       <Sidebar actions={actions} />
+      <div id="tooltip" role="tooltip" hidden></div>
       <ChannelPreview />
       <Workspace actions={actions} />
       <AudioPrompt />

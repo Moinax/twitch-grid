@@ -7,6 +7,13 @@ export const translations: Record<string, [string, string]> = {
     "Stream niet beschikbaar. Opnieuw proberen",
   ],
   "Démarrer la lecture": ["Start playback", "Afspelen starten"],
+  "Utiliser le lecteur Twitch": [
+    "Use the Twitch player",
+    "De Twitch-speler gebruiken",
+  ],
+  Qualité: ["Quality", "Kwaliteit"],
+  "Vider la grille": ["Clear the grid", "Raster leegmaken"],
+  "Plein écran": ["Fullscreen", "Volledig scherm"],
   "Grille dynamique": ["Dynamic grid", "Dynamisch raster"],
   "Follows en direct": ["Live follows", "Live follows"],
   "Chargement du lecteur…": ["Loading player…", "Speler laden…"],

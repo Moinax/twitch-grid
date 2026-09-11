@@ -1,6 +1,6 @@
 import type Hls from "hls.js";
 import type { TwitchPlayer, PlayerConstructor } from "../types/player";
-import { preferences, tr } from "./preferences";
+import { preferences, setPreference, tr } from "./preferences";
 
 type Options = ConstructorParameters<PlayerConstructor>[1];
 
@@ -16,13 +16,18 @@ export class CustomPlayer implements TwitchPlayer {
   private quality = "auto";
   private source: string;
   private retry = document.createElement("button");
+  private error = document.createElement("div");
+  private fallback = document.createElement("button");
+  private bar = document.createElement("div");
+  private levels = document.createElement("select");
+  private slider = document.createElement("input");
 
   constructor(element: HTMLElement, options: Options) {
     const video = this.video;
     video.className = "custom-video";
     video.playsInline = true;
     video.muted = options.muted;
-    video.controls = options.controls;
+    video.controls = false; // the themed bar below replaces the browser's own chrome
     video.preload = "none";
     this.source = `/api/stream?channel=${encodeURIComponent(options.channel)}`;
     this.retry.className = "custom-retry";
@@ -33,7 +38,83 @@ export class CustomPlayer implements TwitchPlayer {
       if (this.failed) void this.load(true);
       else this.play();
     });
-    element.append(video, this.retry);
+    // A stream this player cannot read may still play in the official embed: offer the switch.
+    this.error.className = "custom-error";
+    this.fallback.className = "custom-fallback";
+    this.fallback.type = "button";
+    this.fallback.hidden = true;
+    this.fallback.dataset.i18n = "Utiliser le lecteur Twitch";
+    this.fallback.textContent = tr("Utiliser le lecteur Twitch");
+    this.fallback.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setPreference("player", "embed");
+    });
+    this.error.append(this.retry, this.fallback);
+    this.bar.className = "custom-controls paused";
+    this.bar.hidden = !options.controls;
+    this.bar.addEventListener("click", (event) => event.stopPropagation()); // the player itself resumes on click
+    const label = (element: HTMLElement, key: string) => {
+      element.title = tr(key);
+      element.dataset.i18nTitle = key;
+      element.setAttribute("aria-label", tr(key));
+      element.dataset.i18nAriaLabel = key;
+    };
+    const button = (
+      name: string,
+      key: string,
+      icon: string,
+      onClick: () => void,
+    ) => {
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = "custom-" + name;
+      label(element, key);
+      element.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
+      element.addEventListener("click", onClick);
+      return element;
+    };
+    // The tile keeps the last word on pause and sound: go through the media element, the watchdog reads it back.
+    const playPause = button(
+      "pp",
+      "Play/pause",
+      '<g class="pause"><path d="M8 5v14M16 5v14"/></g><g class="play"><path d="M7 4v16l13-8z" fill="currentColor"/></g>',
+      () => (video.paused ? this.play() : this.pause()),
+    );
+    const sound = button(
+      "sound",
+      "Son",
+      '<path d="M11 5 6 9H2v6h4l5 4z"/><g class="on"><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></g><g class="off"><path d="m23 9-6 6"/><path d="m17 9 6 6"/></g>',
+      () => this.setMuted(!video.muted),
+    );
+    this.slider.className = "custom-volume";
+    this.slider.type = "range";
+    this.slider.min = "0";
+    this.slider.max = "1";
+    this.slider.step = "0.05";
+    label(this.slider, "Volume");
+    this.slider.addEventListener("input", () => {
+      this.setVolume(Number(this.slider.value));
+      this.setMuted(Number(this.slider.value) === 0);
+    });
+    video.addEventListener("volumechange", () => this.paintSound());
+    this.paintSound();
+    this.levels.className = "custom-quality";
+    label(this.levels, "Qualité");
+    this.levels.append(new Option(tr("Auto"), "auto"));
+    this.levels.addEventListener("change", () =>
+      this.setQuality(this.levels.value),
+    );
+    // Fullscreen the whole tile, so its bar keeps offering the chat, the spotlight and the rest.
+    const fullscreen = button(
+      "fullscreen",
+      "Plein écran",
+      '<g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g>',
+      () => this.toggleFullscreen(element),
+    );
+    this.bar.append(playPause, sound, this.slider, this.levels, fullscreen);
+    element.append(video, this.error);
+    // Above the pause overlay, which sits outside the embed's stacking context.
+    (element.closest(".player") || element).append(this.bar);
     for (const event of [
       "play",
       "playing",
@@ -44,15 +125,28 @@ export class CustomPlayer implements TwitchPlayer {
     ]) {
       video.addEventListener(event, () => {
         this.playing = event === "playing";
+        this.bar.classList.toggle("paused", video.paused);
         if (event === "error") {
           this.fail();
           return;
         }
-        if (event === "playing") this.retry.hidden = true;
+        if (event === "playing")
+          this.retry.hidden = this.fallback.hidden = true;
         this.emit(event);
       });
     }
     void this.load(options.autoplay);
+  }
+  private toggleFullscreen(element: HTMLElement) {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void (element.closest(".tile") || element).requestFullscreen();
+  }
+  private paintSound() {
+    this.bar.classList.toggle(
+      "muted",
+      this.video.muted || this.video.volume === 0,
+    );
+    this.slider.value = String(this.video.muted ? 0 : this.video.volume);
   }
   private fail() {
     if (this.destroyed) return;
@@ -60,10 +154,11 @@ export class CustomPlayer implements TwitchPlayer {
     this.hls?.stopLoad();
     this.retry.textContent = tr("Flux indisponible. Réessayer");
     this.retry.hidden = false;
+    this.fallback.hidden = false;
     this.emit("error");
   }
   private async load(autoplay: boolean) {
-    this.retry.hidden = true;
+    this.retry.hidden = this.fallback.hidden = true;
     this.failed = false;
     this.hls?.destroy();
     this.hls = null;
@@ -85,6 +180,15 @@ export class CustomPlayer implements TwitchPlayer {
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data.fatal) return;
         this.fail();
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        this.levels.replaceChildren(
+          new Option(tr("Auto"), "auto"),
+          ...[...hls.levels]
+            .reverse()
+            .map((level) => new Option(`${level.height}p`, `${level.height}p`)),
+        );
+        this.setQuality(this.quality); // a quality kept across a remount only lands once the levels are known
       });
       hls.loadSource(this.source);
       hls.attachMedia(video);
@@ -117,7 +221,7 @@ export class CustomPlayer implements TwitchPlayer {
     };
   }
   setControls(value: boolean) {
-    this.video.controls = value;
+    this.bar.hidden = !value;
   }
   setMuted(value: boolean) {
     this.video.muted = value;
@@ -133,6 +237,8 @@ export class CustomPlayer implements TwitchPlayer {
   }
   setQuality(value: string) {
     this.quality = value;
+    this.levels.value = value;
+    if (!this.levels.value) this.levels.value = "auto"; // levels not loaded yet, or gone from this stream
     if (!this.hls) return;
     this.hls.currentLevel =
       value === "auto"
@@ -164,7 +270,8 @@ export class CustomPlayer implements TwitchPlayer {
     this.video.removeAttribute("src");
     this.video.load();
     this.video.remove();
-    this.retry.remove();
+    this.error.remove();
+    this.bar.remove();
   }
 }
 
