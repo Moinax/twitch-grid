@@ -42,8 +42,8 @@
   border-color: #9147ff80;
   color: #bf94ff;
 }
-#side footer #soundfollow {
-  margin-left: auto; /* GitHub sits alone on the left; the controls group on the right */
+#side footer #soundboard {
+  margin-left: auto;
 }
 /* the sound board floats beside the sidebar's footer, over the grid, and dismisses on a click outside */
 #sound-board {

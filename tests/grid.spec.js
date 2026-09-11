@@ -212,6 +212,8 @@ test('layout restoration waits for Twitch session validation before choosing a m
   await page.goto('/', {waitUntil:'domcontentloaded'});
   await page.waitForFunction(() => !!window.Twitch?.Player);
   await expect(page.locator('#list .channel')).toBeDisabled();
+  await expect(page.locator('#connect')).toBeHidden();
+  await expect(page.locator('#disconnect')).toBeHidden();
   await expect(page.locator('#grid .tile')).toHaveCount(0);
   await validation.fulfill({json:{client_id:'test-client',user_id:'42',login:'moinax',scopes:['user:read:follows']}});
   await expect(page.locator('#grid .tile')).toHaveAttribute('data-login','live');
@@ -1789,6 +1791,9 @@ test('workspace controls work collapsed on mobile and dialogs keep focus without
   await expect(page.locator('#grid .big')).toHaveAttribute('data-login','one');
   // the rail sizes every control the same way, clear included
   expect(await page.locator('#grid-clear').boundingBox()).toMatchObject({width:32,height:32});
+  const railX=await page.locator('#playall').evaluate(el=>el.getBoundingClientRect().x);
+  for(const selector of ['#muteall','#soundfollow','#soundboard','#settings'])
+    expect(await page.locator(selector).evaluate(el=>el.getBoundingClientRect().x)).toBe(railX);
   await page.locator('#grids-shortcut').click();await expect(page.locator('#saved-grids .saved-grid')).toHaveCount(1);
   await page.locator('#grid-new').click();await nameGrid(page,'Mobile');
   await expect(page.locator('#grid .tile')).toHaveCount(0);

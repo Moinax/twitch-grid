@@ -2338,7 +2338,7 @@ export function startWorkspace(
   }
   function updateAccount() {
     const connected = !!library?.user;
-    $<HTMLButtonElement>("#connect").hidden = connected;
+    $<HTMLButtonElement>("#connect").hidden = connected || !accountReady;
     $<HTMLButtonElement>("#connect").disabled =
       !accountReady || !library?.clientId;
     $<HTMLButtonElement>("#disconnect").hidden = !connected;

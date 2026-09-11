@@ -205,14 +205,14 @@
   min-width: 0;
   min-height: 0;
 }
-/* Draw the frame outside the video instead of covering the iframe with a pseudo-element. */
+/* Keep the frame inside the tile so viewport clipping cannot hide an edge. */
 .tile {
-  outline: 1px solid var(--line);
-  transition: outline-color 0.2s var(--ease);
+  border: 1px solid var(--line);
+  transition: border-color 0.2s var(--ease);
 }
 /* every grid tile lights up under the pointer, whatever player it carries; the spotlight and a lone tile have nowhere to go */
 #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover {
-  outline-color: var(--accent);
+  border-color: var(--accent);
 }
 #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar {
   background: var(--raised);

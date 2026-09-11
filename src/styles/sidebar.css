@@ -12,7 +12,7 @@ body.collapsed {
   background: var(--panel);
   border-right: 1px solid var(--line);
 }
-/* collapsed: header, row and controls dissolve so every button becomes a column item; the footer keeps its DOM order, so the account group sits at the bottom in both modes */
+/* collapsed: header, row and controls dissolve so every action becomes a column item */
 body.collapsed #side header,
 body.collapsed #side header .row,
 body.collapsed #ctl,
@@ -26,6 +26,7 @@ body.collapsed #grid-switcher {
   @apply hidden;
 }
 body.collapsed #ctl button,
+body.collapsed #ctl a,
 body.collapsed #grid-clear,
 body.collapsed #grid-lock,
 body.collapsed #side footer button,
@@ -42,6 +43,9 @@ body.collapsed #toggle {
   order: -4;
   margin: 8px 0 0;
 }
+body.collapsed #ctl .github {
+  order: -4;
+}
 body.collapsed #grids-shortcut {
   order: -3;
   @apply mt-[12px];
@@ -54,15 +58,8 @@ body.collapsed #grid-lock[aria-pressed="true"],
 body.collapsed #soundfollow[aria-pressed="true"] {
   background: var(--accent-soft);
 }
-body.collapsed #side footer #soundfollow {
-  margin-left: 0; /* the footer's push to the right has no meaning in the rail */
-}
-body.collapsed #playall,
-body.collapsed #muteall {
-  order: -2;
-}
-body.collapsed #playall {
-  @apply mt-[12px];
+body.collapsed #side footer #soundboard {
+  margin-left: 0;
 }
 body.collapsed #connect,
 body.collapsed #disconnect {
@@ -127,6 +124,19 @@ body:not(.collapsed) #toggle .out {
     background-color 0.2s var(--ease),
     color 0.2s var(--ease),
     transform 0.2s var(--ease);
+}
+#ctl a {
+  @apply flex items-center justify-center w-[26px] h-[26px];
+  @apply rounded-[4px];
+  background: var(--raised);
+  color: var(--fg);
+  transition: background-color 0.2s var(--ease);
+}
+#ctl a:hover {
+  background: var(--line);
+}
+#ctl a svg {
+  fill: currentColor;
 }
 #ctl button:hover {
   background: var(--line);
