@@ -119,6 +119,14 @@ export const translations: Record<string, [string, string]> = {
   "Chat de {name}": ["Chat for {name}", "Chat van {name}"],
   "Stream de {name}": ["Stream by {name}", "Stream van {name}"],
   "Couper tous les sons": ["Mute every stream", "Alle geluiden dempen"],
+  Réglages: ["Settings", "Instellingen"],
+  "Table de mixage": ["Sound board", "Mengpaneel"],
+  "Son au survol": ["Sound follows the mouse", "Geluid volgt de muis"],
+  "Garder le son": ["Keep the sound on", "Geluid aan laten"],
+  "Aucun stream dans la grille.": [
+    "No stream in the grid.",
+    "Geen stream in het raster.",
+  ],
   "Son coupé globalement": [
     "Sound muted for every stream",
     "Geluid voor alle streams gedempt",

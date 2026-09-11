@@ -16,7 +16,8 @@ body.collapsed {
 body.collapsed #side header,
 body.collapsed #side header .row,
 body.collapsed #ctl,
-body.collapsed #workspace-controls {
+body.collapsed #workspace-controls,
+body.collapsed #side footer {
   @apply contents;
 }
 body.collapsed #side header > :not(.row):not(#workspace-controls),
@@ -27,7 +28,8 @@ body.collapsed #grid-switcher {
 body.collapsed #ctl button,
 body.collapsed #ctl a,
 body.collapsed #grid-clear,
-body.collapsed #grid-lock {
+body.collapsed #grid-lock,
+body.collapsed #side footer button {
   flex: none;
   align-self: center;
   @apply w-[32px] h-[32px];
@@ -48,8 +50,13 @@ body.collapsed #grid-clear,
 body.collapsed #grid-lock {
   order: -3;
 }
-body.collapsed #grid-lock[aria-pressed="true"] {
+body.collapsed #grid-lock[aria-pressed="true"],
+body.collapsed #soundfollow[aria-pressed="true"] {
   background: var(--accent-soft);
+}
+body.collapsed #side footer #settings {
+  margin-left: 0; /* the footer's push to the right has no meaning in the rail */
+  @apply mb-[4px];
 }
 body.collapsed #playall,
 body.collapsed #muteall {

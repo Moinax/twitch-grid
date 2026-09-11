@@ -6,6 +6,8 @@ import { ChannelPreview } from "./components/ChannelPreview";
 import { Workspace } from "./components/Workspace";
 import { AudioPrompt } from "./components/AudioPrompt";
 import { GridDialog } from "./components/GridDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { SoundBoardPanel } from "./components/SoundBoard";
 
 export function App({
   views,
@@ -23,6 +25,8 @@ export function App({
       <Workspace actions={actions} />
       <AudioPrompt />
       <GridDialog actions={actions} />
+      <SettingsDialog actions={actions} />
+      <SoundBoardPanel actions={actions} />
       <DynamicViews views={views} />
     </>
   );

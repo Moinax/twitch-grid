@@ -611,7 +611,8 @@ body.dragging .tile.dragged .bar {
 }
 
 /* A thin track with a round thumb. */
-.tile .volume input {
+.tile .volume input,
+#sound-board input {
   appearance: none;
   -webkit-appearance: none;
   writing-mode: horizontal-tb;
@@ -622,7 +623,8 @@ body.dragging .tile.dragged .bar {
   background: #ffffff33;
   @apply cursor-pointer;
 }
-.tile .volume input::-webkit-slider-thumb {
+.tile .volume input::-webkit-slider-thumb,
+#sound-board input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   @apply w-[12px] h-[12px];
@@ -630,7 +632,8 @@ body.dragging .tile.dragged .bar {
   border-radius: 50%;
   background: var(--accent);
 }
-.tile .volume input::-moz-range-thumb {
+.tile .volume input::-moz-range-thumb,
+#sound-board input::-moz-range-thumb {
   @apply w-[12px] h-[12px];
   border: 0;
   border-radius: 50%;
@@ -1144,11 +1147,11 @@ footer {
 #list-empty {
   @apply p-[16px];
 }
-footer {
-  @apply p-[12px];
+#side footer {
+  @apply p-[12px] flex;
+  @apply gap-[8px];
   border-top: 1px solid var(--line);
 }
-body.collapsed footer,
 body.collapsed #list-empty {
   @apply hidden;
 }
@@ -1292,10 +1295,15 @@ body.collapsed #list-empty {
     grid-template-columns: 1fr;
     @apply gap-[8px];
   }
+  #sound-board {
+    inset: auto 12px 12px 12px;
+    width: auto;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   #empty .float,
   dialog[open],
+  #sound-board,
   dialog[open]::backdrop,
   .chat-menu,
   .collaboration-menu,

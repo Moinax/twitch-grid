@@ -321,84 +321,77 @@ export function Sidebar({ actions }: { actions: WorkspaceActions }) {
         ></ul>
         <p id="list-empty"></p>
         <footer>
-          <div id="preferences">
-            <label
-              className="player-preference"
-              title="Lecteur vidéo"
-              data-i18n-title="Lecteur vidéo"
+          <button
+            id="soundfollow"
+            type="button"
+            onClick={() => actions.toggleSoundFollow?.()}
+            aria-pressed="false"
+            title="Son au survol"
+            data-i18n-title="Son au survol"
+            aria-label="Son au survol"
+            data-i18n-aria-label="Son au survol"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
             >
-              <select
-                id="player-setting"
-                aria-label="Lecteur vidéo"
-                data-i18n-aria-label="Lecteur vidéo"
-                onChange={(e) => actions.setPlayer?.(e.currentTarget.value)}
-              >
-                <option value="embed" data-i18n="">
-                  Embed Twitch
-                </option>
-                <option value="custom" data-i18n="">
-                  Lecteur custom
-                </option>
-              </select>
-            </label>
-            <label title="Langue" data-i18n-title="Langue">
-              <svg
-                viewBox="0 0 24 24"
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-              </svg>
-              <select
-                id="language-setting"
-                onChange={(e) => actions.setLanguage?.(e.currentTarget.value)}
-                aria-label="Langue"
-                data-i18n-aria-label="Langue"
-              >
-                <option value="fr">FR</option>
-                <option value="en">EN</option>
-                <option value="nl">NL</option>
-              </select>
-            </label>
-            <label title="Thème" data-i18n-title="Thème">
-              <svg
-                viewBox="0 0 24 24"
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path
-                  d="M12 3v18A9 9 0 0 0 12 3z"
-                  fill="currentColor"
-                  stroke="none"
-                />
-              </svg>
-              <select
-                id="theme-setting"
-                onChange={(e) => actions.setTheme?.(e.currentTarget.value)}
-                aria-label="Thème"
-                data-i18n-aria-label="Thème"
-              >
-                <option value="system">Auto</option>
-                <option value="light" data-i18n="Clair">
-                  Clair
-                </option>
-                <option value="dark" data-i18n="Sombre">
-                  Sombre
-                </option>
-              </select>
-            </label>
-          </div>
+              <path d="M14 4.1 12 6M5.1 8l-2.9-.8M6 12l-1.9 2M7.2 2.2 8 5.1" />
+              <path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z" />
+            </svg>
+          </button>
+          <button
+            id="soundboard"
+            type="button"
+            popoverTarget="sound-board"
+            title="Table de mixage"
+            data-i18n-title="Table de mixage"
+            aria-label="Table de mixage"
+            data-i18n-aria-label="Table de mixage"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />
+            </svg>
+          </button>
+          <button
+            id="settings"
+            type="button"
+            onClick={() => actions.openSettings?.()}
+            title="Réglages"
+            data-i18n-title="Réglages"
+            aria-label="Réglages"
+            data-i18n-aria-label="Réglages"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
         </footer>
       </aside>
     </>

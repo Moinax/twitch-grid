@@ -14,4 +14,11 @@ const mockPlayer = `window.Twitch = { Player: class {
   pause() { if (!this.paused) { this.paused = true; this.emit('pause'); } }
   destroy() { this.destroyed = true; this.frame.remove(); this.listeners = {}; }
 }};`;
-module.exports = { mockPlayer };
+// The preferences live in a modal: open it, pick, and close it so the page is usable again.
+async function choose(page, id, value) {
+  await page.locator('#settings').click();
+  await page.selectOption(id, value);
+  await page.keyboard.press('Escape');
+  await page.locator('#settings-dialog').waitFor({ state: 'hidden' });
+}
+module.exports = { mockPlayer, choose };

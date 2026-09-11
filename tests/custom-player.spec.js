@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { mockPlayer } = require('./fixtures.cjs');
+const { mockPlayer, choose } = require('./fixtures.cjs');
 const path = require('node:path');
 async function setup(page, player = 'embed', fail = false) {
   const errors = [];
@@ -28,7 +28,7 @@ test('switches between embed and HLS while preserving tile settings', async ({ p
   await expect(page.locator('#grid iframe')).toHaveCount(1);
   await expect(page.locator('[title]:not(iframe)')).toHaveCount(0); // no tooltip can cover the embed
   await page.evaluate(() => { tiles.get('example').volume = 0.3; });
-  await page.selectOption('#player-setting', 'custom');
+  await choose(page, '#player-setting', 'custom');
   await expect(page.locator('#grid iframe')).toHaveCount(0);
   await expect.poll(() => page.locator('#grid video').evaluate(video => video.currentTime)).toBeGreaterThan(0);
   await expect(page.locator('#grid video')).toHaveJSProperty('volume', 0.3);
@@ -49,9 +49,9 @@ test('switches between embed and HLS while preserving tile settings', async ({ p
   await page.waitForTimeout(700);
   await expect(page.locator('#tooltip')).toBeHidden();
   await page.evaluate(() => { window.originalVideo = document.querySelector('#grid video'); });
-  await page.selectOption('#theme-setting', 'light');
+  await choose(page, '#theme-setting', 'light');
   expect(await page.evaluate(() => originalVideo === document.querySelector('#grid video'))).toBe(true);
-  await page.selectOption('#player-setting', 'embed');
+  await choose(page, '#player-setting', 'embed');
   await expect(page.locator('#grid video')).toHaveCount(0);
   await expect(page.locator('#grid iframe')).toHaveCount(1);
   expect(await page.evaluate(() => tiles.get('example').volume)).toBe(0.3);
@@ -101,7 +101,7 @@ test('a visit with no saved choice gets the custom player', async ({ page }) => 
 });
 test('failed HLS playback offers a retry and a switch back to the embed', async ({ page }) => {
   const errors = await setup(page, 'embed', true);
-  await page.selectOption('#player-setting', 'custom');
+  await choose(page, '#player-setting', 'custom');
   await expect(page.locator('.custom-retry')).toBeVisible({ timeout: 20000 });
   await expect(page.locator('.custom-retry')).toHaveText('Stream unavailable. Retry');
   // the failure itself offers the official player, no trip to the settings

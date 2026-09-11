@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { mockPlayer } = require('./fixtures.cjs');
+const { mockPlayer, choose } = require('./fixtures.cjs');
 async function setup(page, connected = false, landing = false) {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   if (!landing) await page.addInitScript(() => sessionStorage.setItem('tg.landing', 'true'));
@@ -651,6 +651,54 @@ test('a portrait grid keeps the small tiles in a strip under the front row', asy
   await page.setViewportSize({ width: 1280, height: 720 });
   await expect(page.locator('#grid')).not.toHaveClass(/below/);
   await expect.poll(async () => { const a = await one.boundingBox(), b = await two.boundingBox(); return b.x > a.x + a.width && b.y < a.y + 1; }).toBe(true);
+  expect(errors).toEqual([]);
+});
+test('sound follows the mouse and the sound board mixes every tile', async ({ page }) => {
+  const errors = await setup(page);
+  await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], muted: { one: true, two: false } })));
+  await page.goto('/'); await page.locator('#audio-overlay').click();
+  const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]');
+  const muted = login => page.evaluate(login => tiles.get(login).player?.getMuted(), login);
+  await expect.poll(() => muted('one')).toBe(true);
+  await expect.poll(() => muted('two')).toBe(false);
+  // off by default: a hover changes nothing
+  await one.hover(); await page.waitForTimeout(1200); expect(await muted('one')).toBe(true);
+  await page.locator('#soundfollow').click();
+  await expect(page.locator('#soundfollow')).toHaveAttribute('aria-pressed', 'true');
+  await one.hover(); await expect.poll(() => muted('one')).toBe(false);
+  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound', 'hover');
+  await page.locator('#q').hover(); await expect.poll(() => muted('one')).toBe(true);
+  expect(await page.evaluate(() => tiles.get('one').muted)).toBe(true);
+  // a tile whose sound was on keeps it after the pointer leaves
+  await two.hover(); await page.locator('#q').hover(); await page.waitForTimeout(1200); expect(await muted('two')).toBe(false);
+  // a click on the lit icon pins the sound
+  await one.hover(); await expect.poll(() => muted('one')).toBe(false);
+  await one.locator('.bar .snd').click(); await page.locator('#q').hover(); await page.waitForTimeout(1200);
+  expect(await muted('one')).toBe(false);
+  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound', 'on');
+  await page.reload(); await page.locator('#audio-overlay').click();
+  await expect(page.locator('#soundfollow')).toHaveAttribute('aria-pressed', 'true');
+  // the sound board lists every tile with its state and drives it
+  await page.locator('#soundboard').click();
+  const rows = page.locator('#sound-board .sound-row');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator('.snd')).toHaveAttribute('data-sound', 'on');
+  await rows.nth(0).locator('.snd').click();
+  await expect.poll(() => muted('one')).toBe(true);
+  await expect(one.locator('.bar .snd')).toHaveAttribute('data-sound', 'muted');
+  await expect(rows.nth(0).locator('.snd')).toHaveAttribute('data-sound', 'muted');
+  await rows.nth(1).locator('input').fill('0.2');
+  await expect.poll(() => page.evaluate(() => [tiles.get('two').volume, tiles.get('two').player.getVolume()])).toEqual([0.2, 0.2]);
+  await expect(two.locator('.volume input')).toHaveValue('0.2');
+  // a click outside dismisses the board; reopened under the global mute, its controls step aside too
+  await page.locator('#muteall').click();
+  await expect(page.locator('#sound-board')).toBeHidden();
+  await page.locator('#soundboard').click();
+  await expect(rows.nth(1).locator('input')).toBeDisabled();
+  await expect(rows.nth(1).locator('.snd')).toHaveAttribute('aria-label', 'Son coupé globalement');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#sound-board')).toBeHidden();
   expect(errors).toEqual([]);
 });
 test('the mute-all button silences every stream and gives the sound back to those that had it', async ({ page }) => {
@@ -1693,20 +1741,20 @@ test('language and theme changes persist without recreating video players',async
     if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true}));
   });
   await page.goto('/');await page.evaluate(()=>window.settingsPlayer=tiles.get('one').player);
-  await page.locator('#language-setting').selectOption('en');
+  await choose(page,'#language-setting','en');
   await expect(page.locator('html')).toHaveAttribute('lang','en');
   await expect(page.locator('#q')).toHaveAttribute('placeholder','Find a streamer…');
   await expect(page.locator('#grid .bar > b')).toHaveText('Ajouter');
   await expect(page.locator('#current-grid-name')).toHaveText('Default grid');
-  await page.locator('#language-setting').selectOption('nl');
+  await choose(page,'#language-setting','nl');
   await expect(page.locator('#current-grid-name')).toHaveText('Standaardraster');
-  await page.locator('#theme-setting').selectOption('light');
+  await choose(page,'#theme-setting','light');
   await expect(page.locator('html')).toHaveAttribute('data-theme','light');
   await expect(page.locator('.chat iframe')).not.toHaveAttribute('src',/darkpopout/);
-  await page.locator('#theme-setting').selectOption('dark');
+  await choose(page,'#theme-setting','dark');
   await page.emulateMedia({colorScheme:'light'});
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
-  await page.locator('#theme-setting').selectOption('system');
+  await choose(page,'#theme-setting','system');
   await expect(page.locator('html')).toHaveAttribute('data-theme','light');
   expect(await page.evaluate(()=>tiles.get('one').player===window.settingsPlayer)).toBe(true);
   await page.keyboard.press('Escape');await page.reload();
@@ -1719,9 +1767,11 @@ test('workspace controls work collapsed on mobile and dialogs keep focus without
   const errors=await setup(page);await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one',collapsed:true})));
   await page.goto('/');await page.locator('#toggle').click();
+  await page.locator('#settings').click();
   await expect(page.locator('#theme-setting')).toBeVisible();
   const box=await page.locator('#preferences').boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');await expect(page.locator('#settings-dialog')).toBeHidden();
   await page.locator('#toggle').click();
   await expect(page.locator('#grid .big')).toHaveAttribute('data-login','one');
   // the rail sizes every control the same way, clear included
@@ -2326,7 +2376,7 @@ test('volume only opens on hover and tooltips cannot cover the player', async ({
   await sound.focus();
   await expect(volume).toBeHidden();
   await expect(page.locator('#tooltip')).toBeHidden();
-  await page.locator('#language-setting').selectOption('en');
+  await choose(page,'#language-setting','en');
   await expect(sound).toHaveAttribute('aria-label','Mute');
   await expect(page.locator('[title]:not(iframe)')).toHaveCount(0);
   expect(errors).toEqual([]);

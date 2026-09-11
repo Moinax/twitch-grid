@@ -23,6 +23,7 @@ import { ChannelList } from "../components/ChannelList";
 import { CollaborationParticipants } from "../components/CollaborationParticipants";
 import { LiveNotification } from "../components/LiveNotification";
 import { SavedGridList } from "../components/SavedGridList";
+import { SoundBoard } from "../components/SoundBoard";
 import {
   preferences,
   tr,
@@ -106,6 +107,10 @@ export function startWorkspace(
       t.hovered && t.channel.online !== false && (allPaused || tilePaused(t))
     );
   }
+  // Sound follow: the hovered tile gets its sound while the pointer is on it; a tile whose sound was turned on keeps it.
+  let soundFollow = readStored<boolean>("tg.soundFollow", false) === true;
+  const hoverSound = (t: Tile) => soundFollow && !mutedAll && !!t.hovered;
+  const wantMuted = (t: Tile) => t.muted && !hoverSound(t);
   function wantsPlayback(t: Tile) {
     return (
       !document.hidden &&
@@ -625,7 +630,7 @@ export function startWorkspace(
       (!t.muted && t.player!.getPlayerState().playback !== "Playing")
     )
       applyMuted(t, true);
-    else if (wasPreviewing && activated) applyMuted(t, t.muted);
+    else if (wasPreviewing && activated) applyMuted(t, wantMuted(t));
     t.commandedPlay = t.player!.getPlayerState().playback !== "Playing";
     t.player!.play();
     t.nudgedAt = Date.now();
@@ -662,7 +667,7 @@ export function startWorkspace(
     if (!t.ready) return;
     const playingNow = t.player!.getPlayerState().playback === "Playing";
     if (playingNow && !t.wasPlaying && activated) {
-      applyMuted(t, t.muted);
+      applyMuted(t, wantMuted(t));
       t.player!.setVolume(t.volume);
       t.nativeAudio = { muted: t.muted, volume: t.volume };
     }
@@ -701,9 +706,9 @@ export function startWorkspace(
     if (
       activated &&
       st === "Playing" &&
-      t.player!.getMuted() !== (hoverPlayback(t) || t.muted)
+      t.player!.getMuted() !== (hoverPlayback(t) || wantMuted(t))
     )
-      applyMuted(t, t.muted); // keeps the intent applied once sound is allowed
+      applyMuted(t, wantMuted(t)); // keeps the intent applied once sound is allowed
     mark(t);
   }
   // Deliberate pauses show a thumbnail; loading feedback sits beneath the iframe.
@@ -974,17 +979,8 @@ export function startWorkspace(
           if (document.fullscreenElement) void document.exitFullscreen();
           else void t.el.requestFullscreen();
         }}
-        onVolume={(value) => {
-          t.volume = value;
-          t.player?.setVolume(value);
-          setMuted(t, value === 0);
-          save();
-        }}
-        onSound={() => {
-          if (mutedAll) return;
-          setMuted(t, !playerMuted(t));
-          save();
-        }}
+        onVolume={(value) => setVolume(t, value)}
+        onSound={() => toggleSound(t)}
         onResume={() => {
           if (allPaused || tilePaused(t)) {
             resumeTile(t);
@@ -1102,11 +1098,13 @@ export function startWorkspace(
     el.addEventListener("mouseenter", () => {
       t.hovered = true;
       sync(t);
+      if (soundFollow && t.ready) applyMuted(t, wantMuted(t));
     });
     el.addEventListener("mouseleave", () => {
       t.hovered = false;
       t.hoverSuppressed = false;
       sync(t);
+      if (soundFollow && t.ready) applyMuted(t, wantMuted(t));
     });
     t.chat.id = "chat-" + s.twitch;
     t.chat.setAttribute(
@@ -1287,7 +1285,7 @@ export function startWorkspace(
       fit(container);
       player.setVolume(t.volume);
       t.nativeAudio = { muted: player.getMuted(), volume: t.volume };
-      if (activated) applyMuted(t, t.muted);
+      if (activated) applyMuted(t, wantMuted(t));
       if (t.controls && t.quality) player.setQuality(t.quality);
       sync(t);
       mark(t);
@@ -1320,7 +1318,7 @@ export function startWorkspace(
         if (event === "playing" || event === "online") t.playbackError = false;
         if (event === "playing") {
           t.hasPlayed = true;
-          if (activated) applyMuted(t, t.muted);
+          if (activated) applyMuted(t, wantMuted(t));
         }
         if (
           t.controls &&
@@ -1552,8 +1550,24 @@ export function startWorkspace(
       t.player?.setVolume(t.volume);
     }
     t.muted = m;
-    if (t.ready) applyMuted(t, m);
+    if (t.ready) applyMuted(t, wantMuted(t));
     paint(t);
+  }
+  function setVolume(t: Tile, value: number) {
+    t.volume = value;
+    t.el.querySelector<HTMLInputElement>(".volume input")!.value =
+      String(value);
+    t.player?.setVolume(value);
+    setMuted(t, value === 0);
+    save();
+    renderSoundBoard();
+  }
+  // Under sound follow the icon is lit by the hover: a click then pins or releases the intent instead.
+  function toggleSound(t: Tile) {
+    if (mutedAll) return;
+    setMuted(t, hoverSound(t) ? !t.muted : !playerMuted(t));
+    save();
+    renderSoundBoard();
   }
   function paint(t: Tile) {
     const spot = t.el.querySelector<HTMLButtonElement>(".spotlight")!,
@@ -1572,19 +1586,27 @@ export function startWorkspace(
       t.player!.getVolume() === 0
     );
   }
+  // "hover": audible only because sound follow lit it; a click there keeps it on for good.
+  function soundState(t: Tile) {
+    return playerMuted(t) ? "muted" : hoverSound(t) && t.muted ? "hover" : "on";
+  }
+  function soundLabel(t: Tile) {
+    return tr(
+      mutedAll
+        ? "Son coupé globalement"
+        : {
+            muted: "Allumer le son",
+            hover: "Garder le son",
+            on: "Couper le son",
+          }[soundState(t)],
+    );
+  }
   function paintSound(t: Tile) {
-    const muted = playerMuted(t),
-      sound = muted ? "muted" : "on";
-    t.el.classList.toggle("loud", !muted);
+    const sound = soundState(t);
+    t.el.classList.toggle("loud", sound !== "muted");
     // Under the global mute the sound controls step aside; aria-disabled keeps the hover, so the tooltip can say why.
     for (const button of t.el.querySelectorAll<HTMLElement>(".snd")) {
-      button.title = tr(
-        mutedAll
-          ? "Son coupé globalement"
-          : muted
-            ? "Allumer le son"
-            : "Couper le son",
-      );
+      button.title = soundLabel(t);
       button.setAttribute("aria-label", button.title);
       button.setAttribute("aria-disabled", String(!!mutedAll));
       button.dataset.sound = sound;
@@ -1815,6 +1837,7 @@ export function startWorkspace(
     save();
     updateAudioOverlay();
     refreshCollaborations();
+    renderSoundBoard();
   }
 
   actions.toggleSidebar = () => {
@@ -1829,6 +1852,38 @@ export function startWorkspace(
     button.title = tr(mutedAll ? "Réactiver le son" : "Couper tous les sons");
     button.setAttribute("aria-label", button.title);
     tiles.forEach(paint);
+    renderSoundBoard();
+  }
+  function paintSoundFollow() {
+    $("#soundfollow").setAttribute("aria-pressed", String(soundFollow));
+  }
+  function renderSoundBoard() {
+    if (!$("#sound-board").matches(":popover-open")) return;
+    views.render(
+      $("#sound-board-list"),
+      <SoundBoard
+        rows={order.map((login) => {
+          const t = tiles.get(login)!;
+          return {
+            login,
+            display: t.channel.display,
+            profileUrl: t.channel.profileUrl,
+            sound: soundState(t),
+            label: soundLabel(t),
+            volume: t.volume,
+          };
+        })}
+        mutedAll={!!mutedAll}
+        onSound={(login) => {
+          const t = tiles.get(login);
+          if (t) toggleSound(t);
+        }}
+        onVolume={(login, value) => {
+          const t = tiles.get(login);
+          if (t) setVolume(t, value);
+        }}
+      />,
+    );
   }
   actions.toggleMute = () => {
     tiles.forEach(readNativeControls);
@@ -1883,6 +1938,7 @@ export function startWorkspace(
     });
     markPreview();
     updateAudioOverlay();
+    renderSoundBoard();
   }
   setInterval(tick, 1000);
   // audible playback is refused until the user clicks the page, and an unmute attempted before that can leave the media
@@ -1902,7 +1958,7 @@ export function startWorkspace(
           (t.muted || !t.player!.getMuted()))
       )
         return;
-      applyMuted(t, t.muted);
+      applyMuted(t, wantMuted(t));
       sync(t);
     });
   }
@@ -2137,6 +2193,7 @@ export function startWorkspace(
   );
   listenDocument("keydown", (e) => {
     if (e.key === "Escape") {
+      if ($("#sound-board").matches(":popover-open")) return; // light dismiss closes it
       if (dragPointer) {
         e.preventDefault();
         finishDrag();
@@ -3071,6 +3128,7 @@ export function startWorkspace(
     syncChat();
     hidePreview();
     paintMuteAll();
+    renderSoundBoard();
     $<HTMLSelectElement>("#language-setting").value = preferences.language;
     $<HTMLSelectElement>("#theme-setting").value = preferences.theme;
     $<HTMLSelectElement>("#player-setting").value = preferences.player;
@@ -3106,6 +3164,27 @@ export function startWorkspace(
     $<HTMLSelectElement>("#theme-setting").value = preferences.theme;
     $<HTMLSelectElement>("#player-setting").value = preferences.player;
     actions.setLanguage = (value) => setPreference("language", value);
+    actions.openSettings = () => {
+      closeTileMenus();
+      hidePreview();
+      $<HTMLDialogElement>("#settings-dialog").showModal();
+    };
+    paintSoundFollow();
+    actions.toggleSoundFollow = () => {
+      soundFollow = !soundFollow;
+      writeStored("tg.soundFollow", soundFollow);
+      paintSoundFollow();
+      for (const t of tiles.values())
+        if (t.ready) applyMuted(t, wantMuted(t));
+        else paintSound(t);
+      renderSoundBoard();
+    };
+    actions.toggleSoundBoard = (open) => {
+      if (!open) return;
+      closeTileMenus();
+      hidePreview();
+      renderSoundBoard();
+    };
     actions.setPlayer = (value) => setPreference("player", value);
     actions.setTheme = (value) => setPreference("theme", value);
     actions.copyGrid = () => openGridForm("copy");

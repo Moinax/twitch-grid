@@ -27,4 +27,7 @@ export interface WorkspaceActions {
   cancelGridForm?: () => void;
   submitGridForm?: (event: FormEvent<HTMLFormElement>) => void;
   clearGridError?: () => void;
+  openSettings?: () => void;
+  toggleSoundFollow?: () => void;
+  toggleSoundBoard?: (open: boolean) => void;
 }

@@ -8,7 +8,8 @@
   min-width: 0;
 }
 #grid-lock,
-#grid-clear {
+#grid-clear,
+#side footer button {
   flex: none;
   @apply w-[32px] h-[32px];
   padding: 0;
@@ -24,7 +25,8 @@
     border-color 0.2s var(--ease);
 }
 #grid-lock:hover:not(:disabled),
-#grid-clear:hover:not(:disabled) {
+#grid-clear:hover:not(:disabled),
+#side footer button:hover:not(:disabled) {
   border-color: #9147ff80;
   color: var(--fg);
 }
@@ -33,9 +35,95 @@
   opacity: 0.5;
   @apply cursor-default;
 }
-#grid-lock[aria-pressed="true"] {
+#grid-lock[aria-pressed="true"],
+#soundfollow[aria-pressed="true"] {
   border-color: #9147ff80;
   color: #bf94ff;
+}
+#side footer #settings {
+  margin-left: auto;
+}
+/* the sound board floats beside the sidebar's footer, over the grid, and dismisses on a click outside */
+#sound-board {
+  @apply fixed;
+  inset: auto auto 12px calc(var(--sb) + 12px);
+  margin: 0;
+  width: min(360px, calc(100vw - var(--sb) - 24px));
+  max-height: calc(100dvh - 24px);
+  @apply overflow-y-auto p-[16px];
+  border: 1px solid var(--line);
+  @apply rounded-[12px];
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 24px 80px #0e0e1080;
+  animation: menu-in 0.3s var(--ease);
+}
+#sound-board .dialog-heading {
+  @apply mb-[12px];
+}
+#sound-board .dialog-heading h2 {
+  font-size: 16px;
+  line-height: 24px;
+}
+.sound-board-empty {
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 16px;
+}
+.sound-row {
+  @apply flex items-center;
+  @apply gap-[8px];
+  padding: 4px 0;
+}
+.sound-row img {
+  @apply w-[24px] h-[24px];
+  border-radius: 50%;
+  flex: none;
+}
+.sound-row b {
+  flex: 1;
+  min-width: 0;
+  @apply overflow-hidden text-ellipsis;
+  @apply whitespace-nowrap;
+}
+.sound-row .snd {
+  @apply flex items-center;
+  @apply justify-center w-[28px];
+  @apply h-[28px];
+  padding: 0;
+  border: 0;
+  @apply rounded-[6px];
+  background: none;
+  color: var(--dim);
+  @apply cursor-pointer;
+}
+.sound-row .snd:hover {
+  background: #ffffff14;
+  color: var(--fg);
+}
+.sound-row .snd:not([data-sound="muted"]) {
+  color: #bf94ff;
+}
+.sound-row .snd[aria-disabled="true"] {
+  opacity: 0.5;
+  @apply cursor-default;
+}
+.sound-row .snd[data-sound="muted"] .on,
+.sound-row .snd:not([data-sound="muted"]) .off,
+.tile .snd[data-sound="hover"] .off {
+  @apply hidden;
+}
+.tile .snd[data-sound="hover"],
+.sound-row .snd[data-sound="hover"] {
+  opacity: 0.6;
+} /* lit by the hover only: a click keeps it on */
+#sound-board input {
+  width: 96px;
+  margin: 0;
+  flex: none;
+}
+#sound-board input:disabled {
+  opacity: 0.5;
 }
 #grid-lock[aria-pressed="true"] .open,
 #grid-lock[aria-pressed="false"] .closed {
@@ -141,34 +229,15 @@
   background: #ffffff0a;
 }
 #preferences {
-  @apply flex flex-wrap;
-  @apply gap-[8px];
+  @apply flex flex-col;
+  @apply gap-[12px];
 }
 #preferences label {
-  flex: 1;
   @apply flex items-center;
-  @apply gap-[4px];
-  min-width: 0;
-  color: var(--dim);
-}
-#preferences svg {
-  flex: none;
+  @apply justify-between gap-[16px];
 }
 #preferences select {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 4px;
-  border: 1px solid var(--line);
-  @apply rounded-[4px];
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 12px;
-  line-height: 16px;
-  transition: border-color 0.2s var(--ease);
-}
-#preferences select:hover,
-#preferences select:focus-visible {
-  border-color: #9147ff80;
+  min-width: 160px;
 }
 #ctl .workspace-shortcut {
   @apply hidden;
@@ -500,7 +569,8 @@ dialog input:focus-visible {
 [data-theme="light"] .collaboration summary {
   background: #7734d81a;
 }
-[data-theme="light"] dialog {
+[data-theme="light"] dialog,
+[data-theme="light"] #sound-board {
   box-shadow: 0 24px 80px #20202733;
 }
 [data-theme="light"] dialog::backdrop {
@@ -511,6 +581,7 @@ dialog input:focus-visible {
 [data-theme="light"] .saved-grid .open-grid:hover:not(:disabled),
 [data-theme="light"] .dialog-heading button:hover:not(:disabled),
 [data-theme="light"] .icon-button:hover:not(:disabled),
+[data-theme="light"] .sound-row .snd:hover,
 [data-theme="light"] .collaboration-row:hover,
 [data-theme="light"] .chat-menu a:hover {
   background: #7734d80f;
@@ -518,6 +589,7 @@ dialog input:focus-visible {
 [data-theme="light"] .open-grid[aria-current="true"] strong,
 [data-theme="light"] #grid-switcher summary > svg:first-child,
 [data-theme="light"] #grid-lock[aria-pressed="true"],
+[data-theme="light"] #soundfollow[aria-pressed="true"],
 [data-theme="light"] .tile .bar .spotlight[aria-pressed="true"] {
   color: #7734d8;
 }
@@ -525,8 +597,4 @@ dialog input:focus-visible {
 [data-theme="light"] .collaboration-menu,
 [data-theme="light"] .grid-menu {
   box-shadow: 0 12px 32px #20202726;
-}
-
-#preferences .player-preference {
-  flex-basis: 100%;
 }
