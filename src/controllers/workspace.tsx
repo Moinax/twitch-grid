@@ -113,6 +113,9 @@ export function startWorkspace(
   let soundFollow: string[] | null = Array.isArray(storedFollow)
     ? storedFollow.filter(validLogin)
     : null;
+  let restoreMuteAfterFollow =
+    !!soundFollow && readStored<boolean>("tg.restoreMuteAfterFollow", false);
+  let shiftStartedFollow = false;
   const hoverSound = (t: Tile) => !!soundFollow && !mutedAll && !!t.hovered;
   const wantMuted = (t: Tile) => t.muted && !hoverSound(t);
   function wantsPlayback(t: Tile) {
@@ -3207,7 +3210,11 @@ export function startWorkspace(
         soundFollow = null;
         for (const login of loud)
           if (tiles.has(login)) setMuted(tiles.get(login)!, false);
+        if (restoreMuteAfterFollow && !mutedAll) actions.toggleMute?.();
+        restoreMuteAfterFollow = false;
       } else {
+        restoreMuteAfterFollow = !!mutedAll;
+        if (mutedAll) actions.toggleMute?.();
         const loud = [...tiles]
           .filter(([, t]) => !t.muted)
           .map(([login]) => login);
@@ -3215,6 +3222,7 @@ export function startWorkspace(
         soundFollow = loud;
       }
       writeStored("tg.soundFollow", soundFollow);
+      writeStored("tg.restoreMuteAfterFollow", restoreMuteAfterFollow);
       paintSoundFollow();
       tiles.forEach((t) => {
         if (t.ready) applyMuted(t, wantMuted(t));
@@ -3223,6 +3231,33 @@ export function startWorkspace(
       save();
       renderSoundBoard();
     };
+    listenDocument("keydown", (e) => {
+      if (
+        e.key !== "Shift" ||
+        e.repeat ||
+        soundFollow ||
+        !restored ||
+        (e.target instanceof HTMLElement &&
+          (e.target.isContentEditable ||
+            e.target.closest("input, textarea, select"))) ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      shiftStartedFollow = true;
+      actions.toggleSoundFollow?.();
+    });
+    const releaseShiftFollow = () => {
+      if (!shiftStartedFollow) return;
+      shiftStartedFollow = false;
+      if (soundFollow) actions.toggleSoundFollow?.();
+    };
+    listenDocument("keyup", (e) => {
+      if (e.key === "Shift" && !e.shiftKey) releaseShiftFollow();
+    });
+    addEventListener("blur", releaseShiftFollow);
+    listenDocument("visibilitychange", () => {
+      if (document.hidden) releaseShiftFollow();
+    });
     actions.toggleSoundBoard = (open) => {
       if (!open) return;
       closeTileMenus();

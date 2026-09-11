@@ -655,6 +655,41 @@ test('a portrait grid keeps the small tiles in a strip under the front row', asy
   await expect.poll(async () => { const a = await one.boundingBox(), b = await two.boundingBox(); return b.x > a.x + a.width && b.y < a.y + 1; }).toBe(true);
   expect(errors).toEqual([]);
 });
+test('Shift and the follow button temporarily release global mute', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], muted: { one: true, two: false } })));
+  await page.goto('/');
+  await page.locator('#audio-overlay').click();
+  const follow = page.locator('#soundfollow'), mute = page.locator('#muteall');
+  const muted = login => page.evaluate(login => tiles.get(login).player?.getMuted(), login);
+  await expect.poll(() => muted('two')).toBe(false);
+  await mute.click();
+  await page.locator('#grid [data-login="one"]').hover();
+  await page.keyboard.down('Shift');
+  await expect(follow).toHaveAttribute('aria-pressed', 'true');
+  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => muted('one')).toBe(false);
+  await page.keyboard.up('Shift');
+  await expect(follow).toHaveAttribute('aria-pressed', 'false');
+  await expect(mute).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => muted('one')).toBe(true);
+  await follow.click();
+  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('Shift');
+  await expect(follow).toHaveAttribute('aria-pressed', 'true');
+  await follow.click();
+  await expect(mute).toHaveAttribute('aria-pressed', 'true');
+  await mute.click();
+  await expect.poll(() => muted('two')).toBe(false);
+  await expect.poll(() => muted('one')).toBe(true);
+  await page.locator('#grid [data-login="one"]').hover();
+  await page.keyboard.down('Shift');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(follow).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.up('Shift');
+  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+});
+
 test('sound follows the mouse, silencing every other tile until the mode is left, and the sound board mixes every tile', async ({ page }) => {
   const errors = await setup(page);
   await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));
