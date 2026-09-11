@@ -2446,7 +2446,8 @@ export function startWorkspace(
   function renderLanding() {
     const pending =
       !accountReady &&
-      (readStored("tg.session", "", sessionStorage) ||
+      (readStored("tg.session", "") ||
+        readStored("tg.session", "", sessionStorage) ||
         readStored("tg.oauth", null, sessionStorage));
     const openTiles = restored
       ? order.length

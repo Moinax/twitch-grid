@@ -475,9 +475,9 @@ export const translations: Record<string, [string, string]> = {
       "No account to create: sign in goes through Twitch, with the only permission being to read your follows.",
       "Geen account aan te maken: aanmelden verloopt via Twitch, met als enige toestemming het lezen van je follows.",
     ],
-  "La session reste dans l’onglet et disparaît à sa fermeture.": [
-    "The session stays in the tab and disappears when it closes.",
-    "De sessie blijft in het tabblad en verdwijnt zodra je het sluit.",
+  "La session reste dans ce navigateur jusqu’à la déconnexion.": [
+    "The session stays in this browser until you sign out.",
+    "De sessie blijft in deze browser tot je je afmeldt.",
   ],
   "Tes follows et tes grilles ne sont jamais publiés ni partagés.": [
     "Your follows and grids are never published or shared.",
@@ -502,10 +502,10 @@ export const translations: Record<string, [string, string]> = {
     "What does Twitch grid see of my account?",
     "Wat ziet Twitch grid van mijn account?",
   ],
-  "Uniquement la liste des chaînes que tu suis. Le jeton reste dans l’onglet et disparaît à sa fermeture ; rien n’est copié sur un serveur.":
+  "Uniquement la liste des chaînes que tu suis. Le jeton reste dans ce navigateur jusqu’à la déconnexion ; rien n’est copié sur un serveur.":
     [
-      "Only the list of channels you follow. The token stays in the tab and disappears when it closes; nothing is copied to a server.",
-      "Alleen de lijst met kanalen die je volgt. Het token blijft in het tabblad en verdwijnt zodra je het sluit; niets wordt naar een server gekopieerd.",
+      "Only the list of channels you follow. The token stays in this browser until you sign out; nothing is copied to a server.",
+      "Alleen de lijst met kanalen die je volgt. Het token blijft in deze browser tot je je afmeldt; niets wordt naar een server gekopieerd.",
     ],
   "Combien de streams en même temps ?": [
     "How many streams at once?",

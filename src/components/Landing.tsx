@@ -518,7 +518,7 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 seule permission de lire tes follows.
               </li>
               <li data-i18n="">
-                La session reste dans l’onglet et disparaît à sa fermeture.
+                La session reste dans ce navigateur jusqu’à la déconnexion.
               </li>
               <li data-i18n="">
                 Tes follows et tes grilles ne sont jamais publiés ni partagés.
@@ -549,7 +549,7 @@ export function Landing({ actions }: { actions: WorkspaceActions }) {
                 </summary>
                 <p data-i18n="">
                   Uniquement la liste des chaînes que tu suis. Le jeton reste
-                  dans l’onglet et disparaît à sa fermeture ; rien n’est copié
+                  dans ce navigateur jusqu’à la déconnexion ; rien n’est copié
                   sur un serveur.
                 </p>
               </details>

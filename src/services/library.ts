@@ -97,7 +97,8 @@ class TwitchLibrary {
     if (generation !== this.generation) return null;
     this.token = token;
     this.user = user;
-    writeStored("tg.session", token, sessionStorage);
+    if (writeStored("tg.session", token))
+      sessionStorage.removeItem("tg.session");
     return user;
   }
   async connect() {
@@ -154,7 +155,9 @@ class TwitchLibrary {
         );
       await this.validate(params.get("access_token") || "");
     } else {
-      const token = readStored("tg.session", "", sessionStorage);
+      const token =
+        readStored("tg.session", "") ||
+        readStored("tg.session", "", sessionStorage);
       if (token) await this.validate(token);
     }
   }
@@ -162,6 +165,7 @@ class TwitchLibrary {
     this.generation++;
     this.token = "";
     this.user = null;
+    localStorage.removeItem("tg.session");
     sessionStorage.removeItem("tg.session");
     sessionStorage.removeItem("tg.oauth");
   }

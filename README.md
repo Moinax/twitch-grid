@@ -50,7 +50,7 @@ Connecting Twitch replaces favorites with the visitor's follows. All follows pag
 
 Guest and connected modes each retain their own grid collection and active grid. Switching account mode saves the current layout and restores the other mode's layout. Tiles retain their order, pause, volume, mute, spotlight audio intent, and chat settings.
 
-The Twitch session stays in the tab's session storage and ends when the tab closes. OAuth state is checked before accepting a token. Sessions are validated at startup and hourly; expired sessions return to guest mode with a reconnect message. Each visitor reads their own follows, which are never published to other visitors.
+The Twitch session stays in the browser's local storage until the visitor signs out. OAuth state is checked before accepting a token. Sessions are validated at startup and hourly; expired sessions return to guest mode with a reconnect message. Each visitor reads their own follows, which are never published to other visitors.
 
 ## Landing and empty workspace
 

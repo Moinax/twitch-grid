@@ -111,6 +111,7 @@ test('OAuth callback validates state, loads every follows page, searches and dis
   expect(await page.evaluate(() => window.openPlayers.every(player => player.destroyed))).toBe(true);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).order)).toEqual([]);
   expect(await page.evaluate(() => sessionStorage.getItem('tg.session'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('tg.session'))).toBeNull();
   await page.locator('#q').fill('');
   await expect(page.locator('#list li')).toHaveCount(1);
   await expect(page.locator('#list li')).toHaveAttribute('data-login', 'saved');
@@ -119,6 +120,19 @@ test('OAuth callback validates state, loads every follows page, searches and dis
   await expect(page.locator('#grid .tile')).toHaveCount(0);
   await expect(page.locator('#empty')).toBeVisible();
   expect(errors).toEqual([]);
+});
+test('Twitch session survives closing the tab and keeps the landing hidden', async ({ page }) => {
+  await setup(page, true, true); await api(page);
+  await page.addInitScript(() => sessionStorage.setItem('tg.oauth', JSON.stringify({state:'expected',at:Date.now()})));
+  await page.goto('/#access_token=fake-token&state=expected');
+  await expect(page.locator('#disconnect')).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.session')))).toBe('fake-token');
+  await page.close();
+
+  const tab = await page.context().newPage(); await setup(tab, true, true); await api(tab);
+  await tab.goto('/');
+  await expect(tab.locator('#disconnect')).toBeVisible();
+  await expect(tab.locator('#landing')).toBeHidden();
 });
 test('disconnect before the player script loads restores guest tiles without changing the connected layout', async ({ page }) => {
   await setup(page, true); await api(page);
