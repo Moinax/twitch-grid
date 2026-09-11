@@ -88,9 +88,9 @@ export function startWorkspace(
   function isLiveGrid() {
     return gridStore?.activeId === "live-follows";
   }
-  // null keeps the automatic grid's size-dependent default; booleans are manual choices.
+  // Automatic tiles use null until the viewer makes an explicit playback choice.
   function tilePaused(t: Tile) {
-    return t.paused ?? (isLiveGrid() && tiles.size >= 9);
+    return t.paused ?? false;
   }
   function hoverPlayback(t: Tile) {
     if (

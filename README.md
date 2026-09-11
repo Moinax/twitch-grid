@@ -64,7 +64,7 @@ The sidebar footer offers French, English, and Dutch, plus system, light, and da
 
 The grid selector opens saved layouts. Save as creates a named copy without interrupting playback; a blank grid starts empty. Grids can be opened, renamed, or deleted with confirmation. Removing the last grid creates an empty default grid. Existing installations migrate their earlier single layout into the default grid automatically.
 
-The connected mode also has a locked Live follows grid. New live follows join automatically. A channel that ends leaves after a minute. At nine or more tiles, automatic tiles start paused unless the viewer has saved an explicit playback choice. Order, sound, volume, and pause settings survive reloads.
+The connected mode also has a locked Live follows grid. New live follows join automatically and start playing unless the viewer has saved an explicit pause choice. A channel that ends leaves after a minute. Order, sound, volume, and pause settings survive reloads.
 
 Locking a grid prevents additions and keeps offline tiles in place. A clear button empties the current grid; it stays disabled while the grid is locked, on Live follows, and on an empty grid. The collapsed sidebar retains grid, clear and lock controls, playback and sound controls, the avatar rail, and account links. A highlighted avatar identifies a channel already in the grid; offline avatars are dimmed.
 

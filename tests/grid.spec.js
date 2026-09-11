@@ -1867,7 +1867,7 @@ test('paused tiles preview muted on hover and retain their pause and audio inten
   expect(errors).toEqual([]);
 });
 
-test('live follows grid locks membership, pauses at nine and removes offline tiles after sixty seconds', async ({ page }) => {
+test('live follows grid locks membership, plays at nine and removes offline tiles after sixty seconds', async ({ page }) => {
   const errors = await setup(page,true); await api(page);
   await page.addInitScript(() => sessionStorage.setItem('tg.oauth', JSON.stringify({state:'expected',at:Date.now()})));
   await page.goto('/#access_token=fake-token&state=expected');
@@ -1885,10 +1885,7 @@ test('live follows grid locks membership, pauses at nine and removes offline til
     follows=Array.from({length:9},(_,i)=>channel({twitch:'live'+i,online:true})); syncLiveGrid();
   });
   await expect(page.locator('#grid .tile')).toHaveCount(9);
-  await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>tilePaused(t) && !t.player))).toBe(true);
-  await expect(page.locator('#playall')).toHaveAttribute('aria-pressed','true');
   await page.setViewportSize({width:2200,height:1500});
-  await page.locator('#playall').click();
   await expect(page.locator('#playall')).toHaveAttribute('aria-pressed','false');
   await expect.poll(() => page.evaluate(() => [...tiles.values()].every(t=>!tilePaused(t) && t.player && !t.player.paused))).toBe(true);
   await page.locator('#playall').click();
