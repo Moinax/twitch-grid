@@ -8,7 +8,7 @@
     "check": "tsc --noEmit && node --check api/stream.js && node --check api/search.js && node --check server.cjs",
     "dev": "node --env-file-if-exists=.env.local server.cjs",
     "og:generate": "node scripts/render-share-image.cjs",
-    "test:server": "node --test tests/stream.test.cjs tests/search.test.cjs tests/i18n.test.cjs",
+    "test:server": "node --test tests/stream.test.cjs tests/search.test.cjs tests/i18n.test.cjs tests/watchtime.test.cjs",
     "build": "pnpm check && vite build",
     "preview": "vite preview --host localhost --port 8765",
     "format": "prettier --write src vite.config.mts"

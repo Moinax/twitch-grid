@@ -19,6 +19,7 @@ export interface WorkspaceActions {
   setSpotlightChat?: (value: string) => void;
   setSpotlightChatPosition?: (value: string) => void;
   setLatency?: (value: string) => void;
+  setListOrder?: (value: string) => void;
   setTheme?: (value: string) => void;
   openGrids?: () => void;
   openGridManager?: () => void;

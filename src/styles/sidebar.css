@@ -170,15 +170,24 @@ body:not(.collapsed) #toggle .out {
   letter-spacing: -0.01em;
 }
 .search-field {
-  @apply relative mt-[8px];
+  @apply relative flex;
+  @apply gap-[8px] mt-[8px];
+}
+.search-input {
+  @apply relative;
+  flex: 1;
+  min-width: 0;
 }
 #q {
   width: 100%;
-  padding: 6px 34px 6px 8px;
+  @apply h-[32px];
+  padding: 0 34px 0 8px;
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--line);
   @apply rounded-[4px];
+  /* the shared input ring is a detached halo; on the search row it hugs the field instead */
+  outline-offset: -1px;
   transition: border-color 0.2s var(--ease);
 }
 #q:hover,
@@ -507,4 +516,20 @@ body.collapsed #list li.skeleton .n {
   -webkit-line-clamp: 2;
   @apply overflow-hidden;
   overflow-wrap: anywhere;
+}
+/* the menu has no positioned ancestor of its own, so it spans the whole .search-field row */
+#list-order-menu summary {
+  list-style: none;
+}
+#list-order-menu summary::-webkit-details-marker {
+  @apply hidden;
+}
+/* an order other than the default reads as an active filter */
+#list-order-menu:not([data-order="popular"]) summary,
+#list-order-menu[open] summary {
+  border-color: #9147ff80;
+  color: #bf94ff;
+}
+.grid-menu .open-grid[aria-pressed="true"] {
+  color: #bf94ff;
 }

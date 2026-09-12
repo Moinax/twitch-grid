@@ -3,6 +3,7 @@ export type ChatPosition = "auto" | "top" | "bottom" | "left" | "right";
 export type Language = "fr" | "en" | "nl";
 export type Theme = "system" | "light" | "dark";
 export type Latency = "stable" | "low";
+export type ListOrder = "popular" | "watched" | "recent";
 export interface Preferences {
   language: Language;
   theme: Theme;
@@ -10,6 +11,7 @@ export interface Preferences {
   latency: Latency;
   spotlightChat: "on" | "off";
   spotlightChatPosition: ChatPosition;
+  listOrder: ListOrder;
 }
 export interface Channel {
   twitch: string;
@@ -21,6 +23,7 @@ export interface Channel {
   game: string;
   title: string;
   viewersAmount: { number: number; formatted: string };
+  startedAt: number;
 }
 export interface TwitchChannelData extends Partial<
   Omit<Channel, "viewersAmount">
@@ -38,6 +41,7 @@ export interface TwitchChannelData extends Partial<
   is_live?: boolean;
   game_name?: string;
   viewer_count?: number;
+  started_at?: string;
   participants?: { broadcaster_id: string }[];
 }
 export interface TwitchSession {

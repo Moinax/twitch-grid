@@ -42,6 +42,7 @@ import {
   refreshNumberFormat,
 } from "../services/library";
 import { GridStore } from "../services/grids";
+import { credit, decayed, type WatchEntry } from "../services/watchtime";
 
 export function startWorkspace(
   views: WorkspaceViews,
@@ -110,6 +111,14 @@ export function startWorkspace(
   }
   // Sound follow: only the hovered tile is audible. Like the global mute, it silences every tile and keeps the list of the
   // ones that had sound, to give it back when the mode is left.
+  // Re-read before every credit: a second tab holds its own copy, and a stale snapshot would overwrite its minutes.
+  function loadWatched() {
+    const stored = readStored<unknown>("tg.watched", null);
+    return stored && typeof stored === "object" && !Array.isArray(stored)
+      ? (stored as Record<string, WatchEntry>)
+      : {};
+  }
+  let watched = loadWatched();
   const storedFollow = readStored<unknown>("tg.soundFollow", null);
   let soundFollow: string[] | null = Array.isArray(storedFollow)
     ? storedFollow.filter(validLogin)
@@ -420,7 +429,7 @@ export function startWorkspace(
   function closeTileMenus(returnFocus = false, except: Element | null = null) {
     let closed = false;
     for (const menu of document.querySelectorAll<HTMLDetailsElement>(
-      ".chat-options[open], .collaboration[open], #grid-switcher[open]",
+      ".chat-options[open], .collaboration[open], #grid-switcher[open], #list-order-menu[open]",
     )) {
       if (menu === except) continue;
       menu.open = false;
@@ -433,7 +442,7 @@ export function startWorkspace(
     closeTileMenus(
       false,
       (e.target as Element).closest(
-        ".chat-options, .collaboration, #grid-switcher",
+        ".chat-options, .collaboration, #grid-switcher, #list-order-menu",
       ),
     ),
   );
@@ -841,6 +850,22 @@ export function startWorkspace(
 
   function viewers(s: Channel) {
     return s.viewersAmount.number;
+  }
+  function paintListOrder() {
+    const menu = $<HTMLDetailsElement>("#list-order-menu");
+    menu.dataset.order = preferences.listOrder;
+    for (const option of menu.querySelectorAll<HTMLElement>("[data-order]"))
+      option.setAttribute(
+        "aria-pressed",
+        String(option.dataset.order === preferences.listOrder),
+      );
+  }
+  function listRank(s: Channel, now: number) {
+    return preferences.listOrder === "watched"
+      ? decayed(watched[s.twitch], now)
+      : preferences.listOrder === "recent"
+        ? s.startedAt
+        : viewers(s);
   }
 
   // One temporary, muted player; removing its iframe stops playback and network activity.
@@ -2423,12 +2448,17 @@ export function startWorkspace(
       ...new Map(
         [...matches, ...(q ? results : [])].map((s) => [s.twitch, s]),
       ).values(),
-    ].sort(
+    ];
+    // One clock reading for the whole sort: read per comparison, two equal watch scores would differ by a hair and the
+    // tiebreaks below would never run.
+    const now = Date.now();
+    rows.sort(
       (a, b) =>
         Number(b.twitch === loginFromQuery(q)) -
           Number(a.twitch === loginFromQuery(q)) ||
         Number(b.online) - Number(a.online) ||
-        viewers(b) - viewers(a) ||
+        listRank(b, now) - listRank(a, now) ||
+        viewers(b) - viewers(a) || // channels the chosen order cannot separate still lead with the busiest
         a.display.localeCompare(b.display),
     );
     list.classList.toggle("search-results", q.length >= 2);
@@ -2680,6 +2710,8 @@ export function startWorkspace(
           game: live.get(s.twitch)?.game_name || "",
           title: live.get(s.twitch)?.title || "",
           viewer_count: live.get(s.twitch)?.viewer_count ?? 0,
+          startedAt: 0, // a channel that went offline must not keep the start time of its last stream
+          started_at: live.get(s.twitch)?.started_at,
         });
       if (connected) follows = nextChannels.map(update);
       else
@@ -2852,6 +2884,38 @@ export function startWorkspace(
     for (const t of tiles.values()) if (t.poster?.isConnected) updatePoster(t);
   }
   setInterval(refreshPosters, 60000);
+  // A minute in front of a stream that has the screen to itself is worth more than a minute in a muted corner of the
+  // grid. Prominence outranks sound, so a spotlight stays worth a full minute even under the global mute.
+  function watchWeight(t: Tile) {
+    const login = t.el.dataset.login!;
+    if (
+      tiles.size === 1 ||
+      inFullscreen(t) ||
+      focused === login ||
+      expanded === login
+    )
+      return 1;
+    return wantMuted(t) ? 0.25 : 0.5;
+  }
+  // Every minute credits each tile actually playing in front of the viewer. The player has the last word: wantsPlayback
+  // is only an intention, and a stream still loading, blocked or errored must not earn a minute. wantsPlayback then
+  // accounts for the global pause, the landing, a blocked autoplay and tiles off-screen; offline is checked here
+  // because showPoster lets a fullscreen tile through.
+  setInterval(() => {
+    const playing = [...tiles.values()].filter(
+      (t) =>
+        t.ready &&
+        t.player?.getPlayerState().playback === "Playing" &&
+        wantsPlayback(t) &&
+        t.channel.online !== false,
+    );
+    if (!playing.length) return;
+    watched = loadWatched();
+    for (const t of playing)
+      credit(watched, [t.el.dataset.login!], watchWeight(t));
+    writeStored("tg.watched", watched);
+    if (preferences.listOrder === "watched") renderList();
+  }, 60000);
   setInterval(() => {
     if (!document.hidden) refresh();
   }, 30000);
@@ -3199,6 +3263,7 @@ export function startWorkspace(
     $<HTMLSelectElement>("#latency-setting").value = preferences.latency;
     $<HTMLSelectElement>("#latency-setting").disabled =
       preferences.player !== "custom";
+    paintListOrder();
   }
   function initWorkspace() {
     translateTree();
@@ -3237,6 +3302,7 @@ export function startWorkspace(
     $<HTMLSelectElement>("#latency-setting").value = preferences.latency;
     $<HTMLSelectElement>("#latency-setting").disabled =
       preferences.player !== "custom";
+    paintListOrder();
     actions.setLanguage = (value) => setPreference("language", value);
     actions.openSettings = () => {
       closeTileMenus();
@@ -3286,7 +3352,12 @@ export function startWorkspace(
         document.querySelector("dialog[open]")
       )
         return;
-      const playback = e.code === "Space" && !e.shiftKey;
+      // Space activates the control a menu put the focus on (Escape hands it back to the summary); elsewhere it is
+      // the global play/pause. Only Space is claimed, so the other shortcuts still work from inside a menu.
+      const menuControl =
+        e.target instanceof HTMLElement &&
+        !!e.target.closest("summary, details[open] button");
+      const playback = e.code === "Space" && !e.shiftKey && !menuControl;
       const mute = e.shiftKey && e.key.toLowerCase() === "m";
       if (playback || mute) {
         e.preventDefault();
@@ -3324,6 +3395,10 @@ export function startWorkspace(
       renderSoundBoard();
     };
     actions.setPlayer = (value) => setPreference("player", value);
+    actions.setListOrder = (value) => {
+      $<HTMLDetailsElement>("#list-order-menu").open = false;
+      setPreference("listOrder", value); // the change event rebuilds the list and repaints the menu
+    };
     actions.setLatency = (value) => {
       if (value !== "stable" && value !== "low") return;
       for (const t of tiles.values()) {

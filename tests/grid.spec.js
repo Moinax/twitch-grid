@@ -2894,3 +2894,110 @@ test('spotlight chat defaults allow tile overrides and settings replace them', a
   await expect(two.locator('.chat')).toBeHidden();
   expect(errors).toEqual([]);
 });
+
+test('the sidebar order follows viewers, watch time or stream start', async ({ page }) => {
+  const hour = 3600000, now = Date.UTC(2026, 0, 1, 12);
+  const channels = {
+    alpha: { viewer_count: 300, started_at: new Date(now - 3 * hour).toISOString() },
+    beta: { viewer_count: 200, started_at: new Date(now - hour).toISOString() },
+    gamma: { viewer_count: 100, started_at: new Date(now - 2 * hour).toISOString() },
+  };
+  const errors = await setup(page);
+  await page.addInitScript(([watched, at]) => localStorage.setItem('tg.watched', JSON.stringify({
+    alpha: { score: 50, at }, beta: { score: 1, at }, gamma: { score: 10, at },
+  })), [null, now]);
+  await page.route('**/api/search?**', route => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.has('collaboration')) return route.fulfill({ json: { data: [] } });
+    const logins = params.has('login') ? params.getAll('login') : [params.get('q').toLowerCase()];
+    return route.fulfill({ json: { data: logins.map(login => ({
+      broadcaster_login: login, display_name: login, is_live: true, game_name: '', thumbnail_url: '',
+      ...channels[login],
+    })) } });
+  });
+  await page.clock.setFixedTime(new Date(now));
+  await page.goto('/');
+  for (const login of ['gamma', 'alpha', 'beta']) await favorite(page, login);
+  const order = () => page.locator('#list > li').evaluateAll(rows => rows.map(li => li.dataset.login));
+  await expect.poll(order).toEqual(['alpha', 'beta', 'gamma']);
+  const sort = async value => {
+    await page.locator('#list-order-menu summary').click();
+    await page.locator(`#list-order-menu [data-order="${value}"]`).click();
+    await expect(page.locator('#list-order-menu')).not.toHaveAttribute('open', '');
+  };
+  await sort('recent');
+  await expect.poll(order).toEqual(['beta', 'gamma', 'alpha']);
+  await sort('watched');
+  await expect.poll(order).toEqual(['alpha', 'gamma', 'beta']);
+  await page.reload(); // the chosen order outlives the visit
+  await expect(page.locator('#list-order-menu')).toHaveAttribute('data-order', 'watched');
+  await expect.poll(order).toEqual(['alpha', 'gamma', 'beta']);
+  expect(errors).toEqual([]);
+});
+
+test('watch time only accrues while a tile actually plays', async ({ page }) => {
+  const errors = await setup(page);
+  await page.clock.install();
+  await page.goto('/');
+  await favorite(page, 'alpha');
+  await page.locator('#list [data-login="alpha"] .channel').click();
+  await readyPlayers(page);
+  const score = () => page.evaluate(() => JSON.parse(localStorage.getItem('tg.watched') || '{}').alpha?.score ?? 0);
+  await page.clock.runFor(60_000);
+  await expect.poll(score).toBeGreaterThan(0);
+  const played = await score();
+  // A player that stalls or is blocked reports Paused while the app still intends to play: no credit either.
+  await page.evaluate(() => { tiles.get('alpha').player.paused = true; });
+  await page.clock.runFor(120_000);
+  expect(await score()).toBe(played);
+  await page.evaluate(() => { tiles.get('alpha').player.paused = false; });
+  await page.locator('#playall').click(); // global pause leaves t.paused untouched, so the tile must stop earning
+  await page.clock.runFor(180_000);
+  expect(await score()).toBe(played);
+  await page.locator('#playall').click();
+  await page.clock.runFor(60_000);
+  await expect.poll(score).toBeGreaterThan(played);
+  expect(errors).toEqual([]);
+});
+
+test('a minute counts for less in a muted corner of the grid than in the spotlight', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.favorites', JSON.stringify(
+    [{ twitch: 'star' }, { twitch: 'loud' }, { twitch: 'quiet' }])));
+  await page.clock.install();
+  await page.goto('/');
+  for (const login of ['star', 'loud', 'quiet'])
+    await page.locator(`#list [data-login="${login}"] .channel`).click();
+  await readyPlayers(page);
+  await page.evaluate(() => {
+    tiles.get('loud').muted = false; // an audible tile in the grid, without the spotlight
+    tiles.get('quiet').muted = true;
+  });
+  await page.locator('#grid [data-login="star"] .spotlight').click();
+  await page.clock.runFor(60_000);
+  const scores = () => page.evaluate(() => JSON.parse(localStorage.getItem('tg.watched') || '{}'));
+  await expect.poll(async () => Object.keys(await scores()).sort()).toEqual(['loud', 'quiet', 'star']);
+  const watched = await scores();
+  expect([watched.star.score, watched.loud.score, watched.quiet.score]).toEqual([1, 0.5, 0.25]);
+  expect(errors).toEqual([]);
+});
+
+test('closing a menu with Escape gives the global shortcuts back', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.favorites', JSON.stringify([{ twitch: 'one' }])));
+  await page.goto('/');
+  await page.locator('#list [data-login="one"] .channel').click();
+  await readyPlayers(page);
+  await page.locator('#list-order-menu summary').click();
+  await page.keyboard.press('Escape'); // the menu closes and hands the focus back to its summary
+  await expect(page.locator('#list-order-menu summary')).toBeFocused();
+  await page.keyboard.press('Shift+M');
+  await expect(page.locator('#muteall')).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Space'); // Space still belongs to the summary: it reopens the menu
+  await expect(page.locator('#list-order-menu')).toHaveAttribute('open', '');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Space'); // and outside a menu it is the global play/pause again
+  await expect(page.locator('#playall')).toHaveAttribute('aria-pressed', 'true');
+  expect(errors).toEqual([]);
+});

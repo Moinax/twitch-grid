@@ -48,7 +48,8 @@ async function channels(query) {
   ]);
   const results = new Map(matches.map(s => [s.broadcaster_login, {
     broadcaster_login: s.broadcaster_login, display_name: s.display_name,
-    thumbnail_url: s.thumbnail_url, is_live: s.is_live, game_name: s.game_name, title: s.title || ''
+    thumbnail_url: s.thumbnail_url, is_live: s.is_live, game_name: s.game_name, title: s.title || '',
+    started_at: s.started_at || ''
   }]));
   // Search Channels omits channels inactive for six months. Check their streams separately.
   const missing = exact.filter(user => !results.has(user.login));
@@ -63,7 +64,8 @@ async function streams(logins) {
 function userChannel(user, stream) {
   return { broadcaster_login: user.login, display_name: user.display_name,
     thumbnail_url: user.profile_image_url, preview_url: stream?.thumbnail_url || '', offline_image_url: user.offline_image_url || '', is_live: !!stream,
-    game_name: stream?.game_name || '', title: stream?.title || '', viewer_count: stream?.viewer_count || 0 };
+    game_name: stream?.game_name || '', title: stream?.title || '', viewer_count: stream?.viewer_count || 0,
+    started_at: stream?.started_at || '' };
 }
 async function lookup(logins) {
   const [users, live] = await Promise.all([
