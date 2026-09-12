@@ -184,10 +184,9 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
     .toBe(true);
   await page.locator("#grid .custom-pp").click();
   await expect(page.locator("#grid video")).toHaveJSProperty("paused", false);
-  // A click on the video pauses it, a double click fullscreens the tile without touching playback.
+  await expect(page.locator("#grid .player")).toHaveCSS("cursor", "auto");
+  // A click on the video leaves playback alone; a double click fullscreens the tile.
   await page.locator("#grid video").click();
-  await expect(page.locator("#grid video")).toHaveJSProperty("paused", true);
-  await page.locator("#grid .custom-pp").click();
   await expect(page.locator("#grid video")).toHaveJSProperty("paused", false);
   await page.locator("#grid video").dblclick();
   await expect

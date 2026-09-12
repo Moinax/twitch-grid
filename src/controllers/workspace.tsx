@@ -991,7 +991,6 @@ export function startWorkspace(
     const el = document.createElement("div");
     el.className = "tile loading";
     el.dataset.login = s.twitch;
-    let clickTimer: ReturnType<typeof setTimeout> | undefined;
     const togglePause = () => {
       if (t.channel.online === false) return;
       t.nativeHold = false;
@@ -1015,15 +1014,7 @@ export function startWorkspace(
         onSpotlight={() => focus(s.twitch)}
         onExpand={() => setExpanded(expanded === s.twitch ? null : s.twitch)}
         onPause={togglePause}
-        onPlayerClick={() => {
-          clearTimeout(clickTimer);
-          // A paused embed is torn down and remounted, so there it is worth waiting out a possible
-          // double click. The custom player only pauses its video: answer the click at once.
-          if (preferences.player === "custom") togglePause();
-          else clickTimer = setTimeout(togglePause, 250);
-        }}
         onPlayerFullscreen={() => {
-          clearTimeout(clickTimer);
           if (document.fullscreenElement) void document.exitFullscreen();
           else void t.el.requestFullscreen();
         }}

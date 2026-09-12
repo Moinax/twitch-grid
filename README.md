@@ -88,7 +88,7 @@ One tile uses the complete Twitch player and fills the grid. With multiple tiles
 
 Other tiles gain the full player controls, Twitch's own or the custom player's bar, when their rendered video reaches 640 pixels wide. They retain them down to 560 pixels. Size-driven changes wait 300 milliseconds after resizing stops. Twitch accepts the controls option only at construction, so only players whose control mode changes are recreated, preserving their settings and quality.
 
-Paused tiles release their embed and show a stream image. Hovering a small paused tile can start a muted preview, which is released on leaving. Single, spotlight, and expanded tiles stay paused until explicitly resumed. A click on a player pauses or resumes it and a double click fullscreens its tile; spotlight is controlled by its header button.
+Paused tiles release their embed and show a stream image. Hovering a small paused tile can start a muted preview, which is released on leaving. Single, spotlight, and expanded tiles stay paused until explicitly resumed. The header button pauses or resumes a player; clicking the player surface or the centered Play button only resumes it. A double click fullscreens the tile, while spotlight is controlled by its header button.
 
 Video frames and placeholders remain centered at 16:9 without CSS scaling. Loading and offline placeholders sit below the embed. Offline channels show their configured banner and avatar without mounting a player; playback buttons do not start them. A stalled player exposes its status in the header and still accepts clicks in the native player.
 

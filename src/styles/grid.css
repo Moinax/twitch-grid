@@ -663,9 +663,9 @@ body.dragging .tile.dragged .bar {
   inset: 0;
   background: var(--video-bg);
 }
-.tile:not(.offline) .player {
+.tile.paused:not(.offline) .player {
   @apply cursor-pointer;
-} /* the whole surface plays, pauses and fullscreens */
+} /* a paused surface can be clicked to resume playback */
 .tile .player {
   flex: 1;
   min-height: 0;
