@@ -77,6 +77,7 @@ export function startWorkspace(
     locked = false,
     mutedAll: string[] | null = null,
     expanded: string | null = null,
+    fullscreenAudio: { tile: Tile; muted: boolean } | null = null,
     order: string[] = [],
     dragging: string | null = null,
     allPaused = false,
@@ -2254,12 +2255,32 @@ export function startWorkspace(
     }
   }).observe(grid); // window resizes and sidebar toggles both change the grid box
   grid.addEventListener("scroll", () => closeTileMenus(), { passive: true });
-  listenDocument("fullscreenchange", () =>
+  listenDocument("fullscreenchange", () => {
+    const fullscreenTile = [...tiles.values()].find(
+      (t) =>
+        !!document.fullscreenElement &&
+        t.el.contains(document.fullscreenElement),
+    );
+    if (fullscreenAudio?.tile !== fullscreenTile) {
+      if (fullscreenAudio?.tile.el.isConnected) {
+        setMuted(fullscreenAudio.tile, fullscreenAudio.muted);
+      }
+      fullscreenAudio = null;
+      if (fullscreenTile) {
+        readNativeControls(fullscreenTile);
+        fullscreenAudio = {
+          tile: fullscreenTile,
+          muted: fullscreenTile.muted,
+        };
+        setMuted(fullscreenTile, false);
+      }
+      renderSoundBoard();
+    }
     tiles.forEach((t) => {
       fit(t.el.querySelector<HTMLDivElement>(".player")!);
       sync(t);
-    }),
-  );
+    });
+  });
   listenDocument("keydown", (e) => {
     if (e.key === "Escape") {
       if ($("#sound-board").matches(":popover-open")) return; // light dismiss closes it

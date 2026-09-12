@@ -871,6 +871,33 @@ test('a miniature plays and pauses on click and fullscreens on double click', as
   await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   expect(errors).toEqual([]);
 });
+test('fullscreen turns sound on and restores a muted tile on exit', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], muted: { one: true } })));
+  await page.goto('/');
+  const player = page.locator('#grid [data-login="one"] .player');
+  await player.dblclick();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.dataset.login)).toBe('one');
+  await expect.poll(() => page.evaluate(() => tiles.get('one').muted)).toBe(false);
+  await player.dblclick();
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  await expect.poll(() => page.evaluate(() => tiles.get('one').muted)).toBe(true);
+  expect(errors).toEqual([]);
+});
+test('fullscreen restores an audible tile to its initial sound state on exit', async ({ page }) => {
+  const errors = await setup(page);
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], muted: { one: false } })));
+  await page.goto('/');
+  await page.keyboard.press('Enter');
+  const tile = page.locator('#grid [data-login="one"]'), player = tile.locator('.player');
+  await player.dblclick();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.dataset.login)).toBe('one');
+  expect(await page.evaluate(() => tiles.get('one').muted)).toBe(false);
+  await player.dblclick();
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  expect(await page.evaluate(() => tiles.get('one').muted)).toBe(false);
+  expect(errors).toEqual([]);
+});
 test('volume opens on hover and keyboard adjustment enables and saves sound', async ({ page }) => {
   const errors = await setup(page);
   await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));   // live channels: offline ones would disable their play button
