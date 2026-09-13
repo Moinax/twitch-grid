@@ -421,7 +421,8 @@ body.dragging .tile.dragged .bar {
 .tile:not(.full-player) .fs {
   @apply hidden;
 } /* a single player has nothing to come in front of */
-.tile .bar .spotlight[aria-pressed="true"] {
+.tile .bar .spotlight[aria-pressed="true"],
+.tile .bar .player-toggle[aria-pressed="true"] {
   color: #bf94ff;
 }
 #grid.single .bar,
@@ -1706,3 +1707,4 @@ body.dragging #grid video {
 body.shift-spotlight .tile .player iframe {
   pointer-events: none;
 }
+

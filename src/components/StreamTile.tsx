@@ -7,6 +7,7 @@ interface Props {
   onSpotlight: () => void;
   onExpand: () => void;
   onPause: () => void;
+  onPlayerToggle: () => void;
   onPlayerFullscreen: () => void;
   onVolume: (value: number) => void;
   onSound: () => void;
@@ -26,6 +27,7 @@ export function StreamTile({
   onSpotlight,
   onExpand,
   onPause,
+  onPlayerToggle,
   onPlayerFullscreen,
   onVolume,
   onSound,
@@ -58,6 +60,33 @@ export function StreamTile({
           <CollaborationMenu />
         </details>
         <span className="viewers"></span>
+        <button
+          title="Utiliser le lecteur Twitch"
+          data-i18n-title="Utiliser le lecteur Twitch"
+          aria-label="Utiliser le lecteur Twitch"
+          data-i18n-aria-label="Utiliser le lecteur Twitch"
+          aria-pressed="false"
+          className="player-toggle"
+          hidden
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlayerToggle();
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 7h15m-4-4 4 4-4 4M20 17H5m4-4-4 4 4 4" />
+          </svg>
+        </button>
         <button
           title="Afficher le chat"
           data-i18n-title="Afficher le chat"

@@ -336,6 +336,8 @@ export class CustomPlayer implements TwitchPlayer {
   }
 }
 
-export function playerConstructor(): PlayerConstructor | undefined {
-  return preferences.player === "custom" ? CustomPlayer : window.Twitch?.Player;
+export function playerConstructor(
+  mode = preferences.player,
+): PlayerConstructor | undefined {
+  return mode === "custom" ? CustomPlayer : window.Twitch?.Player;
 }

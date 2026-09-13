@@ -98,7 +98,7 @@ export function startWorkspace(
   }
   function hoverPlayback(t: Tile) {
     if (
-      preferences.player === "custom" ||
+      (t.playerMode ?? preferences.player) === "custom" ||
       t.nativeHold ||
       t.hoverSuppressed ||
       tiles.size === 1 ||
@@ -767,7 +767,7 @@ export function startWorkspace(
     t.el.classList.toggle("stalled", stalled);
     if (playing) t.hasPlayed = true;
     const pauseOverlay =
-      preferences.player === "custom" &&
+      (t.playerMode ?? preferences.player) === "custom" &&
       paused &&
       !playing &&
       !offline &&
@@ -1015,6 +1015,7 @@ export function startWorkspace(
         onSpotlight={() => focus(s.twitch)}
         onExpand={() => setExpanded(expanded === s.twitch ? null : s.twitch)}
         onPause={togglePause}
+        onPlayerToggle={() => togglePlayer(t)}
         onPlayerFullscreen={() => {
           if (document.fullscreenElement) void document.exitFullscreen();
           else void t.el.requestFullscreen();
@@ -1212,7 +1213,7 @@ export function startWorkspace(
       t.channel.online === false ||
       t.waitingForStatus ||
       ((allPaused || tilePaused(t)) &&
-        !(preferences.player === "custom" && t.player) &&
+        !((t.playerMode ?? preferences.player) === "custom" && t.player) &&
         !hoverPlayback(t) &&
         !(t.nativeHold && t.controls && !allPaused))
     );
@@ -1257,12 +1258,34 @@ export function startWorkspace(
     mark(t);
   }
 
+  function togglePlayer(t: Tile) {
+    const mode =
+      (t.playerMode ?? preferences.player) === "custom" ? "embed" : "custom";
+    if (!playerConstructor(mode)) {
+      notice(
+        tr(
+          "Le lecteur Twitch est indisponible. Recharge la page pour réessayer.",
+        ),
+      );
+      loadPlayer();
+      return;
+    }
+    releasePlayer(t);
+    // Quality identifiers differ between the custom and Twitch players.
+    delete t.quality;
+    t.playerMode = mode;
+    t.el.dataset.playerMode = mode;
+    mountPlayer(t, !!t.controls);
+    sync(t);
+  }
+
   // Twitch only accepts the controls option when creating an embed. Recreate the changed
   // tile, preserving its settings; all other iframes keep playing.
   function mountPlayer(t: Tile, controls: boolean) {
     // Removing a fullscreen iframe also forces the browser to exit fullscreen.
     if (t.player && inFullscreen(t)) return;
-    if (!playerConstructor()) return;
+    const Constructor = playerConstructor(t.playerMode);
+    if (!Constructor) return;
     if (!controls) t.nativeHold = false;
     t.el.classList.toggle("full-player", controls);
     if (showPoster(t)) {
@@ -1308,7 +1331,7 @@ export function startWorkspace(
     t.el.classList.remove("offline", "partial");
     t.el.classList.toggle("loading", !allPaused && !tilePaused(t));
     t.commandedPlay = wantsPlayback(t);
-    const player = new (playerConstructor()!)(embed, {
+    const player = new Constructor(embed, {
       channel: t.el.dataset.login!,
       parent: [location.hostname],
       width: "100%",
@@ -1334,7 +1357,7 @@ export function startWorkspace(
     );
     fit(container); // Size the iframe before READY so it fits the tile from the first frame.
     const current = () => t.player === player && t.el.isConnected;
-    player.addEventListener(playerConstructor()!.READY, () => {
+    player.addEventListener(Constructor.READY, () => {
       if (!current()) return;
       t.ready = true;
       t.readyAt = Date.now();
@@ -3191,6 +3214,11 @@ export function startWorkspace(
     ) {
       if (currentLatency !== preferences.latency)
         for (const t of tiles.values()) delete t.latency;
+      if (currentPlayerMode !== preferences.player)
+        for (const t of tiles.values()) {
+          delete t.playerMode;
+          delete t.el.dataset.playerMode;
+        }
       currentPlayerMode = preferences.player;
       currentLatency = preferences.latency;
       hidePreview();

@@ -84,6 +84,7 @@ export interface Tile {
   playbackError?: boolean;
   previewing?: boolean;
   quality?: string;
+  playerMode?: "custom" | "embed";
   readyAt?: number;
   spotlightMuted?: boolean;
   unmutedAt?: number;

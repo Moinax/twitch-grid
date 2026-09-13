@@ -447,3 +447,83 @@ test("tile latency switches independently and global settings replace overrides"
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("large tiles switch players independently and keep the return button after shrinking", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 3400, height: 2000 });
+  const errors = await setup(page, "embed");
+  await choose(page, "#player-setting", "custom");
+  const tile = page.locator('#grid [data-login="example"]');
+  const toggle = tile.locator(".player-toggle");
+  await expect(toggle).toBeVisible();
+  await expect(tile.locator("video")).toHaveCount(1);
+  await page.evaluate(() =>
+    add({
+      ...tiles.get("example").channel,
+      twitch: "second",
+      display: "Second",
+    }),
+  );
+  await tile.locator(".spotlight").click();
+  await page.evaluate(() => {
+    window.otherPlayer = tiles.get("second").player;
+  });
+  await page.evaluate(() => {
+    const t = tiles.get("example");
+    t.volume = 0.25;
+    t.player.setVolume(0.25);
+    t.player.setQuality("90p");
+  });
+  await toggle.click();
+  await expect(tile.locator("iframe")).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(() => page.evaluate(() => tiles.get("example").player.getVolume()))
+    .toBe(0.25);
+  expect(
+    await page.evaluate(() => tiles.get("example").player.getQuality()),
+  ).toBe("auto");
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("tg.preferences")).player,
+    ),
+  ).toBe("custom");
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(tile.locator("video")).toHaveCount(1);
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => tiles.get("example").volume)).toBe(0.25);
+  expect(
+    await page.evaluate(
+      () => tiles.get("second").player === window.otherPlayer,
+    ),
+  ).toBe(true);
+  await choose(page, "#player-setting", "embed");
+  expect(
+    await page.evaluate(() =>
+      [...tiles.values()].every((t) => t.playerMode === undefined),
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("player shortcut uses the fitted video size and display density", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1400, height: 950 },
+    deviceScaleFactor: 2,
+  });
+  const page = await context.newPage();
+  try {
+    await setup(page, "embed");
+    const toggle = page.locator("#grid .player-toggle");
+    await expect(toggle).toBeVisible();
+    await page.setViewportSize({ width: 700, height: 1600 });
+    await expect(toggle).toBeHidden();
+  } finally {
+    await context.close();
+  }
+});

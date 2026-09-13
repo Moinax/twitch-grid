@@ -28,6 +28,10 @@ export const translations: Record<string, [string, string]> = {
     "Use the Twitch player",
     "De Twitch-speler gebruiken",
   ],
+  "Utiliser le lecteur custom": [
+    "Use the custom player",
+    "De eigen speler gebruiken",
+  ],
   Qualité: ["Quality", "Kwaliteit"],
   "Vider la grille": ["Clear the grid", "Raster leegmaken"],
   "Plein écran": ["Fullscreen", "Volledig scherm"],

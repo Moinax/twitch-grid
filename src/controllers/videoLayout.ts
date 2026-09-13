@@ -1,4 +1,5 @@
 import type { Tile } from "../types/player";
+import { preferences, tr } from "../services/preferences";
 import type { Channel } from "../types/domain";
 
 // An iframe needs a title for its accessible name; on a video that same title would hang a tooltip
@@ -12,6 +13,18 @@ export function fit(p: HTMLElement) {
   const box = p.getBoundingClientRect();
   const width = Math.min(box.width, (box.height * 16) / 9),
     height = (width * 9) / 16;
+  const tile = p.closest<HTMLElement>(".tile");
+  const toggle = tile?.querySelector<HTMLButtonElement>(".player-toggle");
+  if (toggle) {
+    const embed = (tile!.dataset.playerMode || preferences.player) === "embed";
+    toggle.hidden =
+      height * window.devicePixelRatio <= 1080 && !tile!.dataset.playerMode;
+    toggle.setAttribute("aria-pressed", String(embed));
+    toggle.title = tr(
+      embed ? "Utiliser le lecteur custom" : "Utiliser le lecteur Twitch",
+    );
+    toggle.setAttribute("aria-label", toggle.title);
+  }
   const bounds = {
     width: width + "px",
     height: height + "px",
