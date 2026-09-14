@@ -258,7 +258,7 @@ test('Twitch redirect mismatch keeps favorites and the connection button usable'
   await expect(page.locator('#connect')).toBeEnabled();
   await page.locator('#connect').click();
   await page.waitForURL('https://id.twitch.tv/oauth2/authorize?**');
-  expect(new URL(page.url()).searchParams.get('redirect_uri')).toBe('http://localhost:8767');
+  expect(new URL(page.url()).searchParams.get('redirect_uri')).toBe(test.info().project.use.baseURL);
 });
 test('a slow Twitch player script does not block account setup or overwrite the saved layout', async ({ page }) => {
   const errors = await setup(page, true);
@@ -485,6 +485,7 @@ test('the spotlight button and a click on a small tile bring one stream in front
 });
 test('tiles drag onto any other tile: sliding within the grid order, or taking the spotlight when dropped on it', async ({ page }) => {
   const errors = await setup(page);
+  await page.setViewportSize({width:1900,height:900});   // a 16:9 grid keeps the small tiles in a column
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four'], focused: 'one' })));
   await page.goto('/');
   const tile = login => page.locator(`#grid [data-login="${login}"]`);
@@ -522,7 +523,7 @@ test('tiles drag onto any other tile: sliding within the grid order, or taking t
 });
 test(`drops over cross-origin stalled players reorder tiles and change spotlight`, async ({page}) => {
   const errors = await setup(page);
-  await page.setViewportSize({width:1700,height:1100});
+  await page.setViewportSize({width:1900,height:900});
   await page.route('https://player.twitch.tv/js/embed/v1.js', r => r.fulfill({contentType:'text/javascript',body:mockPlayer.replace('el.appendChild(this.frame);', "this.frame.src = 'https://player.twitch.tv/?drag-target=1'; el.appendChild(this.frame);")}));
   await page.route('https://player.twitch.tv/?drag-target=1', r => r.fulfill({contentType:'text/html',body:'<body style="margin:0;background:#222;color:white">Player</body>'}));
   await page.route('**/api/search?**', r => r.fulfill({json:{data:['one','two','three','four'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
@@ -1439,7 +1440,7 @@ async function mockChat(page) {
 }
 test('chat uses vertical letterboxing, follows spotlight and preserves players when positioned or expanded',async({page})=>{
   const errors=await setup(page);await mockChat(page);
-  await page.setViewportSize({width:1600,height:1000});
+  await page.setViewportSize({width:2200,height:1300});
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two'],focused:'one'})));
   await page.goto('/'); await readyPlayers(page);
   const one=page.locator('#grid [data-login="one"]'),two=page.locator('#grid [data-login="two"]');
@@ -1474,7 +1475,7 @@ test('chat uses vertical letterboxing, follows spotlight and preserves players w
   }
   expect(await page.evaluate(()=>tiles.get('one').chat.querySelector('iframe')===window.chatFrame)).toBe(true);
   await selectChatPosition(one,'auto');
-  await page.setViewportSize({width:2200,height:700});
+  await page.setViewportSize({width:2200,height:900});
   await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position','right');
   await one.locator('.fs').click();
   await expect(one.locator('.chat')).toBeVisible();
@@ -1667,6 +1668,7 @@ async function collaborationFixture(page, connected) {
 }
 for (const connected of [false,true]) test(`collaboration icons and participant additions preserve grid and audio in ${connected?'connected':'guest'} mode`,async({page})=>{
   const errors=await setup(page,connected);
+  await page.setViewportSize({width:1900,height:900});   // a 16:9 grid keeps the small tiles in a column
   await collaborationFixture(page,connected);
   await page.addInitScript(connected=>{
     if(connected) sessionStorage.setItem('tg.session',JSON.stringify('valid'));
@@ -2404,7 +2406,7 @@ test('iframe stays centered at 16:9 and only resizes when its video area changes
 
 test('side tiles remain fully visible at fractional sizes and resume after a global pause', async ({page, browserName}) => {
   const errors = await setup(page);
-  await page.setViewportSize({width:1671,height:1100});
+  await page.setViewportSize({width:1671,height:850});
   await page.route('**/api/search?login=**', r => r.fulfill({json:{data:['one','two','three'].map(broadcaster_login => ({broadcaster_login,is_live:true}))}}));
   await page.addInitScript(() => {
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two','three'],focused:'one',muted:{one:true,two:true,three:true}}));
@@ -2416,7 +2418,7 @@ test('side tiles remain fully visible at fractional sizes and resume after a glo
   const frames = page.locator('#grid .tile:not(.big) .player iframe');
   await expect(frames).toHaveCount(2);
   for (const width of [1671,1670,1707,1710]) {
-    await page.setViewportSize({width,height:1100});
+    await page.setViewportSize({width,height:850});
     await expect(async () => {
       for (const frame of await frames.all()) {
         const bounds = await frame.evaluate(f => {

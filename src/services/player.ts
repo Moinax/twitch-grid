@@ -209,13 +209,22 @@ export class CustomPlayer implements TwitchPlayer {
       '<g class="enter"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></g><g class="exit"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></g>',
       () => this.toggleFullscreen(element),
     );
-    // At rest only the resolution shows; the pointer over the video unfolds the rest of the bar.
-    const actions = document.createElement("span"),
-      row = document.createElement("span");
-    actions.className = "custom-actions";
-    row.append(playPause, sound, this.slider, spotlight, fullscreen);
-    actions.append(row);
-    this.bar.append(actions, this.qualityMenu);
+    // At rest only the resolution shows, and the sound icon while the sound is on; the pointer over the video
+    // unfolds the rest of the bar around them.
+    const fold = (...buttons: HTMLElement[]) => {
+      const actions = document.createElement("span"),
+        row = document.createElement("span");
+      actions.className = "custom-actions";
+      row.append(...buttons);
+      actions.append(row);
+      return actions;
+    };
+    this.bar.append(
+      fold(playPause),
+      sound,
+      fold(this.slider, spotlight, fullscreen),
+      this.qualityMenu,
+    );
     element.append(video, this.error);
     // Above the pause overlay, which sits outside the embed's stacking context.
     (element.closest(".player") || element).append(this.bar);

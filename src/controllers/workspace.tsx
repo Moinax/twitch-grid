@@ -1875,16 +1875,29 @@ export function startWorkspace(
       const box = grid.getBoundingClientRect(),
         bar =
           parseFloat(getComputedStyle(grid).getPropertyValue("--bar")) || 34;
-      const below = box.height > box.width; // a portrait box keeps the small tiles in a strip under the front row instead of a column beside it
+      // The small tiles go beside the front video or in a strip under it, whichever leaves the video wider.
+      const MIN_SMALL = 290; // the custom player's bar unfolds to 267px, plus its margins
+      const fullWidth = ((box.height - bar) * 16) / 9; // the front video at full height
+      // beside: the column takes the width the front video cannot use, 22vw and MIN_SMALL at least
+      const side = Math.max(MIN_SMALL, 0.22 * innerWidth, box.width - fullWidth),
+        beside = Math.min(box.width - side, fullWidth);
+      // below: a strip of tiles about 22vh tall and MIN_SMALL wide at least, one row at least
+      const stripCols = Math.max(
+          1,
+          Math.min(
+            Math.round(box.width / (((innerHeight * 0.22 - bar) * 16) / 9)),
+            Math.floor(box.width / MIN_SMALL),
+          ),
+        ),
+        tileH = ((box.width / stripCols) * 9) / 16 + bar,
+        under = Math.min(box.width, ((box.height - tileH - 2 - bar) * 16) / 9);
+      // The column shows more small tiles and scrolls: the strip has to buy a quarter more video.
+      const below = under > beside * 1.25;
       grid.classList.toggle("below", below);
       let w = box.width,
         h = box.height;
       if (below) {
-        const sideCols = Math.max(
-            1,
-            Math.round(box.width / (((innerHeight * 0.22 - bar) * 16) / 9)),
-          ),
-          tileH = ((box.width / sideCols) * 9) / 16 + bar;
+        const sideCols = stripCols;
         // the strip shows as many rows as the front row can spare without shrinking its videos
         const frontCols = columnsFor(count, w, box.height - tileH - 2),
           frontRows = Math.ceil(count / frontCols);
@@ -1905,10 +1918,17 @@ export function startWorkspace(
         grid.style.gridTemplateColumns = `repeat(${sideCols}, 1fr)`;
         grid.style.gridTemplateRows = `${h}px repeat(${Math.max(Math.ceil((n - count) / sideCols), 1)}, var(--tile-h))`;
       } else {
-        const wide = innerWidth / innerHeight > 2,
-          sideCols = wide ? 2 : 1; // ultrawide → two side columns
+        // Small tiles never outgrow the front video. Another column only when it still fills the whole height,
+        // scrolling beats a short stack of tiny tiles over empty space, and never narrower than MIN_SMALL.
+        const small = n - count,
+          fills = (c: number) =>
+            Math.ceil(small / c) * (((side / c) * 9) / 16 + bar + 2) >=
+            box.height;
+        let sideCols = Math.max(1, Math.ceil(side / beside));
+        while (fills(sideCols + 1) && side / (sideCols + 1) >= MIN_SMALL)
+          sideCols++;
         grid.style.setProperty("--cols", String(sideCols));
-        grid.style.setProperty("--side", wide ? "30vw" : "22vw");
+        grid.style.setProperty("--side", side + "px");
         grid.style.removeProperty("--tile-h");
         grid.style.gridTemplateColumns = "";
         grid.style.gridTemplateRows = `repeat(${Math.max(Math.ceil((n - count) / sideCols), 1)}, var(--tile-h))`;

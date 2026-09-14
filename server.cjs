@@ -2,7 +2,8 @@
 async function start() {
   const { createServer } = await import('vite');
   const server = await createServer({
-    server: { port: Number(process.argv[2] || 8765), strictPort: true },
+    // An explicit port is binding (tests); the default one slides to the next free port so several worktrees can run at once.
+    server: { port: Number(process.argv[2] || 8765), strictPort: Boolean(process.argv[2]) },
   });
   await server.listen();
   server.printUrls();

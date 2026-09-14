@@ -1596,7 +1596,26 @@ body.collapsed #list-empty {
 .custom-controls:not(.muted) .custom-sound .off {
   @apply hidden;
 }
-.custom-controls:not(.muted) .custom-sound,
+/* a tile with its sound on keeps the sound icon at rest, beside the resolution and the size of the badge */
+.custom-controls.muted .custom-sound {
+  @apply hidden;
+}
+.custom-controls .custom-sound {
+  @apply w-[14px] h-[14px] mx-[4px] p-0;
+  color: inherit; /* white like the badge: the purple is for the unfolded bar */
+}
+:is(
+    .tile:not(.pointer-idle) .player:hover,
+    .custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
+  )
+  .custom-sound {
+  @apply flex w-[28px] h-[28px];
+}
+:is(
+    .tile:not(.pointer-idle) .player:hover .custom-controls,
+    .custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
+  ):not(.muted)
+  .custom-sound,
 .custom-spotlight[aria-pressed="true"] {
   color: var(--accent);
 }
