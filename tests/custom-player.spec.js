@@ -509,7 +509,7 @@ test("large tiles switch players independently and keep the return button after 
   expect(errors).toEqual([]);
 });
 
-test("player shortcut uses the fitted video size and display density", async ({
+test("player shortcut remains available on small tiles", async ({
   browser,
 }) => {
   const context = await browser.newContext({
@@ -522,7 +522,7 @@ test("player shortcut uses the fitted video size and display density", async ({
     const toggle = page.locator("#grid .player-toggle");
     await expect(toggle).toBeVisible();
     await page.setViewportSize({ width: 700, height: 1600 });
-    await expect(toggle).toBeHidden();
+    await expect(toggle).toBeVisible();
   } finally {
     await context.close();
   }

@@ -17,8 +17,6 @@ export function fit(p: HTMLElement) {
   const toggle = tile?.querySelector<HTMLButtonElement>(".player-toggle");
   if (toggle) {
     const embed = (tile!.dataset.playerMode || preferences.player) === "embed";
-    toggle.hidden =
-      height * window.devicePixelRatio <= 1080 && !tile!.dataset.playerMode;
     toggle.setAttribute("aria-pressed", String(embed));
     toggle.title = tr(
       embed ? "Utiliser le lecteur custom" : "Utiliser le lecteur Twitch",

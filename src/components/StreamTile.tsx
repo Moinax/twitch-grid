@@ -67,7 +67,6 @@ export function StreamTile({
           data-i18n-aria-label="Utiliser le lecteur Twitch"
           aria-pressed="false"
           className="player-toggle"
-          hidden
           onClick={(e) => {
             e.stopPropagation();
             onPlayerToggle();
