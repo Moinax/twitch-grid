@@ -11,6 +11,7 @@ const preferenceValues = {
   language: ["fr", "en", "nl"],
   player: ["embed", "custom"],
   latency: ["stable", "low"],
+  spotlightLatency: ["stable", "low"],
   spotlightChat: ["on", "off"],
   spotlightChatPosition: ["auto", "top", "bottom", "left", "right"],
   listOrder: ["popular", "watched", "recent"],
@@ -19,6 +20,7 @@ const preferenceValues = {
 const preferences: Preferences = {
   player: stored.player === "embed" ? "embed" : "custom",
   latency: stored.latency === "low" ? "low" : "stable",
+  spotlightLatency: stored.spotlightLatency === "stable" ? "stable" : "low", // the stream in front is the one to follow live
   spotlightChat: stored.spotlightChat === "on" ? "on" : "off",
   spotlightChatPosition:
     stored.spotlightChatPosition &&
@@ -104,6 +106,8 @@ function setPreference(key: keyof Preferences, value: string) {
     preferences.player = value as Preferences["player"];
   else if (key === "latency")
     preferences.latency = value as Preferences["latency"];
+  else if (key === "spotlightLatency")
+    preferences.spotlightLatency = value as Preferences["latency"];
   else if (key === "spotlightChat")
     preferences.spotlightChat = value as Preferences["spotlightChat"];
   else if (key === "listOrder")

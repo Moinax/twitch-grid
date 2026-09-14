@@ -372,9 +372,108 @@ body.dragging .tile.dragged .bar {
   color: #fff;
   background: #ffffff26;
 }
-.tile .bar > button,
 .tile .viewers {
   flex: none;
+}
+/* the stream info stays; the controls only take space when the tile is wide enough, otherwise they slide over it on hover */
+.tile {
+  container-type: inline-size;
+}
+.tile .bar {
+  @apply relative;
+}
+.tile .actions {
+  flex: none;
+  @apply flex items-center;
+  @apply gap-[8px];
+}
+/* a custom player shows the title over the video on hover, so the header keeps only the name and the category, in full,
+   and its own bar carries play and sound, so the header drops them */
+.tile.custom .stream-info .stream-title,
+.tile.custom .bar .pp,
+.tile.custom .bar .snd-wrap,
+.tile.custom .bar .player-toggle,
+.tile.custom .bar .spotlight,
+.tile.custom .bar .fs {
+  @apply hidden;
+}
+/* the open menu belongs to this tile: it paints over its neighbours, and over the tile's own title band */
+.tile:has(.custom-quality[open]) {
+  z-index: 30;
+}
+.custom-controls:has(.custom-quality[open]) {
+  z-index: 6;
+}
+.tile.custom .bar b {
+  flex: 0 1 auto;
+}
+/* the title only shows once the video is alone on screen: no loader, no offline or pause cover, no retry.
+   A fixed two-line glass band flush with the top of the player, the text as its own layer so a clamped
+   third line cannot peek through the padding; the quality badge drops below it. */
+.tile.custom
+  .player:not([data-title=""]):has(.preview-cover.gone):not(
+    :has(.custom-retry:not([hidden]))
+  )::before,
+.tile.custom
+  .player:not([data-title=""]):has(.preview-cover.gone):not(
+    :has(.custom-retry:not([hidden]))
+  )::after {
+  content: "";
+  @apply absolute pointer-events-none;
+  inset: 0 0 auto;
+  z-index: 4;
+  height: var(--title-height);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  -webkit-backdrop-filter: blur(6px) brightness(0.85);
+  backdrop-filter: blur(6px) brightness(0.85); /* the same glass as the loader */
+}
+.tile.custom
+  .player:not([data-title=""]):has(.preview-cover.gone):not(
+    :has(.custom-retry:not([hidden]))
+  )::after {
+  content: attr(data-title);
+  inset: 8px 10px auto;
+  height: calc(var(--title-height) - 16px);
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--fg);
+  text-shadow: 0 1px 4px #000;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  @apply overflow-hidden;
+}
+.tile .player {
+  --title-height: 52px; /* two lines of 18px plus 8px of padding above and below */
+}
+.tile .player::before,
+.tile .player::after {
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+/* a still pointer lets the title fade after a while; any movement brings it back */
+.tile:hover:not(.pointer-idle) .player::before,
+.tile:hover:not(.pointer-idle) .player::after {
+  opacity: 1;
+}
+/* touch screens have no hover, so they keep the controls in the flow */
+@media (hover: hover) {
+  @container (width < 560px) {
+    .tile .actions {
+      @apply hidden;
+    }
+    .tile:hover .actions,
+    .tile .bar:focus-within .actions {
+      @apply flex absolute;
+      inset: 0 0 0 auto;
+      padding: 0 8px;
+      background: var(--raised);
+    }
+  }
 }
 .tile .stream-info {
   min-width: 0;
@@ -388,7 +487,7 @@ body.dragging .tile.dragged .bar {
 .tile .stream-info .stream-title {
   color: var(--fg);
 }
-.tile.full-player .bar:has(.stream-info:not([hidden])) b {
+.tile.full-player:not(.custom) .bar:has(.stream-info:not([hidden])) b {
   flex: 0 1 auto;
   max-width: 20%;
 }
@@ -401,7 +500,7 @@ body.dragging .tile.dragged .bar {
   @apply overflow-hidden whitespace-nowrap;
   @apply text-ellipsis;
 }
-.tile.full-player .stream-category {
+.tile.full-player:not(.custom) .stream-category {
   flex: 0 1 auto;
   max-width: 35%;
 }
@@ -995,14 +1094,16 @@ body.dragging .tile.dragged .bar {
 .tile:not(.full-player) .stream-info[hidden] {
   @apply hidden;
 }
-.tile:not(.full-player) .bar:has(.stream-info:not([hidden])) b {
+.tile:not(.full-player):not(.custom) .bar:has(.stream-info:not([hidden])) b {
   flex: 0 1 auto;
   max-width: 20%;
 }
 .tile:not(.full-player) .stream-category {
   flex: 0 1 auto;
-  max-width: 35%;
   margin-bottom: 0;
+}
+.tile:not(.full-player):not(.custom) .stream-category {
+  max-width: 35%;
 }
 .tile:not(.full-player) .stream-title {
   flex: 1;
@@ -1333,83 +1434,6 @@ body.collapsed #list-empty {
   object-fit: contain;
   background: transparent;
 }
-.custom-quality-badge {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  z-index: 4;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: #181818b3;
-  color: #fff;
-  font-size: 10px;
-  line-height: 14px;
-  font-weight: 600;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s var(--ease);
-}
-.custom-quality-badge[hidden] {
-  display: none;
-}
-.custom-quality-badge.visible,
-.tile:hover .custom-quality-badge,
-.custom-quality-badge:focus-within {
-  opacity: 1;
-}
-.custom-latency {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin: -2px 0 -2px -3px;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: #c8c8cc;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.custom-latency:hover {
-  background: #ffffff20;
-}
-.custom-latency:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.custom-latency.low {
-  color: #b68cff;
-}
-.custom-latency svg {
-  width: 11px;
-  height: 11px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-body.dragging #grid video {
-  pointer-events: none;
-}
-.custom-error {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  @apply flex flex-col items-center;
-  @apply gap-[8px];
-  @apply pointer-events-none;
-}
-.custom-error > * {
-  @apply pointer-events-auto;
-}
 .custom-retry {
   padding: 10px 14px;
   border: 1px solid var(--line);
@@ -1459,31 +1483,93 @@ body.dragging #grid video {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-/* the tile bar already carries play, sound and the rest: the player only adds what it alone knows */
+/* at rest the bar is the small resolution badge; a moving pointer over the video, or the pointer on the bar itself,
+   grows it into the action bar; the idle pointer lets it shrink back */
 .custom-controls {
   position: absolute;
   right: 10px;
   bottom: 10px; /* fit() moves it onto the video when the tile letterboxes */
   z-index: 4;
   @apply flex items-center;
-  @apply gap-[4px] p-[4px];
-  border: 1px solid var(--line);
-  @apply rounded-[8px];
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  @apply rounded-[4px];
+  background: #181818b3;
+  color: #fff;
+  transition:
+    padding 0.25s var(--ease),
+    border-radius 0.25s var(--ease),
+    border-color 0.25s var(--ease),
+    background-color 0.25s var(--ease),
+    box-shadow 0.25s var(--ease),
+    opacity 0.25s var(--ease);
+  opacity: 0.5; /* the badge at rest sits back; the bar under the pointer comes forward */
+}
+/* the blur lives on a layer of its own: a filter on the bar would pin the fixed menu inside the clipped tile */
+.custom-controls::before {
+  content: "";
+  @apply absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
-  box-shadow: 0 8px 24px #18181866;
-  opacity: 0;
-  transition: opacity 0.2s var(--ease);
 }
-.custom-controls[hidden] {
-  display: none;
+.custom-actions {
+  display: grid;
+  grid-template-columns: 0fr;
+  overflow: hidden;
+  visibility: hidden; /* folded controls are neither clickable nor tabbable */
+  transition:
+    grid-template-columns 0.25s var(--ease),
+    visibility 0s 0.25s;
 }
-/* the actions belong to the video, not to the letterbox or the rest of the tile */
-.player:has(.custom-video:hover) .custom-controls,
-.custom-controls:hover,
-.custom-controls:focus-within {
+.custom-actions > span {
+  @apply flex items-center;
+  @apply gap-[4px];
+  min-width: 0;
+}
+.tile:not(.pointer-idle) .player:hover .custom-controls,
+.custom-controls:is(:hover, :focus-within, :has(.custom-quality[open])) {
   opacity: 1;
+  padding: 4px;
+  @apply rounded-[8px];
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  box-shadow: 0 8px 24px #18181866;
+}
+.tile:not(.pointer-idle) .player:hover .custom-actions,
+.custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
+  .custom-actions {
+  grid-template-columns: 1fr;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.tile:not(.pointer-idle) .player:hover .custom-quality summary,
+.custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
+  .custom-quality
+  summary {
+  @apply h-[28px];
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+/* the small badge is the number alone; the icon comes with the bar: sparkles for auto, a lock for a level fixed by hand */
+:is(
+    .tile:not(.pointer-idle) .player:hover,
+    .custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
+  )
+  .custom-quality:not(.manual)
+  summary
+  .icon-auto,
+:is(
+    .tile:not(.pointer-idle) .player:hover,
+    .custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
+  )
+  .custom-quality.manual
+  summary
+  .icon-manual {
+  @apply block;
 }
 .custom-controls button {
   @apply flex items-center justify-center;
@@ -1510,8 +1596,12 @@ body.dragging #grid video {
 .custom-controls:not(.muted) .custom-sound .off {
   @apply hidden;
 }
-.custom-controls:not(.muted) .custom-sound {
+.custom-controls:not(.muted) .custom-sound,
+.custom-spotlight[aria-pressed="true"] {
   color: var(--accent);
+}
+.custom-spotlight[hidden] {
+  @apply hidden;
 }
 .custom-volume {
   appearance: none;
@@ -1541,20 +1631,94 @@ body.dragging #grid video {
 .custom-volume:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* the resolution pill opens the levels and the latency; the lock says a level was fixed by hand */
 .custom-quality {
-  border: 1px solid transparent;
-  @apply rounded-[4px];
-  background: transparent;
+  @apply relative;
+}
+.custom-quality summary {
+  @apply flex items-center;
+  @apply gap-[4px] rounded-[4px];
+  color: inherit;
+  font-size: 10px;
+  line-height: 14px;
+  @apply font-semibold cursor-pointer;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 0.2s var(--ease),
+    height 0.25s var(--ease),
+    padding 0.25s var(--ease),
+    font-size 0.25s var(--ease);
+}
+.custom-quality summary::-webkit-details-marker {
+  @apply hidden;
+}
+.custom-quality summary:hover,
+.custom-quality[open] summary {
+  background: var(--accent-soft);
+}
+.custom-quality summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.custom-quality summary svg {
+  color: var(--dim);
+  @apply hidden;
+}
+/* the menu escapes the tile: the player places it above or below the badge, wherever there is room, the latency
+   always at the far end from the badge */
+.custom-menu {
+  @apply fixed flex flex-col;
+  z-index: 20;
+  @apply w-[160px] p-[6px] overflow-y-auto;
+  border: 1px solid var(--line);
+  @apply rounded-[8px];
+  background: var(--panel);
   color: var(--fg);
+  box-shadow: 0 12px 32px #181818a6;
   font-size: 12px;
   line-height: 16px;
-  padding: 4px 6px;
-  @apply cursor-pointer;
-  transition: border-color 0.2s var(--ease);
+  animation: menu-in 0.3s var(--ease);
 }
-.custom-quality:hover,
-.custom-quality:focus-visible {
-  border-color: var(--accent);
+.custom-menu.up {
+  flex-direction: column-reverse;
+}
+.custom-menu-heading {
+  padding: 6px 8px 2px;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 14px;
+  @apply font-semibold uppercase tracking-wide;
+}
+.custom-controls .custom-option {
+  @apply w-full h-[28px] justify-between;
+  padding: 0 8px;
+  color: var(--fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.custom-option[aria-checked="true"]::after {
+  content: "";
+  @apply w-[6px] h-[6px] rounded-full;
+  background: var(--accent);
+}
+.custom-option > span {
+  flex: 1;
+  @apply text-left;
+}
+.custom-option > svg {
+  @apply mr-[6px];
+  color: var(--dim);
+}
+.custom-controls .custom-option:disabled,
+.custom-controls button:disabled,
+.custom-volume:disabled {
+  opacity: 0.4;
+  @apply cursor-default;
+}
+.custom-controls button:disabled:hover {
+  color: var(--dim);
+  background: none;
 }
 .tile:not(:fullscreen) .custom-fullscreen .exit,
 .tile:fullscreen .custom-fullscreen .enter {
@@ -1707,4 +1871,3 @@ body.dragging #grid video {
 body.shift-spotlight .tile .player iframe {
   pointer-events: none;
 }
-

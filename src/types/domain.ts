@@ -9,6 +9,7 @@ export interface Preferences {
   theme: Theme;
   player: "embed" | "custom";
   latency: Latency;
+  spotlightLatency: Latency;
   spotlightChat: "on" | "off";
   spotlightChatPosition: ChatPosition;
   listOrder: ListOrder;

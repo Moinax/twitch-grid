@@ -19,10 +19,26 @@ export function SettingsDialog({ actions }: { actions: WorkspaceActions }) {
           </select>
         </label>
         <label>
-          <span data-i18n="Latence">Latence</span>
+          <span data-i18n="Latence globale">Latence globale</span>
           <select
             id="latency-setting"
             onChange={(e) => actions.setLatency?.(e.currentTarget.value)}
+          >
+            <option value="stable" data-i18n="Stable">
+              Stable
+            </option>
+            <option value="low" data-i18n="Faible">
+              Faible
+            </option>
+          </select>
+        </label>
+        <label>
+          <span data-i18n="Latence spotlight">Latence spotlight</span>
+          <select
+            id="spotlight-latency-setting"
+            onChange={(e) =>
+              actions.setSpotlightLatency?.(e.currentTarget.value)
+            }
           >
             <option value="stable" data-i18n="Stable">
               Stable

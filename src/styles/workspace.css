@@ -542,7 +542,8 @@ dialog input:focus-visible {
   --accent: #7734d8;
   --accent-soft: #7734d81a;
 }
-[data-theme="light"] .preview-cover .preview-status {
+[data-theme="light"] .preview-cover .preview-status,
+[data-theme="light"] .tile .player::after {
   text-shadow: none;
 }
 [data-theme="light"] #ctl button:hover {

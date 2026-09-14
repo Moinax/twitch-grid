@@ -434,6 +434,7 @@ test('removing the second tile clears a saved spotlight without recreating the r
   await page.goto('/'); await readyPlayers(page);
   await expect(page.locator('#grid')).toHaveClass(/focused/);
   await page.evaluate(() => { window.singlePlayer = tiles.get('one').player; });
+  await page.locator('#grid [data-login="two"]').hover();
   await page.locator('#grid [data-login="two"] .close').click();
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   await expect(page.locator('#grid .spotlight')).toBeHidden();
@@ -446,13 +447,13 @@ test('the spotlight button and a click on a small tile bring one stream in front
   const one = page.locator('#grid [data-login="one"]'), two = page.locator('#grid [data-login="two"]'), three = page.locator('#grid [data-login="three"]');
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   await expect(page.locator('#grid .tile iframe[data-controls="false"]')).toHaveCount(3);
-  await three.locator('.spotlight').click();
+  await three.hover(); await three.locator('.spotlight').click();
   await expect(three.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'false');
   await expect(page.locator('#grid')).toHaveClass(/focused/);
   await expect(three.locator('.spotlight')).toHaveAttribute('aria-pressed', 'true');
-  await expect(three.locator('.spotlight')).toHaveAttribute('aria-label', 'Revenir à la grille');
-  await expect(one.locator('.spotlight')).toHaveAttribute('aria-label', 'Spotlight');
+  await expect(three.locator('.spotlight')).toHaveAttribute('aria-label', 'Revenir à la grille (SHIFT+CLICK)');
+  await expect(one.locator('.spotlight')).toHaveAttribute('aria-label', 'Spotlight (SHIFT+CLICK)');
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'three', muted: [true, true, false] });
   // the spotlight keeps its remove button; the button in its bar brings it back to the grid
   await expect(three.locator('.close')).toBeVisible();
@@ -460,9 +461,9 @@ test('the spotlight button and a click on a small tile bring one stream in front
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: null, muted: [true, true, true] });
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
   // the button also brings a small tile in front; another tile replaces it, and the sound follows
-  await one.locator('.spotlight').click();
+  await one.hover(); await one.locator('.spotlight').click();
   expect(await page.evaluate(() => focused)).toBe('one');
-  await two.locator('.spotlight').click();
+  await two.hover(); await two.locator('.spotlight').click();
   await expect(two.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'false');
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: 'two', muted: [true, false, true] });
@@ -477,7 +478,7 @@ test('the spotlight button and a click on a small tile bring one stream in front
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: null, muted: [true, true, true, true] });
   await expect(page.locator('#grid .tile iframe[data-controls="false"]')).toHaveCount(4);
   // removing the spotlight itself clears the front
-  await one.locator('.spotlight').click();
+  await one.hover(); await one.locator('.spotlight').click();
   await one.locator('.close').click();
   expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: null, count: 3 });
   expect(errors).toEqual([]);
@@ -766,25 +767,25 @@ test('the mute-all button silences every stream and gives the sound back to thos
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   await button.click();
   await expect(button).toHaveAttribute('aria-pressed', 'true');
-  await expect(button).toHaveAttribute('aria-label','Réactiver le son');
+  await expect(button).toHaveAttribute('aria-label','Réactiver le son (Shift+M)');
   await page.mouse.move(0, 0);
-  await expect(button).toHaveAttribute('aria-label', 'Réactiver le son');
+  await expect(button).toHaveAttribute('aria-label', 'Réactiver le son (Shift+M)');
   expect(await state()).toEqual({ mutedAll: ['one', 'two'], muted: [true, true, true] });
   // the tile sound controls step aside and say why; a click on them changes nothing
   const sound = page.locator('#grid [data-login="three"] .bar .snd');
   await expect(sound).toHaveAttribute('aria-disabled', 'true');
-  await sound.hover();
+  await page.locator('#grid [data-login="three"]').hover(); await sound.hover();
   await expect(sound).toHaveAttribute('aria-label','Son coupé globalement');
   await sound.click({force:true});   // Playwright honours aria-disabled; force the click to prove it is inert
   expect(await state()).toEqual({ mutedAll: ['one', 'two'], muted: [true, true, true] });
   await expect(page.locator('#grid [data-login="three"] .volume input')).toBeDisabled();
   await page.mouse.move(0, 0);
   // the global mute outranks the spotlight: the tile coming to the front stays silent, the set follows the intent, and the others keep theirs
-  await page.locator('#grid [data-login="three"] .spotlight').click();
+  await page.locator('#grid [data-login="three"]').hover(); await page.locator('#grid [data-login="three"] .spotlight').click();
   await expect(page.locator('#grid [data-login="three"]')).toHaveClass(/big/);
   expect(await state()).toEqual({ mutedAll: ['one', 'two', 'three'], muted: [true, true, true] });
   await expect.poll(() => page.evaluate(() => !tiles.get('three').player.paused)).toBe(true);   // silent in front still plays
-  await page.locator('#grid [data-login="one"] .spotlight').click();   // three leaves and gives back its silence
+  await page.locator('#grid [data-login="one"]').hover(); await page.locator('#grid [data-login="one"] .spotlight').click();   // three leaves and gives back its silence
   expect(await state()).toEqual({ mutedAll: ['one', 'two'], muted: [true, true, true] });
   await page.evaluate(() => { const p = tiles.get('one').player; p.setMuted(false); });   // a native unmute is silenced again
   await expect.poll(() => page.evaluate(() => tiles.get('one').player.getMuted())).toBe(true);
@@ -858,7 +859,9 @@ test('a miniature plays and pauses on click and fullscreens on double click', as
   await page.goto('/');
   const tile = page.locator('#grid [data-login="two"]'), player = tile.locator('.player');
   await expect(tile).not.toHaveClass(/full-player/);
-  await player.click();
+  await player.click();   // the surface only resumes: a playing tile stays as it is
+  await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'false');
+  await tile.hover(); await tile.locator('.bar .pp').click();
   await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => tiles.get('two').paused)).toBe(true);
   await player.click();
@@ -1220,6 +1223,7 @@ for (const connected of [false, true]) test(`stream metadata follows focus, hove
   await expect(big.locator('.stream-title')).toHaveText(title);
   await expect(big.locator('.stream-category')).toHaveText(game);
   expect(await page.evaluate(() => tiles.get('one').player === window.metadataPlayer)).toBe(true);
+  await small.hover();
   await small.locator('.close').click();
   await expect(big).toHaveClass(/full-player/);
   await expect(big.locator('.stream-info')).toBeVisible();
@@ -1477,11 +1481,13 @@ test('chat uses vertical letterboxing, follows spotlight and preserves players w
   expect(await page.evaluate(()=>[...tiles.values()].every((t,i)=>t.player===window.chatPlayers[i]))).toBe(true);
   expect(await page.evaluate(()=>tiles.get('one').chat.querySelector('iframe')===window.chatFrame)).toBe(true);
   await one.locator('.fs').click();
+  await two.hover();
   await two.locator('.spotlight').click();   // the chat is a per-stream setting: two arrives with its own, closed
   await expect(page.locator('.chat iframe')).toHaveCount(0);
   await two.locator('.chat-toggle').click();
   await expect(page.locator('.chat iframe')).toHaveCount(1);
   await expect(two.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/two\/chat/);
+  await one.hover();
   await one.locator('.spotlight').click();   // one takes the spotlight with its own chat, two steps aside
   await expect(page.locator('.chat iframe')).toHaveCount(1);
   await expect(one.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/one\/chat/);
@@ -1508,6 +1514,7 @@ test('compact chat menu works with keyboard, outside clicks and a narrow viewpor
   await page.setViewportSize({width:390,height:844});
   await page.addInitScript(()=>localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true})));
   await page.goto('/');
+  await page.locator('#grid .tile').hover();
   await page.locator('#grid .fs').click();
   const options=page.locator('.chat-options'),summary=options.locator('summary');
   await expect(options.locator('select')).toBeHidden();
@@ -1691,6 +1698,7 @@ for (const connected of [false,true]) test(`collaboration icons and participant 
     .toEqual({order:['live','partner','third'],focused:'live',chatOpen:false,samePlayer:true,muted:[false,true,true],volume:0.35});
   await expect(page.locator('.chat iframe')).toHaveCount(0);
   await page.keyboard.press('Escape');
+  await page.locator('#grid [data-login="partner"]').hover();
   await page.locator('#grid [data-login="partner"] .close').click();
   await menu.locator('summary').click();
   await expect(menu.locator('[data-participant="partner"] button')).toBeEnabled();
@@ -1709,6 +1717,7 @@ test('collaboration menu fits mobile and disappears when sessions end or the API
   });
   await page.goto('/');
   const menu=page.locator('#grid .collaboration');
+  await page.locator('#grid .tile').hover();
   await expect(menu.locator('summary')).toBeVisible();
   await menu.locator('summary').click();
   const bounds=await menu.locator('.collaboration-menu').boundingBox();
@@ -1823,7 +1832,9 @@ test('language and theme changes persist without recreating video players',async
     localStorage.setItem('tg.favorites',JSON.stringify([{twitch:'one',display:'Ajouter'}]));
     if(!localStorage.getItem('tg.layout.guest'))localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one'],chatOpen:true}));
   });
-  await page.goto('/');await page.evaluate(()=>window.settingsPlayer=tiles.get('one').player);
+  await page.goto('/');
+  await expect(page.locator('#grid .tile')).toHaveClass(/full-player/);await readyPlayers(page);   // the lone tile gets its controls once measured; capture the player after that
+  await page.evaluate(()=>window.settingsPlayer=tiles.get('one').player);
   await choose(page,'#language-setting','en');
   await expect(page.locator('html')).toHaveAttribute('lang','en');
   await expect(page.locator('#q')).toHaveAttribute('placeholder','Find a streamer…');
@@ -2108,7 +2119,7 @@ for (const connected of [false,true]) test(`paused ${connected?'automatic follow
   await page.addInitScript(({connected,channels})=>{
     if(connected) {
       sessionStorage.setItem('tg.session',JSON.stringify('valid'));
-      localStorage.setItem('tg.grids.connected',JSON.stringify({activeId:'live-follows',items:[{id:'default',layout:{order:[]}},{id:'live-follows',layout:{order:[],locked:true}}]}));
+      localStorage.setItem('tg.grids.connected',JSON.stringify({activeId:'live-follows',items:[{id:'default',layout:{order:[]}},{id:'live-follows',layout:{order:[],locked:true,allPaused:true}}]}));
     } else {
       localStorage.setItem('tg.favorites',JSON.stringify(channels));
       localStorage.setItem('tg.layout.guest',JSON.stringify({order:channels.map(s=>s.twitch),allPaused:true,volume:{poster0:0.25}}));
@@ -2506,7 +2517,7 @@ test('dynamic grid preserves manual settings on return',async({page})=>{
   await page.locator('#playall').click(); await page.clock.runFor(1500);
   await page.evaluate(()=>{const t=tiles.get('live0');t.volume=.25;t.muted=false;move('live0','live2');save();window.before=currentLayout();switchNamedGrid('default');switchNamedGrid('live-follows');});
   await page.clock.runFor(1500);
-  const result=await page.evaluate(()=>({before:{order:window.before.order,paused:window.before.paused.live0,volume:window.before.volume.live0,muted:window.before.muted.live0},after:{order,paused:tilePaused(tiles.get('live0')),volume:tiles.get('live0').volume,muted:tiles.get('live0').muted}}));
+  const result=await page.evaluate(()=>({before:{order:window.before.order,paused:window.before.paused.live0??false,volume:window.before.volume.live0,muted:window.before.muted.live0},after:{order,paused:tilePaused(tiles.get('live0')),volume:tiles.get('live0').volume,muted:tiles.get('live0').muted}}));
   expect(result.after).toEqual(result.before);
 });
 test('sidebar rapid return loads embed',async({page})=>{
@@ -2902,6 +2913,7 @@ test('spotlight chat defaults allow tile overrides and settings replace them', a
   await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position', 'left');
   await one.locator('.chat-toggle').click();
   await expect(one.locator('.chat')).toBeHidden();
+  await two.hover();
   await two.locator('.spotlight').click();
   await expect(two.locator('.chat')).toBeVisible();
   await expect(two.locator('.tile-body')).toHaveAttribute('data-chat-position', 'left');
@@ -2917,6 +2929,7 @@ test('spotlight chat defaults allow tile overrides and settings replace them', a
   await selectChatPosition(one, 'right');
   await choose(page, '#spotlight-chat-setting', 'off');
   await expect(one.locator('.chat')).toBeHidden();
+  await two.hover();
   await two.locator('.spotlight').click();
   await expect(two.locator('.chat')).toBeHidden();
   expect(errors).toEqual([]);
@@ -3000,6 +3013,7 @@ test('a minute counts for less in a muted corner of the grid than in the spotlig
     tiles.get('loud').muted = false; // an audible tile in the grid, without the spotlight
     tiles.get('quiet').muted = true;
   });
+  await page.locator('#grid [data-login="star"]').hover();
   await page.locator('#grid [data-login="star"] .spotlight').click();
   await page.clock.runFor(60_000);
   const scores = () => page.evaluate(() => JSON.parse(localStorage.getItem('tg.watched') || '{}'));

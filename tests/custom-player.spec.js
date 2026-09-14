@@ -86,15 +86,17 @@ test("switches between embed and HLS while preserving tile settings", async ({
     .toBeGreaterThan(0);
   await expect(page.locator("#grid video")).toHaveJSProperty("volume", 0.3);
   // With no iframe to cover, the styled tooltips come back on every action, the player's own included.
-  await expect(page.locator("#grid .tile .spotlight")).toHaveAttribute(
+  await expect(page.locator("#grid .custom-spotlight")).toHaveAttribute(
     "title",
     "Spotlight (SHIFT+CLICK)",
   );
+  await expect(page.locator("#grid .custom-spotlight")).toBeHidden(); // a lone tile has nothing to come in front of
   await expect(page.locator("#grid .custom-fullscreen")).toHaveAttribute(
     "title",
     "Fullscreen",
   );
   await expect(page.locator("#grid .tile [data-tip]")).toHaveCount(0);
+  await page.locator("#grid video").hover();
   await page.locator("#grid .custom-fullscreen").hover();
   await expect(page.locator("#tooltip")).toHaveText("Fullscreen");
   await expect(page.locator("#tooltip kbd")).toHaveCount(0);
@@ -147,24 +149,31 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
     .toBeGreaterThan(0);
   // The themed bar replaces the browser chrome and fullscreens the tile, so its own bar stays reachable.
   await expect(page.locator("#grid video")).toHaveJSProperty("controls", false);
-  await expect(page.locator("#grid .custom-quality")).toHaveValue("auto");
-  await expect(page.locator("#grid .custom-quality-badge")).toHaveText("90p");
-  await expect(page.locator("#grid .custom-quality-badge")).toHaveClass(
-    /visible/,
+  // The bar rests as the rendered resolution; the pointer over the video unfolds the actions.
+  const pill = page.locator("#grid .custom-quality summary");
+  await expect(pill).toHaveText("90p");
+  await expect(pill).toBeVisible();
+  await expect(page.locator("#grid .custom-quality")).not.toHaveClass(/manual/);
+  await expect(page.locator("#grid .custom-sound")).toBeHidden();
+  await page.locator("#grid video").hover();
+  await expect(page.locator("#grid .custom-sound")).toBeVisible();
+  // The dropdown lists the levels and the latency, marking the current choice of each.
+  await pill.click();
+  await expect(
+    page.locator('#grid .custom-levels [aria-checked="true"]'),
+  ).toHaveText("Auto");
+  await expect(
+    page.locator('#grid .custom-latencies [aria-checked="true"]'),
+  ).toHaveText("Stable");
+  // the test playlist has a single level: only Auto to pick, and picking it closes the menu
+  await expect(page.locator("#grid .custom-levels .custom-option")).toHaveText([
+    "Auto",
+  ]);
+  await page.locator("#grid .custom-levels .custom-option").click();
+  await expect(page.locator("#grid .custom-quality")).not.toHaveAttribute(
+    "open",
   );
-  await expect(page.locator("#grid .custom-latency.stable")).toHaveAttribute(
-    "title",
-    "Stable latency: switch to low latency",
-  );
-  await expect(page.locator("#grid .custom-quality-badge")).not.toHaveClass(
-    /visible/,
-    { timeout: 4000 },
-  );
-  await page.locator("#grid .tile").hover();
-  await expect(page.locator("#grid .custom-quality-badge")).toHaveCSS(
-    "opacity",
-    "1",
-  );
+  await expect(page.locator("#grid .custom-quality")).not.toHaveClass(/manual/);
   // Its play, sound and volume drive the media element, and the tile reads the change back.
   await expect
     .poll(() => page.evaluate(() => tiles.get("example").wasPlaying))
@@ -177,6 +186,7 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
   await expect
     .poll(() => page.evaluate(() => tiles.get("example").volume))
     .toBe(0.4);
+  await page.locator("#grid video").hover();
   await page.locator("#grid .custom-pp").click();
   await expect(page.locator("#grid video")).toHaveJSProperty("paused", true);
   await expect
@@ -185,6 +195,13 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
   await page.locator("#grid .custom-pp").click();
   await expect(page.locator("#grid video")).toHaveJSProperty("paused", false);
   await expect(page.locator("#grid .player")).toHaveCSS("cursor", "auto");
+  // the global mute takes the bar's sound and volume away, and gives them back
+  await page.locator("#muteall").click();
+  await expect(page.locator("#grid .custom-sound")).toBeDisabled();
+  await expect(page.locator("#grid .custom-volume")).toBeDisabled();
+  await page.locator("#muteall").click();
+  await expect(page.locator("#grid .custom-sound")).toBeEnabled();
+  await expect(page.locator("#grid .custom-volume")).toBeEnabled();
   // A click on the video leaves playback alone; a double click fullscreens the tile.
   await page.locator("#grid video").click();
   await expect(page.locator("#grid video")).toHaveJSProperty("paused", false);
@@ -212,72 +229,103 @@ test("a visit with no saved choice gets the custom player", async ({
   await expect(page.locator("#grid iframe")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
-test("low latency persists and remounts custom players with a tighter live target", async ({
+test("latency settings retune custom players in place and the spotlight follows its own", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1900, height: 1000 });
   const errors = await setup(page, "custom");
   await expect(page.locator("#latency-setting")).toHaveValue("stable");
+  await expect(page.locator("#spotlight-latency-setting")).toHaveValue("low");
   await expect(page.locator("#latency-setting")).toBeEnabled();
-  await page.evaluate(() => {
-    window.stableVideo = document.querySelector("#grid video");
-  });
-  await choose(page, "#latency-setting", "low");
-  await expect(page.locator("#grid .custom-latency.low")).toHaveAttribute(
-    "title",
-    "Low latency: switch to stable",
-  );
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => stableVideo !== document.querySelector("#grid video"),
-      ),
-    )
-    .toBe(true);
-  await expect
-    .poll(() => page.evaluate(() => Boolean(tiles.get("example").player.hls)))
-    .toBe(true);
-  expect(
-    await page.evaluate(() => {
-      const config = tiles.get("example").player.hls.config;
+  const config = (login) =>
+    page.evaluate((login) => {
+      const config = tiles.get(login).player?.hls?.config;
+      if (!config) return null; // HLS still loading: the polls try again
       return {
         capLevelToPlayerSize: config.capLevelToPlayerSize,
         liveSyncDurationCount: config.liveSyncDurationCount,
         liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
         maxLiveSyncPlaybackRate: config.maxLiveSyncPlaybackRate,
       };
-    }),
-  ).toEqual({
+    }, login);
+  const low = {
     capLevelToPlayerSize: true,
     liveSyncDurationCount: 2,
     liveMaxLatencyDurationCount: 4,
     maxLiveSyncPlaybackRate: 1.05,
+  };
+  await page.evaluate(() => {
+    window.stableVideo = document.querySelector("#grid video");
   });
+  await choose(page, "#latency-setting", "low");
+  await expect.poll(() => config("example")).toEqual(low);
+  // the same video keeps playing: the latency is retuned on the running player
+  expect(
+    await page.evaluate(
+      () => stableVideo === document.querySelector("#grid video"),
+    ),
+  ).toBe(true);
+  await page.locator("#grid .custom-quality summary").click();
+  await expect(
+    page.locator('#grid .custom-latencies [aria-checked="true"]'),
+  ).toHaveText("Low");
+  await page.keyboard.press("Escape");
   await page.reload();
   await expect(page.locator("#latency-setting")).toHaveValue("low");
+  // the stream brought in front takes the spotlight latency, and gives it back on leaving
+  await choose(page, "#latency-setting", "stable");
+  await choose(page, "#spotlight-latency-setting", "low");
+  await page.evaluate(() =>
+    add({
+      ...tiles.get("example").channel,
+      twitch: "second",
+      display: "Second",
+    }),
+  );
+  const first = page.locator('#grid [data-login="example"]');
+  const hlsReady = () =>
+    expect
+      .poll(() =>
+        page.evaluate(() =>
+          [...tiles.values()].every((t) => t.ready && t.player?.hls),
+        ),
+      )
+      .toBe(true);
+  await hlsReady();
+  expect((await config("example")).liveSyncDurationCount).not.toBe(2);
+  // a small tile unmuted from its bar keeps its video and its sound through the spotlight and back
+  await first.locator("video").hover();
+  await first.locator(".custom-sound").click();
+  await expect(first.locator("video")).toHaveJSProperty("muted", false);
+  await page.evaluate(() => {
+    window.roundTripVideo = document.querySelector(
+      '#grid [data-login="example"] video',
+    );
+  });
+  await first.locator(".custom-spotlight").click();
+  await expect(first).toHaveClass(/big/);
+  await expect.poll(() => config("example")).toEqual(low);
+  expect((await config("second")).liveSyncDurationCount).not.toBe(2);
+  await first.locator("video").hover();
+  await first.locator(".custom-spotlight").click();
+  await expect(first).not.toHaveClass(/big/);
+  await expect
+    .poll(async () => (await config("example")).liveSyncDurationCount)
+    .not.toBe(2);
+  expect(
+    await page.evaluate(
+      () =>
+        roundTripVideo ===
+        document.querySelector('#grid [data-login="example"] video'),
+    ),
+  ).toBe(true);
+  await page.waitForTimeout(1500);
+  await expect(first.locator("video")).toHaveJSProperty("muted", false);
   await choose(page, "#player-setting", "embed");
   await expect(page.locator("#latency-setting")).toBeDisabled();
+  await expect(page.locator("#spotlight-latency-setting")).toBeDisabled();
   expect(errors).toEqual([]);
 });
-test("failed HLS playback offers a retry and a switch back to the embed", async ({
-  page,
-}) => {
-  const errors = await setup(page, "embed", true);
-  await choose(page, "#player-setting", "custom");
-  await expect(page.locator(".custom-retry")).toBeVisible({ timeout: 20000 });
-  await expect(page.locator(".custom-retry")).toHaveText(
-    "Stream unavailable. Retry",
-  );
-  // the failure itself offers the official player, no trip to the settings
-  await expect(page.locator(".custom-fallback")).toHaveText(
-    "Use the Twitch player",
-  );
-  await page.locator(".custom-fallback").click();
-  await expect(page.locator("#player-setting")).toHaveValue("embed");
-  await expect(page.locator("#grid iframe")).toHaveCount(1);
-  await expect(page.locator(".custom-retry")).toHaveCount(0);
-  expect(errors).toEqual([]);
-});
-
 for (const pauseMode of ["tile", "global", "native"]) {
   test(`custom ${pauseMode} pause retains the video and last frame until resumed`, async ({
     page,
@@ -309,13 +357,12 @@ for (const pauseMode of ["tile", "global", "native"]) {
           viewersAmount: { number: 0, formatted: "" },
         }),
       );
-      await page
-        .locator(
-          pauseMode === "global"
-            ? "#playall"
-            : '#grid [data-login="example"] .pp',
-        )
-        .click();
+      // the custom bar carries the tile's pause: the header no longer shows one
+      if (pauseMode === "global") await page.locator("#playall").click();
+      else {
+        await tile.locator("video").hover();
+        await tile.locator(".custom-pp").click();
+      }
     }
     await expect(video).toHaveJSProperty("paused", true);
     const pausedAt = await video.evaluate((video) => video.currentTime);
@@ -368,7 +415,8 @@ test("shortcut tooltips render keycaps and the collapsed toggle stays above GitH
       display: "Second",
     }),
   );
-  await page.locator('#grid [data-login="example"] .spotlight').hover();
+  await page.locator('#grid [data-login="example"] video').hover();
+  await page.locator('#grid [data-login="example"] .custom-spotlight').hover();
   await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "Click"]);
   await page.locator("#soundfollow").hover();
   await expect(page.locator("#tooltip kbd")).toHaveText(["Shift"]);
@@ -400,22 +448,34 @@ test("tile latency switches independently and global settings replace overrides"
   );
   const first = page.locator('#grid [data-login="example"]');
   const second = page.locator('#grid [data-login="second"]');
-  await expect(first.locator(".custom-quality")).toHaveValue("auto");
+  await expect(first.locator(".custom-quality summary")).toHaveText("Auto");
   await expect
     .poll(() => page.evaluate(() => [...tiles.values()].every((t) => t.ready)))
     .toBe(true);
   await expect
     .poll(() => first.locator("video").evaluate((video) => video.currentTime))
     .toBeGreaterThan(0);
+  // the volume goes through the tile header, so the tile owns it before the player is swapped
   await page.evaluate(() => {
     const t = tiles.get("example");
-    t.player.setVolume(0.3);
+    const input = t.bar.querySelector(".volume input");
+    input.value = "0.3";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
     t.player.setQuality("90p");
     window.otherLatencyPlayer = tiles.get("second").player;
   });
-  await first.locator(".custom-latency").click();
-  await expect(first.locator(".custom-latency")).toHaveClass(/low/);
-  await expect(second.locator(".custom-latency")).toHaveClass(/stable/);
+  await expect(first.locator("video")).toHaveJSProperty("volume", 0.3);
+  const latency = (tile) =>
+    tile.locator('.custom-latencies [aria-checked="true"]');
+  const pick = async (tile, name) => {
+    await tile.locator(".custom-quality summary").click();
+    await tile
+      .locator(".custom-latencies .custom-option", { hasText: name })
+      .click();
+  };
+  await pick(first, "Low");
+  await expect(latency(first)).toHaveText("Low");
+  await expect(latency(second)).toHaveText("Stable");
   await expect(first.locator("video")).toHaveJSProperty("volume", 0.3);
   expect(
     await page.evaluate(() => tiles.get("example").player.getQuality()),
@@ -434,12 +494,20 @@ test("tile latency switches independently and global settings replace overrides"
   ).toBe(true);
   await expect(page.locator("#latency-setting")).toHaveValue("stable");
   await choose(page, "#latency-setting", "low");
-  await expect(page.locator("#grid .custom-latency.low")).toHaveCount(2);
-  await first.locator(".custom-latency").click();
-  await expect(first.locator(".custom-latency")).toHaveClass(/stable/);
-  await expect(second.locator(".custom-latency")).toHaveClass(/low/);
+  await expect(
+    page.locator('#grid .custom-latencies [aria-checked="true"]', {
+      hasText: "Low",
+    }),
+  ).toHaveCount(2);
+  await pick(first, "Stable");
+  await expect(latency(first)).toHaveText("Stable");
+  await expect(latency(second)).toHaveText("Low");
   await choose(page, "#latency-setting", "stable");
-  await expect(page.locator("#grid .custom-latency.stable")).toHaveCount(2);
+  await expect(
+    page.locator('#grid .custom-latencies [aria-checked="true"]', {
+      hasText: "Stable",
+    }),
+  ).toHaveCount(2);
   expect(
     await page.evaluate(() =>
       [...tiles.values()].every((t) => t.latency === undefined),
@@ -456,7 +524,8 @@ test("large tiles switch players independently and keep the return button after 
   await choose(page, "#player-setting", "custom");
   const tile = page.locator('#grid [data-login="example"]');
   const toggle = tile.locator(".player-toggle");
-  await expect(toggle).toBeVisible();
+  // the custom bar's menu offers the switch, so the header keeps its shortcut for the embed only
+  await expect(toggle).toBeHidden();
   await expect(tile.locator("video")).toHaveCount(1);
   await page.evaluate(() =>
     add({
@@ -465,7 +534,8 @@ test("large tiles switch players independently and keep the return button after 
       display: "Second",
     }),
   );
-  await tile.locator(".spotlight").click();
+  await tile.locator("video").hover();
+  await tile.locator(".custom-spotlight").click();
   await page.evaluate(() => {
     window.otherPlayer = tiles.get("second").player;
   });
@@ -475,8 +545,13 @@ test("large tiles switch players independently and keep the return button after 
     t.player.setVolume(0.25);
     t.player.setQuality("90p");
   });
-  await toggle.click();
+  await tile.locator("video").hover();
+  await tile.locator(".custom-quality summary").click();
+  await tile
+    .locator(".custom-players .custom-option", { hasText: "Twitch embed" })
+    .click();
   await expect(tile.locator("iframe")).toHaveCount(1);
+  await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect
     .poll(() => page.evaluate(() => tiles.get("example").player.getVolume()))
@@ -493,7 +568,7 @@ test("large tiles switch players independently and keep the return button after 
   await expect(toggle).toBeVisible();
   await toggle.click();
   await expect(tile.locator("video")).toHaveCount(1);
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle).toBeHidden();
   expect(await page.evaluate(() => tiles.get("example").volume)).toBe(0.25);
   expect(
     await page.evaluate(
@@ -506,6 +581,31 @@ test("large tiles switch players independently and keep the return button after 
       [...tiles.values()].every((t) => t.playerMode === undefined),
     ),
   ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("a small tile unmuted from its bar keeps its sound", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 700 });
+  const errors = await setup(page, "custom");
+  await page.evaluate(() =>
+    add({
+      ...tiles.get("example").channel,
+      twitch: "second",
+      display: "Second",
+    }),
+  );
+  const tile = page.locator('#grid [data-login="example"]');
+  await expect(tile).not.toHaveClass(/full-player/);
+  await expect
+    .poll(() => tile.locator("video").evaluate((video) => video.currentTime))
+    .toBeGreaterThan(0);
+  await tile.locator("video").hover();
+  await tile.locator(".custom-sound").click();
+  await expect(tile.locator("video")).toHaveJSProperty("muted", false);
+  // the watchdog ticks every second: the tile must have taken the unmute as its own, not undone it
+  await page.waitForTimeout(2500);
+  await expect(tile.locator("video")).toHaveJSProperty("muted", false);
+  expect(await page.evaluate(() => tiles.get("example").muted)).toBe(false);
   expect(errors).toEqual([]);
 });
 

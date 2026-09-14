@@ -96,6 +96,10 @@ export function startWorkspace(
   function tilePaused(t: Tile) {
     return t.paused ?? false;
   }
+  // the custom player draws its bar on every tile, so its pauses and volume count wherever the Twitch controls would
+  function ownsControls(t: Tile) {
+    return t.controls || (t.playerMode ?? preferences.player) === "custom";
+  }
   function hoverPlayback(t: Tile) {
     if (
       (t.playerMode ?? preferences.player) === "custom" ||
@@ -430,7 +434,7 @@ export function startWorkspace(
   function closeTileMenus(returnFocus = false, except: Element | null = null) {
     let closed = false;
     for (const menu of document.querySelectorAll<HTMLDetailsElement>(
-      ".chat-options[open], .collaboration[open], #grid-switcher[open], #list-order-menu[open]",
+      ".chat-options[open], .collaboration[open], .custom-quality[open], #grid-switcher[open], #list-order-menu[open]",
     )) {
       if (menu === except) continue;
       menu.open = false;
@@ -443,7 +447,7 @@ export function startWorkspace(
     closeTileMenus(
       false,
       (e.target as Element).closest(
-        ".chat-options, .collaboration, #grid-switcher, #list-order-menu",
+        ".chat-options, .collaboration, .custom-quality, #grid-switcher, #list-order-menu",
       ),
     ),
   );
@@ -705,8 +709,8 @@ export function startWorkspace(
       t.nativeAudio = { muted: t.muted, volume: t.volume };
     }
     t.wasPlaying = playingNow;
+    if (ownsControls(t)) readNativeControls(t); // the custom bar speaks on small tiles too
     if (t.controls) {
-      readNativeControls(t);
       mark(t);
       return;
     }
@@ -950,6 +954,7 @@ export function startWorkspace(
       title = s.online === false ? "" : s.title;
     info.hidden = !game && !title;
     info.title = [game, title].filter(Boolean).join(" · ");
+    t.el.querySelector<HTMLElement>(".player")!.dataset.title = title;
     for (const [selector, value] of [
       [".stream-category", game],
       [".stream-title", title],
@@ -1145,7 +1150,15 @@ export function startWorkspace(
       sync(t);
       if (soundFollow && t.ready) applyMuted(t, wantMuted(t));
     });
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    el.addEventListener("mousemove", () => {
+      el.classList.remove("pointer-idle");
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => el.classList.add("pointer-idle"), 3000);
+    });
     el.addEventListener("mouseleave", () => {
+      clearTimeout(idleTimer);
+      el.classList.remove("pointer-idle");
       t.hovered = false;
       t.hoverSuppressed = false;
       sync(t);
@@ -1215,7 +1228,7 @@ export function startWorkspace(
       ((allPaused || tilePaused(t)) &&
         !((t.playerMode ?? preferences.player) === "custom" && t.player) &&
         !hoverPlayback(t) &&
-        !(t.nativeHold && t.controls && !allPaused))
+        !(t.nativeHold && ownsControls(t) && !allPaused))
     );
   }
   function updatePoster(t: Tile) {
@@ -1239,7 +1252,7 @@ export function startWorkspace(
   function releasePlayer(t: Tile) {
     t.nativeHold = false;
     readNativeControls(t);
-    if (t.ready && t.controls) t.quality = t.player!.getQuality?.();
+    if (t.ready && ownsControls(t)) t.quality = t.player!.getQuality?.();
     const player = t.player;
     // Invalidate callbacks before destroying the iframe, including delayed READY events.
     t.player = null;
@@ -1259,8 +1272,12 @@ export function startWorkspace(
   }
 
   function togglePlayer(t: Tile) {
-    const mode =
-      (t.playerMode ?? preferences.player) === "custom" ? "embed" : "custom";
+    setPlayerMode(
+      t,
+      (t.playerMode ?? preferences.player) === "custom" ? "embed" : "custom",
+    );
+  }
+  function setPlayerMode(t: Tile, mode: "embed" | "custom") {
     if (!playerConstructor(mode)) {
       notice(
         tr(
@@ -1279,6 +1296,15 @@ export function startWorkspace(
     sync(t);
   }
 
+  // the stream in front follows the spotlight latency; a tile keeps its own choice until the settings change
+  function wantedLatency(t: Tile) {
+    return (
+      t.latency ??
+      (focused === t.el.dataset.login
+        ? preferences.spotlightLatency
+        : preferences.latency)
+    );
+  }
   // Twitch only accepts the controls option when creating an embed. Recreate the changed
   // tile, preserving its settings; all other iframes keep playing.
   function mountPlayer(t: Tile, controls: boolean) {
@@ -1286,6 +1312,10 @@ export function startWorkspace(
     if (t.player && inFullscreen(t)) return;
     const Constructor = playerConstructor(t.playerMode);
     if (!Constructor) return;
+    t.el.classList.toggle(
+      "custom",
+      (t.playerMode ?? preferences.player) === "custom",
+    );
     if (!controls) t.nativeHold = false;
     t.el.classList.toggle("full-player", controls);
     if (showPoster(t)) {
@@ -1294,6 +1324,9 @@ export function startWorkspace(
       t.el.classList.toggle("full-player", controls);
       return;
     }
+    const latency = wantedLatency(t);
+    if (t.player?.getLatency && t.player.getLatency() !== latency)
+      t.player.setLatency?.(latency); // retuned in place: the video, its sound and its buffer stay
     if (t.player && t.controls === controls) return;
     if (t.player?.setControls) {
       t.player.setControls(controls);
@@ -1301,7 +1334,7 @@ export function startWorkspace(
       return;
     }
     readNativeControls(t);
-    if (t.ready && t.controls) t.quality = t.player!.getQuality?.();
+    if (t.ready && ownsControls(t)) t.quality = t.player!.getQuality?.();
     clearTimeout(t.timer);
     const previousPlayer = t.player;
     t.player = null;
@@ -1339,12 +1372,17 @@ export function startWorkspace(
       muted: true,
       autoplay: false,
       controls,
-      latency: t.latency ?? preferences.latency,
+      latency,
       onLatencyChange: (latency) => {
         if (t.player !== player) return;
         t.latency = latency;
-        releasePlayer(t);
-        mountPlayer(t, controls);
+        player.setLatency?.(latency);
+      },
+      onPlayerChange: (mode) => {
+        if (t.player === player) setPlayerMode(t, mode);
+      },
+      onSpotlight: () => {
+        if (t.player === player) focus(t.el.dataset.login!);
       },
     });
     t.player = player;
@@ -1366,7 +1404,7 @@ export function startWorkspace(
       player.setVolume(t.volume);
       t.nativeAudio = { muted: player.getMuted(), volume: t.volume };
       if (activated) applyMuted(t, wantMuted(t));
-      if (t.controls && t.quality) player.setQuality(t.quality);
+      if (ownsControls(t) && t.quality) player.setQuality(t.quality);
       sync(t);
       mark(t);
     });
@@ -1379,9 +1417,33 @@ export function startWorkspace(
       "offline",
       "online",
       "error",
+      "volumechange",
     ])
       player.addEventListener(event, () => {
         if (!current() || unloading) return; // a player torn down by the navigation is not a viewer pausing
+        if (event === "volumechange") {
+          // The custom bar is the viewer's hand: its change is the tile's intent at once, playing or not, and it
+          // outranks whatever push of the tile's own was still pending.
+          const audio = {
+            muted: player.getMuted(),
+            volume: player.getVolume(),
+          };
+          t.pendingMute = null;
+          if ((mutedAll || soundFollow) && !audio.muted) {
+            applyMuted(t, true); // the global mute or the sound follow holds
+            return;
+          }
+          t.muted = audio.muted;
+          if (Number.isFinite(audio.volume)) {
+            t.volume = audio.volume;
+            t.el.querySelector<HTMLInputElement>(".volume input")!.value =
+              String(t.volume);
+          }
+          t.nativeAudio = audio;
+          paint(t);
+          save();
+          return;
+        }
         if (event === "offline" || event === "online")
           t.el.classList.toggle("offline", event === "offline");
         if (event === "offline" || event === "online" || event === "playing")
@@ -1401,7 +1463,7 @@ export function startWorkspace(
           if (activated) applyMuted(t, wantMuted(t));
         }
         if (
-          t.controls &&
+          ownsControls(t) &&
           !hoverPlayback(t) &&
           !(event === "pause" && (allPaused || tilePaused(t))) &&
           (t.hasPlayed || (event === "play" && t.ready))
@@ -1456,7 +1518,7 @@ export function startWorkspace(
   }
   function readNativeControls(t: Tile) {
     if (
-      !t.controls ||
+      !ownsControls(t) ||
       !t.ready ||
       !t.hasPlayed ||
       t.previewing ||
@@ -1664,6 +1726,7 @@ export function startWorkspace(
     spot.title = `${tr(front ? "Revenir à la grille" : "Spotlight")} (SHIFT+CLICK)`;
     spot.setAttribute("aria-label", spot.title);
     spot.setAttribute("aria-pressed", String(front));
+    t.player?.setSpotlight?.(front, tiles.size > 1);
     paintSound(t);
   }
   // Saved intent survives reloads; the icon reports whether the current player is actually unmuted.
@@ -1702,6 +1765,7 @@ export function startWorkspace(
     }
     t.el.querySelector<HTMLInputElement>(".volume input")!.disabled =
       !!mutedAll;
+    t.player?.setSoundLocked?.(!!mutedAll || !!soundFollow, !!mutedAll);
   }
   function setExpanded(login: string | null) {
     expanded = login;
@@ -1899,7 +1963,12 @@ export function startWorkspace(
         : w >= CHAT_WIDTH.enter || spare >= CHAT_HEIGHT.enter;
       const byRole = n === 1 || front(login),
         want = byRole || t.fits;
-      if (!t.player || byRole || (t.controls && !t.sized && !want))
+      if (
+        !t.player ||
+        byRole ||
+        (t.controls && !t.sized && !want) ||
+        (t.player.getLatency && t.player.getLatency() !== wantedLatency(t))
+      )
         mountPlayer(t, want);
       else if (want !== t.controls) sizeChange = true;
       t.sized = !byRole && t.controls;
@@ -2045,7 +2114,7 @@ export function startWorkspace(
       if (
         !t.ready ||
         !wantsPlayback(t) ||
-        (t.controls &&
+        (ownsControls(t) &&
           t.hasPlayed &&
           !t.playbackBlocked &&
           (t.muted || !t.player!.getMuted()))
@@ -3206,21 +3275,25 @@ export function startWorkspace(
     $<HTMLDialogElement>("#grids-dialog").close();
   }
   let currentPlayerMode = preferences.player;
-  let currentLatency = preferences.latency;
+  let currentLatency = preferences.latency,
+    currentSpotlightLatency = preferences.spotlightLatency;
   function refreshPreferences() {
     if (
-      currentPlayerMode !== preferences.player ||
-      currentLatency !== preferences.latency
+      currentLatency !== preferences.latency ||
+      currentSpotlightLatency !== preferences.spotlightLatency
     ) {
-      if (currentLatency !== preferences.latency)
-        for (const t of tiles.values()) delete t.latency;
-      if (currentPlayerMode !== preferences.player)
-        for (const t of tiles.values()) {
-          delete t.playerMode;
-          delete t.el.dataset.playerMode;
-        }
-      currentPlayerMode = preferences.player;
+      // a latency setting drops the tile overrides; the layout retunes every player in place
+      for (const t of tiles.values()) delete t.latency;
       currentLatency = preferences.latency;
+      currentSpotlightLatency = preferences.spotlightLatency;
+      layout();
+    }
+    if (currentPlayerMode !== preferences.player) {
+      for (const t of tiles.values()) {
+        delete t.playerMode;
+        delete t.el.dataset.playerMode;
+      }
+      currentPlayerMode = preferences.player;
       hidePreview();
       for (const t of tiles.values()) releasePlayer(t);
       if (playerConstructor()) {
@@ -3301,7 +3374,11 @@ export function startWorkspace(
     $<HTMLSelectElement>("#spotlight-chat-position-setting").value =
       preferences.spotlightChatPosition;
     $<HTMLSelectElement>("#latency-setting").value = preferences.latency;
+    $<HTMLSelectElement>("#spotlight-latency-setting").value =
+      preferences.spotlightLatency;
     $<HTMLSelectElement>("#latency-setting").disabled =
+      preferences.player !== "custom";
+    $<HTMLSelectElement>("#spotlight-latency-setting").disabled =
       preferences.player !== "custom";
     paintListOrder();
   }
@@ -3340,7 +3417,11 @@ export function startWorkspace(
     $<HTMLSelectElement>("#spotlight-chat-position-setting").value =
       preferences.spotlightChatPosition;
     $<HTMLSelectElement>("#latency-setting").value = preferences.latency;
+    $<HTMLSelectElement>("#spotlight-latency-setting").value =
+      preferences.spotlightLatency;
     $<HTMLSelectElement>("#latency-setting").disabled =
+      preferences.player !== "custom";
+    $<HTMLSelectElement>("#spotlight-latency-setting").disabled =
       preferences.player !== "custom";
     paintListOrder();
     actions.setLanguage = (value) => setPreference("language", value);
@@ -3439,15 +3520,9 @@ export function startWorkspace(
       $<HTMLDetailsElement>("#list-order-menu").open = false;
       setPreference("listOrder", value); // the change event rebuilds the list and repaints the menu
     };
-    actions.setLatency = (value) => {
-      if (value !== "stable" && value !== "low") return;
-      for (const t of tiles.values()) {
-        if (t.latency && t.latency !== value) releasePlayer(t);
-        delete t.latency;
-      }
-      setPreference("latency", value);
-      layout();
-    };
+    actions.setLatency = (value) => setPreference("latency", value); // the change event drops tile overrides and remounts
+    actions.setSpotlightLatency = (value) =>
+      setPreference("spotlightLatency", value);
     const resetSpotlightChat = () => {
       for (const t of tiles.values()) {
         t.chatOverride = false;
