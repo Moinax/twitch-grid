@@ -516,7 +516,6 @@ body.dragging .tile.dragged .bar {
 .tile:not(.full-player) .stream-category {
   @apply mb-[2px];
 }
-#grid.single .spotlight,
 .tile:not(.full-player) .fs {
   @apply hidden;
 } /* a single player has nothing to come in front of */
@@ -1326,7 +1325,8 @@ body.collapsed #list-empty {
 #list .channel.blocked {
   @apply cursor-not-allowed;
 }
-#list .favorite {
+#list .favorite,
+#list .spotlight {
   flex: none;
   @apply flex;
   border: 0;
@@ -1339,9 +1339,18 @@ body.collapsed #list-empty {
     background-color 0.2s var(--ease),
     transform 0.2s var(--ease);
 }
-#list .favorite:hover {
+#list .favorite:hover,
+#list .spotlight:hover {
   color: var(--fg);
   background: #ffffff14;
+}
+/* under the pointer, and on the spotlight's own row, the viewer count steps aside for the spotlight button */
+#list li:not(:hover, :focus-within, .spot) .spotlight,
+#list li:is(:hover, :focus-within, .spot) .v {
+  @apply hidden;
+}
+#list .spotlight[aria-pressed="true"] {
+  color: #bf94ff;
 }
 #list .favorite svg {
   fill: none;
@@ -1400,6 +1409,10 @@ body.collapsed #list-empty {
   #sound-board {
     inset: auto 12px 12px 12px;
     width: auto;
+  }
+  /* the menu hangs from the bar, not from its button, so a full row of controls cannot push it off the screen */
+  .chat-options {
+    @apply static;
   }
 }
 @media (prefers-reduced-motion: reduce) {

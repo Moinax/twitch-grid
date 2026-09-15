@@ -90,7 +90,7 @@ test("switches between embed and HLS while preserving tile settings", async ({
     "title",
     "Spotlight (SHIFT+CLICK)",
   );
-  await expect(page.locator("#grid .custom-spotlight")).toBeHidden(); // a lone tile has nothing to come in front of
+  await expect(page.locator("#grid .custom-spotlight")).toHaveJSProperty("hidden", false); // a lone tile can be the spotlight too
   await expect(page.locator("#grid .custom-fullscreen")).toHaveAttribute(
     "title",
     "Fullscreen",

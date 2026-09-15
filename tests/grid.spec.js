@@ -394,7 +394,7 @@ test('one tile has native controls without spotlight and switches back after add
   const one = page.locator('#grid [data-login="one"]');
   await expect(one.locator('iframe')).toHaveAttribute('data-controls', 'true');
   await expect(one.locator('.volume')).toBeHidden();
-  await expect(one.locator('.spotlight')).toBeHidden();
+  await expect(one.locator('.spotlight')).toHaveAttribute('aria-pressed', 'false');
   await expect(one.locator('.close')).toBeVisible();
   await expect(one.locator('.fs')).toBeVisible();
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
@@ -428,7 +428,7 @@ test('one tile has native controls without spotlight and switches back after add
   await expect(page.locator('#grid .tile')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
-test('removing the second tile clears a saved spotlight without recreating the remaining full player', async ({ page }) => {
+test('removing the second tile keeps a saved spotlight without recreating the remaining full player', async ({ page }) => {
   await setup(page);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({order:['one','two'],focused:'one'})));
   await page.goto('/'); await readyPlayers(page);
@@ -437,9 +437,9 @@ test('removing the second tile clears a saved spotlight without recreating the r
   await page.locator('#grid [data-login="two"]').hover();
   await page.locator('#grid [data-login="two"] .close').click();
   await expect(page.locator('#grid')).not.toHaveClass(/focused/);
-  await expect(page.locator('#grid .spotlight')).toBeHidden();
+  await expect(page.locator('#grid .spotlight')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer)).toBe(true);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).focused)).toBeNull();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).focused)).toBe('one');
 });
 test('the spotlight button and a click on a small tile bring one stream in front with the sound', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
@@ -3042,5 +3042,32 @@ test('closing a menu with Escape gives the global shortcuts back', async ({ page
   await page.evaluate(() => document.activeElement?.blur());
   await page.keyboard.press('Space'); // and outside a menu it is the global play/pause again
   await expect(page.locator('#playall')).toHaveAttribute('aria-pressed', 'true');
+  expect(errors).toEqual([]);
+});
+test('the sidebar spotlights a stream: a lone tile gives its place, a grid keeps its tiles and puts the newcomer in front', async ({ page }) => {
+  const errors = await setup(page); await page.goto('/');
+  for (const login of ['one', 'two', 'three']) await favorite(page, login);
+  await page.locator('#list [data-login="one"] .channel').click();
+  // shift+click replaces the lone tile instead of building a grid
+  await page.locator('#list [data-login="two"] .channel').click({ modifiers: ['Shift'] });
+  await expect(page.locator('#grid [data-login="one"]')).toHaveCount(0);
+  expect(await page.evaluate(() => ({ focused, order: [...tiles.keys()] }))).toEqual({ focused: 'two', order: ['two'] });
+  // the lone spotlight shows as such in the tile and in the sidebar
+  await expect(page.locator('#grid [data-login="two"] .spotlight')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#list [data-login="two"] .spotlight')).toBeVisible();
+  await expect(page.locator('#list [data-login="two"] .spotlight')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#list [data-login="two"] .v')).toBeHidden();
+  // a plain click builds a grid; the hover button then puts the newcomer in front and keeps the others
+  await page.locator('#list [data-login="one"] .channel').click();
+  const row = page.locator('#list [data-login="three"]');
+  await row.hover();
+  await expect(row.locator('.v')).toBeHidden();
+  await expect(row.locator('.spotlight')).toHaveAttribute('aria-label', 'Spotlight : three');
+  await row.locator('.spotlight').click();
+  expect(await page.evaluate(() => ({ focused, order: [...tiles.keys()] }))).toEqual({ focused: 'three', order: ['two', 'one', 'three'] });
+  await expect(page.locator('#list [data-login="two"] .spotlight')).toHaveAttribute('aria-pressed', 'false');
+  // spotlighting a tile already in the grid brings it in front
+  await page.locator('#list [data-login="one"] .channel').click({ modifiers: ['Shift'] });
+  expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: 'one', count: 3 });
   expect(errors).toEqual([]);
 });

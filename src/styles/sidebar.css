@@ -86,7 +86,8 @@ body.collapsed #list img {
 }
 body.collapsed #list .n,
 body.collapsed #list .v,
-body.collapsed #list .favorite {
+body.collapsed #list .favorite,
+body.collapsed #list .spotlight {
   @apply hidden;
 }
 .row {

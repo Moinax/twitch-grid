@@ -9,10 +9,11 @@ interface Props {
   ready: boolean;
   locked: boolean;
   selected: Set<string>;
+  spotlight: string | null;
   favorites: Set<string>;
   refreshing: boolean;
   collaborations: Map<string, Collaboration>;
-  onToggle: (channel: Channel) => void;
+  onToggle: (channel: Channel, spotlight: boolean) => void;
   onFavorite: (channel: Channel) => void;
   onPreview: (row: HTMLLIElement) => void;
   onLeavePreview: () => void;
@@ -32,11 +33,30 @@ function FavoriteIcon() {
     </svg>
   );
 }
+function SpotlightIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="5" width="12" height="14" rx="1" />
+      <rect x="17" y="5" width="4" height="6" rx="1" />
+      <rect x="17" y="13" width="4" height="6" rx="1" />
+    </svg>
+  );
+}
 export function ChannelList(props: Props) {
   const {
     rows,
     skeletonCount,
     selected,
+    spotlight,
     favorites,
     collaborations,
     connected,
@@ -74,6 +94,7 @@ export function ChannelList(props: Props) {
             className={
               (s.online === true ? "live" : s.online === false ? "off" : "") +
               (present ? " on" : "") +
+              (spotlight === s.twitch ? " spot" : "") +
               (s.online == null && refreshing ? " pending" : "")
             }
             onPointerEnter={(e) => {
@@ -90,7 +111,7 @@ export function ChannelList(props: Props) {
                 { name: s.display },
               )}
               aria-pressed={present}
-              onClick={() => onToggle(s)}
+              onClick={(e) => onToggle(s, e.shiftKey)}
               onFocus={(e) => onPreview(e.currentTarget.closest("li")!)}
               onBlur={onLeavePreview}
             >
@@ -116,6 +137,16 @@ export function ChannelList(props: Props) {
               <span className="v">
                 {s.online ? s.viewersAmount.formatted || "LIVE" : ""}
               </span>
+            </button>
+            <button
+              className="spotlight"
+              hidden={!ready || blocked}
+              title={tr("Spotlight (SHIFT+CLICK)")}
+              aria-label={tr("Spotlight : {name}", { name: s.display })}
+              aria-pressed={spotlight === s.twitch}
+              onClick={() => onToggle(s, true)}
+            >
+              <SpotlightIcon />
             </button>
             <button
               className="favorite"

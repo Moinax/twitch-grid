@@ -890,8 +890,17 @@ export function startWorkspace(
     queuePreview,
     leavePreview,
   } = previewController;
-  function toggle(s: Channel) {
-    if (tiles.has(s.twitch)) {
+  // The sidebar spotlight works like Twitch: a lone tile gives its place to the newcomer, a grid keeps its tiles and
+  // puts the newcomer in front.
+  function toggle(s: Channel, spotlight = false) {
+    if (spotlight) {
+      if (!tiles.has(s.twitch)) {
+        if (tiles.size === 1 && !isLiveGrid() && !(locked && restored))
+          remove(order[0]);
+        add(s);
+      }
+      if (tiles.has(s.twitch) && focused !== s.twitch) focus(s.twitch);
+    } else if (tiles.has(s.twitch)) {
       if (isLiveGrid()) focus(s.twitch);
       else remove(s.twitch);
     } else add(s);
@@ -1726,7 +1735,7 @@ export function startWorkspace(
     spot.title = `${tr(front ? "Revenir à la grille" : "Spotlight")} (SHIFT+CLICK)`;
     spot.setAttribute("aria-label", spot.title);
     spot.setAttribute("aria-pressed", String(front));
-    t.player?.setSpotlight?.(front, tiles.size > 1);
+    t.player?.setSpotlight?.(front, true);
     paintSound(t);
   }
   // Saved intent survives reloads; the icon reports whether the current player is actually unmuted.
@@ -1790,7 +1799,6 @@ export function startWorkspace(
   // The spotlight turns its sound on and, on the way out, gives back the state the tile had before. Other tiles keep theirs.
   function focus(login: string) {
     if (expanded) setExpanded(null);
-    if (tiles.size < 2) return;
     const prev = focused && tiles.get(focused)!;
     if (prev) {
       readNativeControls(prev);
@@ -1809,6 +1817,7 @@ export function startWorkspace(
       setMuted(t, false);
     } // the intent counts under a global mute
     layout();
+    renderList();
   } // every tile but the spotlight drags, and any other tile takes the drop
   const canDrag = (login: string) =>
     tiles.size > 1 && login !== expanded && login !== focused;
@@ -1844,14 +1853,6 @@ export function startWorkspace(
     if (batching) return; // a restore adds every tile first and lays them out once
     renderLanding();
     const n = tiles.size;
-    if (n < 2 && focused) {
-      const t = tiles.get(focused)!;
-      if (t && typeof t.spotlightMuted === "boolean") {
-        setMuted(t, t.spotlightMuted);
-        t.spotlightMuted = undefined;
-      }
-      focused = null;
-    }
     const frontOrder = focused ? [focused] : [],
       front = (login: string) => frontOrder.includes(login),
       count = frontOrder.length;
@@ -1879,7 +1880,11 @@ export function startWorkspace(
       const MIN_SMALL = 290; // the custom player's bar unfolds to 267px, plus its margins
       const fullWidth = ((box.height - bar) * 16) / 9; // the front video at full height
       // beside: the column takes the width the front video cannot use, 22vw and MIN_SMALL at least
-      const side = Math.max(MIN_SMALL, 0.22 * innerWidth, box.width - fullWidth),
+      const side = Math.max(
+          MIN_SMALL,
+          0.22 * innerWidth,
+          box.width - fullWidth,
+        ),
         beside = Math.min(box.width - side, fullWidth);
       // below: a strip of tiles about 22vh tall and MIN_SMALL wide at least, one row at least
       const stripCols = Math.max(
@@ -2610,12 +2615,13 @@ export function startWorkspace(
         ready={accountReady}
         locked={locked}
         selected={new Set(tiles.keys())}
+        spotlight={focused}
         favorites={new Set(favorites.map((s) => s.twitch))}
         refreshing={refreshInFlight}
         collaborations={collaborations}
-        onToggle={(s) => {
+        onToggle={(s, spotlight) => {
           hidePreview();
-          toggle(s);
+          toggle(s, spotlight);
         }}
         onFavorite={toggleFavorite}
         onPreview={queuePreview}
