@@ -1824,6 +1824,11 @@ export function startWorkspace(
     tiles.size > 1 && login !== expanded && login !== focused;
   const canDrop = (login: string) => !!dragging && dragging !== login;
 
+  // the better of two layout scores, read left to right like the rules they answer for
+  function outranks(a: number[], b: number[]) {
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+    return false;
+  }
   // the column count whose cells hold the widest 16:9 video: two streams stack on a tall box, sit side by side on a wide one
   function columnsFor(count: number, w: number, h: number) {
     const bar =
@@ -1877,83 +1882,126 @@ export function startWorkspace(
       const box = grid.getBoundingClientRect(),
         bar =
           parseFloat(getComputedStyle(grid).getPropertyValue("--bar")) || 34;
-      // The small tiles go beside the front video or in a strip under it, whichever leaves the video wider.
-      const MIN_SMALL = 290; // the custom player's bar unfolds to 267px, plus its margins
-      const fullWidth = ((box.height - bar) * 16) / 9; // the front video at full height
-      // beside: the column takes the width the front video cannot use, 22vw and MIN_SMALL at least
-      const side = Math.max(
-          MIN_SMALL,
-          0.22 * innerWidth,
-          box.width - fullWidth,
-        ),
-        beside = Math.min(box.width - side, fullWidth);
-      // below: a strip of tiles about 22vh tall and MIN_SMALL wide at least, one row at least
-      const stripCols = Math.max(
+      const GAP = 2, // the grid's own gap
+        MIN_SMALL = 290, // the custom player's action bar unfolds to 267px, plus its margins
+        CHAT_BELOW = 420, // ponytail: the chat's minimum sizes stand in for the room it asks of the layout
+        CHAT_BESIDE = 320;
+      const small = n - count,
+        chat = frontOrder.some((login) => tiles.get(login)!.chatOpen);
+      const tall = (width: number) => (width * 9) / 16 + bar; // a tile hugging a 16:9 video under its bar
+      // The spotlight keeps the whole width, the small tiles in a strip under it, or the whole height, the small tiles
+      // in a column beside it. They take the room it cannot use, less what an open chat asks for. Every column count
+      // is scored in both orientations, in the order the rules come: the widest spotlight first, then the most tiles
+      // on screen, then the fewest holes, then the least room left unused.
+      const room = {
+        below: box.height - tall(box.width) - (chat ? CHAT_BELOW : 0),
+        beside:
+          box.width - ((box.height - bar) * 16) / 9 - (chat ? CHAT_BESIDE : 0),
+      };
+      // what the spotlight renders in a box, the chat served first where it costs the video the least
+      const spot = (w: number, h: number) =>
+        chat
+          ? Math.max(
+              Math.min(w, ((h - bar - CHAT_BELOW) * 16) / 9),
+              Math.min(w - CHAT_BESIDE, ((h - bar) * 16) / 9),
+            )
+          : Math.min(w, ((h - bar) * 16) / 9);
+      type Plan = {
+        below: boolean;
+        cols: number;
+        tile: number;
+        band: number;
+        rank: number[];
+      };
+      const plan = (below: boolean, cols: number): Plan | null => {
+        const free = below ? room.below : room.beside;
+        // the strip spreads over the whole width; the column takes the room left, never narrower than a player's bar
+        const tile = below
+          ? (box.width - GAP * (cols - 1)) / cols
+          : Math.max(MIN_SMALL, free / cols);
+        if (tile < MIN_SMALL && cols > 1) return null;
+        const step = tall(tile) + GAP,
+          fits = below
+            ? Math.floor(free / step)
+            : Math.floor((box.height + GAP) / step);
+        // one row at least, even when it has to eat into the spotlight; past that the small tiles only take the rows
+        // they fill
+        const rows = Math.max(1, Math.min(Math.ceil(small / cols), fits)),
+          band = below ? rows * step : cols * (tile + GAP);
+        const video = Math.max(
           1,
-          Math.min(
-            Math.round(box.width / (((innerHeight * 0.22 - bar) * 16) / 9)),
-            Math.floor(box.width / MIN_SMALL),
-          ),
-        ),
-        tileH = ((box.width / stripCols) * 9) / 16 + bar,
-        under = Math.min(box.width, ((box.height - tileH - 2 - bar) * 16) / 9);
-      // The column shows more small tiles and scrolls: the strip has to buy a quarter more video.
-      const below = under > beside * 1.25;
-      grid.classList.toggle("below", below);
+          below
+            ? spot(box.width, box.height - band)
+            : spot(box.width - band, box.height),
+        );
+        const seen = Math.min(small, rows * cols);
+        return {
+          below,
+          cols,
+          tile,
+          band,
+          rank: [
+            Math.round(video),
+            seen,
+            seen - rows * cols,
+            video * tall(video) + seen * tile * tall(tile),
+          ],
+        };
+      };
+      let best = plan(false, 1)!; // a single column always holds, however narrow the box
+      for (const below of [true, false])
+        for (
+          let cols = 1;
+          cols <=
+          Math.max(
+            1,
+            Math.floor((below ? box.width : room.beside) / MIN_SMALL),
+          );
+          cols++
+        ) {
+          const p = plan(below, cols);
+          if (p && outranks(p.rank, best.rank)) best = p;
+        }
+      grid.classList.toggle("below", best.below);
+      const bandRows = Math.max(Math.ceil(small / best.cols), 1);
+      grid.style.setProperty("--cols", String(best.cols));
       let w = box.width,
         h = box.height;
-      if (below) {
-        const sideCols = stripCols;
-        // the strip shows as many rows as the front row can spare without shrinking its videos
-        const frontCols = columnsFor(count, w, box.height - tileH - 2),
-          frontRows = Math.ceil(count / frontCols);
-        const frontMin =
-          frontRows *
-            ((((w - 2 * (frontCols - 1)) / frontCols) * 9) / 16 + bar) +
-          2 * (frontRows - 1);
-        const stripRows = Math.max(
-          1,
-          Math.min(
-            Math.ceil((n - count) / sideCols),
-            Math.floor((box.height - frontMin) / (tileH + 2)),
-          ),
-        );
-        h = box.height - stripRows * (tileH + 2);
-        grid.style.setProperty("--cols", String(sideCols));
-        grid.style.setProperty("--tile-h", tileH + "px");
-        grid.style.gridTemplateColumns = `repeat(${sideCols}, 1fr)`;
-        grid.style.gridTemplateRows = `${h}px repeat(${Math.max(Math.ceil((n - count) / sideCols), 1)}, var(--tile-h))`;
+      if (best.below) {
+        // the spotlight row hugs its video unless a chat is there to spend the room, so the black gathers under the strip
+        h = box.height - best.band;
+        if (!chat) h = Math.min(h, tall(box.width));
+        grid.style.setProperty("--tile-h", tall(best.tile) + "px");
+        grid.style.gridTemplateColumns = `repeat(${best.cols}, 1fr)`;
+        grid.style.gridTemplateRows = `${h}px repeat(${bandRows}, var(--tile-h))`;
       } else {
-        // Small tiles never outgrow the front video. Another column only when it still fills the whole height,
-        // scrolling beats a short stack of tiny tiles over empty space, and never narrower than MIN_SMALL.
-        const small = n - count,
-          fills = (c: number) =>
-            Math.ceil(small / c) * (((side / c) * 9) / 16 + bar + 2) >=
-            box.height;
-        let sideCols = Math.max(1, Math.ceil(side / beside));
-        while (fills(sideCols + 1) && side / (sideCols + 1) >= MIN_SMALL)
-          sideCols++;
-        grid.style.setProperty("--cols", String(sideCols));
-        grid.style.setProperty("--side", side + "px");
-        grid.style.removeProperty("--tile-h");
+        grid.style.setProperty("--side", best.cols * best.tile + "px");
+        grid.style.removeProperty("--tile-h"); // the stylesheet derives it from --side and --cols
         grid.style.gridTemplateColumns = "";
-        grid.style.gridTemplateRows = `repeat(${Math.max(Math.ceil((n - count) / sideCols), 1)}, var(--tile-h))`;
+        grid.style.gridTemplateRows = `repeat(${bandRows}, var(--tile-h))`;
       }
       // The grid's reserved front cell excludes the scrollbar. Using the outer grid width overlaps side players.
       w = parseFloat(getComputedStyle(grid, "::before").width);
       const cols = columnsFor(count, w, h),
         rows = Math.ceil(count / cols);
-      const cw = (w - 2 * (cols - 1)) / cols,
-        ch = (h - 2 * (rows - 1)) / rows;
+      const cw = (w - GAP * (cols - 1)) / cols,
+        ch = (h - GAP * (rows - 1)) / rows;
       frontOrder.forEach((login, i) => {
         const style = tiles.get(login)!.el.style;
-        style.setProperty("--x", box.left + (i % cols) * (cw + 2) + "px");
+        // With no chat to spend it, the tile hugs its video: the bar stays against the picture and whatever black is
+        // left lies outside the tile instead of inside it.
+        const tw = chat ? cw : Math.min(cw, ((ch - bar) * 16) / 9),
+          th = chat ? ch : tall(tw);
+        style.setProperty(
+          "--x",
+          box.left + (i % cols) * (cw + GAP) + (cw - tw) / 2 + "px",
+        );
         style.setProperty(
           "--y",
-          box.top + Math.floor(i / cols) * (ch + 2) + "px",
+          box.top + Math.floor(i / cols) * (ch + GAP) + (ch - th) / 2 + "px",
         );
-        style.setProperty("--w", cw + "px");
-        style.setProperty("--h", ch + "px");
+        style.setProperty("--w", tw + "px");
+        style.setProperty("--h", th + "px");
       });
     } else {
       grid.classList.remove("below");

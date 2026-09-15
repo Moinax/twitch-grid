@@ -1018,7 +1018,7 @@ test('the sound button toggles muted and on; the spotlight turns the sound on an
   expect(await state()).toEqual({one:true,two:true});
   await tile.locator('.spotlight').click();   // the spotlight turns its sound on
   expect(await state()).toEqual({one:false,two:true});
-  await other.locator('.spotlight').click();   // two takes the spotlight: one gets back the silence it had, two comes on
+  await other.hover(); await other.locator('.spotlight').click();   // two takes the spotlight: one gets back the silence it had, two comes on
   expect(await state()).toEqual({one:true,two:false});
   await header.click();   // one turns its sound on from the side: it stays on, whatever the spotlight does
   expect(await state()).toEqual({one:false,two:false});
@@ -1450,14 +1450,16 @@ test('chat uses vertical letterboxing, follows spotlight and preserves players w
   await page.evaluate(()=>{window.chatPlayers=[...tiles.values()].map(t=>t.player);});
   const videoBefore=await one.locator('.player iframe').boundingBox();
   await one.locator('.chat-toggle').click();
-  await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position','bottom');
+  // the chat goes where it costs the video the least: beside a spotlight that already spans the window
+  await expect(one.locator('.tile-body')).toHaveAttribute('data-chat-position','right');
   await expect(one.locator('.chat iframe')).toHaveAttribute('src',/\/embed\/one\/chat\?parent=localhost&darkpopout=1/);
   const video=await one.locator('.player iframe').boundingBox();
-  expect(video.width).toBeCloseTo(videoBefore.width,0);
-  expect(video.height).toBeCloseTo(videoBefore.height,0);
+  expect(video.width).toBeLessThan(videoBefore.width);
   const chat=await one.locator('.chat').boundingBox();
-  expect(chat.y).toBeCloseTo(video.y+video.height,0);
-  expect(chat.height).toBeGreaterThanOrEqual(420);
+  expect(chat.x).toBeCloseTo(video.x+video.width,0);
+  expect(chat.width).toBeGreaterThanOrEqual(320);
+  await selectChatPosition(one,'bottom');   // the place auto turned down leaves a narrower video
+  expect((await one.locator('.player iframe').boundingBox()).width).toBeLessThanOrEqual(video.width);
   await page.evaluate(()=>{window.chatFrame=tiles.get('one').chat.querySelector('iframe');});
   await expect(one.locator('.chat-options select option')).toHaveText(['Auto','Top','Bottom','Left','Right']);
   for (const position of ['top','bottom','left','right']) {
@@ -2013,7 +2015,7 @@ test('wide enough videos get the full player and wide enough tiles the chat, wit
   await expect(one.locator('.chat-toggle')).toBeVisible();
   await expect(one.locator('.chat iframe')).toHaveCount(1);
   // a lone tile on a narrow window keeps the full player but loses the chat until the sidebar folds away
-  await two.locator('.close').click();
+  await two.hover(); await two.locator('.close').click();
   await page.setViewportSize({ width: 850, height: 600 });
   await expect(one).toHaveClass(/full-player/);
   await expect(one.locator('.chat-toggle')).toBeHidden();
@@ -2391,11 +2393,13 @@ test('iframe stays centered at 16:9 and only resizes when its video area changes
   }
   const tall = await expectCentered();
   const before = await frame.evaluate(f => ({width:f.contentWindow.innerWidth,height:f.contentWindow.innerHeight}));
+  const strip = page.locator('#grid .tile:not(.big)'), stripHeight = (await strip.boundingBox()).height;
   await page.setViewportSize({width:1700,height:1100});
-  await expect.poll(async () => (await frame.boundingBox()).y).not.toBe(tall.y);
+  // a shorter window takes its room from the small tiles: the spotlight keeps the video it had, where it had it
+  await expect.poll(async () => (await strip.boundingBox()).height).not.toBe(stripHeight);
   const shorter = await expectCentered();
   expect(shorter.width).toBe(tall.width); expect(shorter.height).toBe(tall.height);
-  expect(shorter.y).not.toBe(tall.y);
+  expect(shorter.y).toBe(tall.y);
   expect(await frame.evaluate(f => ({width:f.contentWindow.innerWidth,height:f.contentWindow.innerHeight}))).toEqual(before);
   await page.setViewportSize({width:1700,height:500});
   await expect.poll(async () => (await frame.boundingBox()).width).toBeLessThan(tall.width);
