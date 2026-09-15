@@ -1192,6 +1192,11 @@ body.dragging .tile.dragged .bar {
   background: var(--bg);
   z-index: 4;
 }
+/* each scrolling tile paints as one block, so its controls, volume and drop zone cannot climb over that backing:
+   a fading badge is a layer of its own, and without this it wins the tie against the letterbox it scrolls under */
+#grid.focused .tile:not(.big) {
+  isolation: isolate;
+}
 #grid .tile.expanded,
 #grid.focused .tile.expanded {
   @apply fixed;
