@@ -1984,6 +1984,13 @@ export function startWorkspace(
       w = parseFloat(getComputedStyle(grid, "::before").width);
       const cols = columnsFor(count, w, h),
         rows = Math.ceil(count / cols);
+      for (const [name, value] of [
+        ["--front-x", box.left],
+        ["--front-y", box.top],
+        ["--front-w", w],
+        ["--front-h", h],
+      ] as const)
+        grid.style.setProperty(name, value + "px"); // the opaque backing of the spotlight cell
       const cw = (w - GAP * (cols - 1)) / cols,
         ch = (h - GAP * (rows - 1)) / rows;
       frontOrder.forEach((login, i) => {

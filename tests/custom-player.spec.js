@@ -672,3 +672,60 @@ test("player shortcut remains available on small tiles", async ({
     await context.close();
   }
 });
+
+// The spotlight is fixed while the strip scrolls underneath: its cell stays opaque so no tile crosses the letterbox
+// around the video, and its header keeps the status and the actions against the right edge, offline included, where
+// the stream info is gone and nothing else stretches.
+test("the offline spotlight backs its letterbox and right-aligns its header", async ({
+  page,
+}) => {
+  const errors = await setup(page, "custom");
+  await page.setViewportSize({ width: 1280, height: 760 }); // a strip tall enough to leave black beside the spotlight
+  await page.evaluate(() => {
+    const base = tiles.get("example").channel;
+    add({
+      ...base,
+      twitch: "off",
+      display: "Offline",
+      online: false,
+      viewersAmount: { number: 0, formatted: "" },
+    });
+    for (let i = 0; i < 7; i++)
+      add({ ...base, twitch: "live" + i, display: "Live" + i });
+  });
+  await page
+    .locator('#grid [data-login="off"] .bar .spotlight')
+    .evaluate((button) => button.click()); // the custom player hides the header's own spotlight
+  await expect(page.locator("#grid .big")).toHaveAttribute("data-login", "off");
+  const status = page.locator("#grid .big .viewers");
+  await expect(status).not.toBeEmpty();
+  const bar = await page.locator("#grid .big .bar").boundingBox(),
+    viewers = await status.boundingBox(),
+    actions = await page.locator("#grid .big .actions").boundingBox();
+  expect(viewers.x + viewers.width + actions.width).toBeGreaterThan(
+    bar.x + bar.width - 24,
+  );
+  const cover = await page.evaluate(() => {
+    const style = getComputedStyle(grid, "::after"),
+      big = document.querySelector("#grid .big").getBoundingClientRect(),
+      box = grid.getBoundingClientRect();
+    return {
+      left: parseFloat(style.left),
+      top: parseFloat(style.top),
+      width: parseFloat(style.width),
+      height: parseFloat(style.height),
+      opaque: style.backgroundColor,
+      big,
+      box,
+      scrolls: grid.scrollHeight > grid.clientHeight,
+    };
+  });
+  expect(cover.scrolls).toBe(true);
+  expect(cover.big.left - cover.box.left).toBeGreaterThan(8); // black on both sides, where the tiles used to show through
+  expect(cover.left).toBeLessThanOrEqual(cover.big.left);
+  expect(cover.left + cover.width).toBeGreaterThanOrEqual(cover.big.right);
+  expect(cover.top).toBeLessThanOrEqual(cover.big.top);
+  expect(cover.top + cover.height).toBeGreaterThanOrEqual(cover.big.bottom);
+  expect(cover.opaque).toBe("rgb(24, 24, 24)");
+  expect(errors).toEqual([]);
+});

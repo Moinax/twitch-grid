@@ -374,7 +374,8 @@ body.dragging .tile.dragged .bar {
 }
 .tile .viewers {
   flex: none;
-}
+  margin-left: auto;
+} /* offline hides the stream info: without this the status and the actions clump against the name */
 /* the stream info stays; the controls only take space when the tile is wide enough, otherwise they slide over it on hover */
 .tile {
   container-type: inline-size;
@@ -1180,6 +1181,17 @@ body.dragging .tile.dragged .bar {
   height: var(--h);
   z-index: 5;
 } /* above the frames, info and drop zones of the small tiles scrolling underneath, below menus and the preview */
+/* the spotlight is fixed while the strip scrolls: its cell stays opaque so no tile passes through the letterbox around it */
+#grid.focused::after {
+  content: "";
+  @apply fixed pointer-events-none;
+  left: var(--front-x);
+  top: var(--front-y);
+  width: var(--front-w);
+  height: var(--front-h);
+  background: var(--bg);
+  z-index: 4;
+}
 #grid .tile.expanded,
 #grid.focused .tile.expanded {
   @apply fixed;
