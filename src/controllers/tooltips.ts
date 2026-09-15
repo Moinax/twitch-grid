@@ -128,7 +128,7 @@ export function syncPlayerTooltips(
       const el = tipSource(event.target);
       // under a held Shift a channel row shows its preview card instead of its tooltip
       if (el && el !== tipTarget && event.pointerType !== "touch")
-        showTip(el, 150, event.shiftKey && !!el.closest("#list"));
+        showTip(el, 400, event.shiftKey && !!el.closest("#list"));
     },
     { signal },
   );
