@@ -293,6 +293,7 @@ export class CustomPlayer implements TwitchPlayer {
       const hls = (this.hls = new Hls({
         lowLatencyMode: true,
         capLevelToPlayerSize: true,
+        preserveManualLevelOnError: true, // hls.js drops a pinned level on any level error; the viewer's choice outranks that
         backBufferLength: 15,
         maxBufferLength: 20,
         ...CustomPlayer.latencyConfig(this.latency),
