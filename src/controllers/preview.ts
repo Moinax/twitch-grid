@@ -9,6 +9,7 @@ interface PreviewOptions {
   side: HTMLElement;
   list: HTMLElement;
   getChannels: () => Channel[];
+  audible: () => boolean; // the card carries the sound while it follows the pointer
   lifecycle: ReturnType<typeof createLifecycle>;
 }
 export function createPreviewController({
@@ -16,6 +17,7 @@ export function createPreviewController({
   side,
   list,
   getChannels,
+  audible,
   lifecycle,
 }: PreviewOptions) {
   const { setTimeout } = lifecycle;
@@ -161,7 +163,7 @@ export function createPreviewController({
       width: 640,
       height: 360,
       autoplay: false,
-      muted: true,
+      muted: !audible(),
       controls: false,
     });
     previewPlayer = player;
@@ -179,8 +181,8 @@ export function createPreviewController({
       preview.classList.add("player-ready");
       previewMessage.textContent = tr("Chargement de l’aperçu…");
       previewMessage.hidden = false;
-      player.setMuted(true);
-      player.setVolume(0);
+      player.setMuted(!audible());
+      if (!audible()) player.setVolume(0);
       // Leave time for the browser to report the now-uncovered iframe as visible.
       previewTimer = setTimeout(() => {
         if (current()) {
@@ -215,28 +217,14 @@ export function createPreviewController({
       previewMessage.hidden = false;
     }, 12000);
   }
-  // A pointer sweeping down the list should not flash a card per row: the first card waits, then follows the pointer at once.
   function queuePreview(row: HTMLLIElement) {
     clearTimeout(previewCloseTimer);
     if (previewRow === row && !preview.hidden) {
       resumePreview();
       return;
     }
-    const open = preview.classList.contains("in");
     hidePreview();
-    if (open) showPreview(row);
-    else {
-      clearTimeout(previewTimer);
-      previewTimer = setTimeout(
-        () =>
-          showPreview(
-            list.querySelector<HTMLLIElement>(
-              `[data-login="${CSS.escape(row.dataset.login!)}"]`,
-            ) || row,
-          ),
-        250,
-      );
-    } // the list may have re-rendered meanwhile
+    showPreview(row);
   }
   function leavePreview() {
     clearTimeout(previewTimer);

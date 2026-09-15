@@ -1,10 +1,8 @@
 import { preferences } from "../services/preferences";
 import type { createLifecycle } from "./lifecycle";
 
-// Every title shows as a styled tooltip, the attribute stepping aside while the pointer or the focus
-// is on the element so the browser's own tooltip stays quiet, and coming back as soon as they leave.
-// The Twitch embed pauses as soon as anything covers it: under that player the titles stay stashed
-// for good and nothing is ever shown over a tile.
+// Every title is kept aside in data-tip and shown as a styled tooltip: the browser's own tooltip never
+// appears. The Twitch embed pauses as soon as anything covers it: under that player nothing is shown at all.
 export function syncPlayerTooltips(
   lifecycle: ReturnType<typeof createLifecycle>,
 ) {
@@ -25,21 +23,11 @@ export function syncPlayerTooltips(
     }
     el.removeAttribute("title");
   }
-  function restoreTitle(el: HTMLElement) {
-    const tip = el.dataset.tip;
-    if (tip === undefined) return; // an empty title is a title too: the tile metadata clears it that way
-    if (el.dataset.tipLabel === "true") {
-      el.removeAttribute("aria-label"); // the label only stood in for the tooltip
-      delete el.dataset.tipLabel;
-    }
-    delete el.dataset.tip;
-    el.setAttribute("title", tip);
-  }
   function syncTooltipTitles(root: Document | HTMLElement = document) {
-    const selector = suppressed() ? "[title]:not(iframe)" : "[data-tip]";
-    const apply = suppressed() ? stashTitle : restoreTitle;
-    if (root instanceof HTMLElement && root.matches(selector)) apply(root);
-    for (const el of root.querySelectorAll<HTMLElement>(selector)) apply(el);
+    const selector = "[title]:not(iframe)";
+    if (root instanceof HTMLElement && root.matches(selector)) stashTitle(root);
+    for (const el of root.querySelectorAll<HTMLElement>(selector))
+      stashTitle(el);
   }
   function renderTip(text: string) {
     const shortcut = text.match(
@@ -75,16 +63,18 @@ export function syncPlayerTooltips(
     }
     tooltip.append(label, keys);
   }
-  function showTip(el: HTMLElement, delay: number) {
+  // silent: the element is tracked but nothing is shown
+  function showTip(el: HTMLElement, delay: number, silent = false) {
     hideTip();
-    stashTitle(el);
     if (!el.dataset.tip) return;
     tipTarget = el;
-    if (suppressed()) return;
+    if (suppressed() || silent) return;
     tipTimer = setTimeout(() => {
       if (tipTarget !== el || !el.isConnected) return;
       const side = el.closest("#side")?.getBoundingClientRect();
-      const contained = side && !document.body.classList.contains("collapsed");
+      const beside = !!el.closest("#list"); // a channel row's tooltip sits to its right, over the grid
+      const contained =
+        side && !beside && !document.body.classList.contains("collapsed");
       tooltip.style.maxWidth = contained
         ? `${Math.min(320, side.width - 16)}px`
         : "";
@@ -101,19 +91,26 @@ export function syncPlayerTooltips(
       const bottom = popover
         ? popover.getBoundingClientRect().bottom
         : box.bottom;
-      const x = Math.min(
-        Math.max(8, box.left + box.width / 2 - width / 2),
-        right - width - 8,
-      );
-      const y =
-        bottom + height + 16 > innerHeight ? box.top - height - 8 : bottom + 8;
+      const x = beside
+        ? Math.min(box.right + 8, innerWidth - width - 8)
+        : Math.min(
+            Math.max(8, box.left + box.width / 2 - width / 2),
+            right - width - 8,
+          );
+      const y = beside
+        ? Math.min(
+            Math.max(8, box.top + box.height / 2 - height / 2),
+            innerHeight - height - 8,
+          )
+        : bottom + height + 16 > innerHeight
+          ? box.top - height - 8
+          : bottom + 8;
       tooltip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
       tooltip.classList.add("in");
     }, delay);
   }
   function hideTip() {
     clearTimeout(tipTimer);
-    if (!suppressed() && tipTarget) restoreTitle(tipTarget);
     tipTarget = null;
     tooltip.classList.remove("in");
     tooltip.hidden = true;
@@ -121,7 +118,7 @@ export function syncPlayerTooltips(
   const tipSource = (target: EventTarget | null) => {
     const el =
       target instanceof Element
-        ? target.closest<HTMLElement>("[title], [data-tip]")
+        ? target.closest<HTMLElement>("[data-tip]")
         : null;
     return el && el.tagName !== "IFRAME" ? el : null;
   };
@@ -129,8 +126,16 @@ export function syncPlayerTooltips(
     "pointerover",
     (event) => {
       const el = tipSource(event.target);
+      // under a held Shift a channel row shows its preview card instead of its tooltip
       if (el && el !== tipTarget && event.pointerType !== "touch")
-        showTip(el, 400);
+        showTip(el, 150, event.shiftKey && !!el.closest("#list"));
+    },
+    { signal },
+  );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Shift" && tipTarget?.closest("#list")) hideTip();
     },
     { signal },
   );
@@ -161,13 +166,11 @@ export function syncPlayerTooltips(
   new MutationObserver((records) => {
     for (const record of records) {
       if (record.type === "childList") {
-        if (!suppressed()) continue; // new nodes keep the titles that feed the tooltip
         for (const node of record.addedNodes)
           if (node instanceof HTMLElement) syncTooltipTitles(node);
       } else if (
         record.target instanceof HTMLElement &&
-        record.target.tagName !== "IFRAME" &&
-        (suppressed() || record.target === tipTarget)
+        record.target.tagName !== "IFRAME"
       ) {
         stashTitle(record.target);
         if (record.target === tipTarget) renderTip(record.target.dataset.tip!);
@@ -179,9 +182,6 @@ export function syncPlayerTooltips(
     attributes: true,
     attributeFilter: ["title"],
   });
-  addEventListener("preferenceschange", () => {
-    hideTip();
-    syncTooltipTitles();
-  });
+  addEventListener("preferenceschange", hideTip);
   syncTooltipTitles();
 }

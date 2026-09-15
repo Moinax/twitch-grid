@@ -87,15 +87,18 @@ test("switches between embed and HLS while preserving tile settings", async ({
   await expect(page.locator("#grid video")).toHaveJSProperty("volume", 0.3);
   // With no iframe to cover, the styled tooltips come back on every action, the player's own included.
   await expect(page.locator("#grid .custom-spotlight")).toHaveAttribute(
-    "title",
+    "data-tip",
     "Spotlight (SHIFT+CLICK)",
   );
-  await expect(page.locator("#grid .custom-spotlight")).toHaveJSProperty("hidden", false); // a lone tile can be the spotlight too
+  await expect(page.locator("#grid .custom-spotlight")).toHaveJSProperty(
+    "hidden",
+    false,
+  ); // a lone tile can be the spotlight too
   await expect(page.locator("#grid .custom-fullscreen")).toHaveAttribute(
-    "title",
+    "data-tip",
     "Fullscreen",
   );
-  await expect(page.locator("#grid .tile [data-tip]")).toHaveCount(0);
+  await expect(page.locator("[title]:not(iframe)")).toHaveCount(0); // the browser's own tooltip never shows
   await page.locator("#grid video").hover();
   await page.locator("#grid .custom-fullscreen").hover();
   await expect(page.locator("#tooltip")).toHaveText("Fullscreen");
@@ -105,9 +108,8 @@ test("switches between embed and HLS while preserving tile settings", async ({
   ); // no native tooltip on top of ours
   await page.locator("#q").hover();
   await expect(page.locator("#tooltip")).toBeHidden();
-  await expect(page.locator("#grid .custom-fullscreen")).toHaveAttribute(
+  await expect(page.locator("#grid .custom-fullscreen")).not.toHaveAttribute(
     "title",
-    "Fullscreen",
   );
   // the video is named for assistive tech, not with a title that would hang a tooltip over the stream
   await expect(page.locator("#grid video")).toHaveAttribute(
@@ -424,8 +426,51 @@ test("shortcut tooltips render keycaps and the collapsed toggle stays above GitH
   await expect(page.locator("#tooltip kbd")).toHaveText(["Space"]);
   await page.locator("#muteall").hover();
   await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "M"]);
-  await page.locator("#toggle").click();
-  await expect(page.locator("body")).toHaveClass(/collapsed/);
+  // the avatar names its stream, and once the rail is collapsed it points at the Shift+click spotlight instead
+  await page.route("**/api/search?q=**", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            broadcaster_login: "example",
+            display_name: "Example",
+            is_live: true,
+          },
+        ],
+      },
+    }),
+  );
+  await page.locator("#q").fill("example");
+  await page.locator('#list [data-login="example"] .favorite').click();
+  await page.locator("#q").fill("");
+  // the row's tooltip names the Shift+click spotlight and sits to the right of the row, expanded or collapsed
+  for (const collapsed of [false, true]) {
+    if (collapsed) await page.locator("#toggle").click();
+    await expect(page.locator("body")).toHaveClass(
+      collapsed ? /collapsed/ : /^((?!collapsed).)*$/,
+    );
+    const row = page.locator('#list [data-login="example"] .channel');
+    await page.mouse.move(900, 700); // the previous card is gone before the row gets its own
+    await expect(page.locator("#tooltip")).toBeHidden();
+    await row.hover();
+    await expect(page.locator("#tooltip")).toBeVisible();
+    await expect(page.locator("#tooltip span").first()).toHaveText("Spotlight");
+    await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "Click"]);
+    const tip = await page.locator("#tooltip").boundingBox(),
+      box = await row.boundingBox();
+    expect(tip.x).toBeGreaterThanOrEqual(box.x + box.width);
+    expect(tip.y + tip.height).toBeGreaterThan(box.y);
+    expect(tip.y).toBeLessThan(box.y + box.height);
+    // Shift trades the tooltip for the preview card: pressed while the tip shows, or held while entering the row
+    await page.keyboard.down("Shift");
+    await expect(page.locator("#tooltip")).toBeHidden();
+    await page.mouse.move(900, 700);
+    await row.hover();
+    await page.waitForTimeout(600);
+    await expect(page.locator("#tooltip")).toBeHidden();
+    await expect(page.locator("[title]:not(iframe)")).toHaveCount(0);
+    await page.keyboard.up("Shift");
+  }
   const toggle = await page.locator("#toggle").boundingBox();
   const github = await page.locator("#ctl .github").boundingBox();
   expect(toggle.y + toggle.height).toBeLessThanOrEqual(github.y);

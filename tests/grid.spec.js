@@ -1891,10 +1891,20 @@ test('hovering a live channel in the sidebar shows the floating preview', async 
   await page.addInitScript(() => localStorage.setItem('tg.favorites', JSON.stringify([{twitch:'zerator',display:'ZeratoR'}])));
   await page.goto('/');
   await page.locator('#list [data-login="zerator"]').hover();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#preview')).toBeHidden(); // a plain hover shows nothing
+  await page.keyboard.down('Shift'); // pressed over the row, Shift opens the card right away
   await expect(page.locator('#preview')).toBeVisible();
   await expect(page.locator('#preview .name')).toHaveText(/zerator/i);
+  await page.keyboard.up('Shift');
+  await expect(page.locator('#preview')).toBeHidden(); // releasing Shift closes the card
+  await page.keyboard.down('Shift');
+  await page.mouse.move(900, 700);
+  await page.locator('#list [data-login="zerator"]').hover();
+  await expect(page.locator('#preview')).toBeVisible();
   await page.mouse.move(900, 700);
   await expect(page.locator('#preview')).toBeHidden();
+  await page.keyboard.up('Shift');
   expect(errors).toEqual([]);
 });
 test('the landing stays away for connected visitors, saved favorites and open tiles, and switches language', async ({ page }) => {
@@ -2266,8 +2276,9 @@ test(`tile and sidebar loading covers follow the player`,async({page,browserName
   await expect(cover).toBeVisible();
   await expect(cover.locator('.preview-status')).toBeHidden();
 
+  await page.keyboard.down('Shift');
   await page.locator('#list [data-login="one"]').hover();
-  await page.clock.runFor(300);   // the card waits for the pointer to settle
+  await page.clock.runFor(100);
   const sidebarCover=page.locator('#preview .preview-cover');
   await expect(sidebarCover.locator('.stream-poster')).toBeVisible();
   await expect(sidebarCover.locator('.status')).toHaveText('Chargement de l’aperçu…');
@@ -2489,9 +2500,11 @@ test('a brief sidebar hover shows a still image without loading an embed',async(
   await expect(page.locator('#list .live')).toHaveCount(1);
   await page.clock.pauseAt((await page.evaluate(()=>Date.now())) + 1000);
   await page.locator('#list .live').hover();
-  await page.clock.runFor(200);
-  await expect(page.locator('#preview')).toBeHidden();   // a sweep across the row shows nothing
-  await page.clock.runFor(100);
+  await page.clock.runFor(500);
+  await expect(page.locator('#preview')).toBeHidden();   // without Shift the row shows nothing
+  await page.mouse.move(900, 800);
+  await page.keyboard.down('Shift');
+  await page.locator('#list .live').hover();
   await expect(page.locator('#preview')).toBeVisible();
   await expect(page.locator('#preview .stream-poster')).toHaveAttribute('src',/live_user_one/);
   await expect(page.locator('#preview iframe')).toHaveCount(0);
@@ -2525,6 +2538,7 @@ test('dynamic grid preserves manual settings on return',async({page})=>{
 test('sidebar rapid return loads embed',async({page})=>{
   await setup(page); await page.clock.install();await page.goto('/');
   await page.evaluate(()=>{favorites=[channel({twitch:'live',online:true})];rebuild();});
+  await page.keyboard.down('Shift');
   await page.locator('#list [data-login="live"]').hover();
   await page.clock.runFor(100);
   await page.mouse.move(900, 800);
@@ -2532,6 +2546,7 @@ test('sidebar rapid return loads embed',async({page})=>{
   await page.locator('#list [data-login="live"]').hover();
   await page.clock.runFor(2000);
   await expect(page.locator('#preview iframe')).toHaveCount(1);
+  expect(await page.evaluate(()=>previewPlayer.muted)).toBe(false); // Shift silences the grid and the card carries the sound
 });
 test('native player resumes after READY in hidden document',async({page})=>{
   await setup(page);await page.clock.install();await page.goto('/');
@@ -3054,20 +3069,30 @@ test('the sidebar spotlights a stream: a lone tile gives its place, a grid keeps
   expect(await page.evaluate(() => ({ focused, order: [...tiles.keys()] }))).toEqual({ focused: 'two', order: ['two'] });
   // the lone spotlight shows as such in the tile and in the sidebar
   await expect(page.locator('#grid [data-login="two"] .spotlight')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#list [data-login="two"] .spotlight')).toBeVisible();
-  await expect(page.locator('#list [data-login="two"] .spotlight')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#list [data-login="two"] .v')).toBeHidden();
-  // a plain click builds a grid; the hover button then puts the newcomer in front and keeps the others
+  const badge = page.locator('#list [data-login="two"] .spotlight'), avatar = await page.locator('#list [data-login="two"] img').boundingBox();
+  await expect(badge).toBeVisible();
+  await expect(page.locator('#list .spotlight')).toHaveCount(1);
+  const box = await badge.boundingBox(); // the badge sits on the avatar's lower right corner
+  expect(box.x + box.width).toBeGreaterThan(avatar.x + avatar.width - 4);
+  expect(box.y + box.height).toBeGreaterThan(avatar.y + avatar.height - 4);
+  // a plain click builds a grid; Shift+click then puts the newcomer in front and keeps the others
   await page.locator('#list [data-login="one"] .channel').click();
   const row = page.locator('#list [data-login="three"]');
-  await row.hover();
-  await expect(row.locator('.v')).toBeHidden();
-  await expect(row.locator('.spotlight')).toHaveAttribute('aria-label', 'Spotlight : three');
-  await row.locator('.spotlight').click();
+  await row.locator('.channel').click({ modifiers: ['Shift'] });
   expect(await page.evaluate(() => ({ focused, order: [...tiles.keys()] }))).toEqual({ focused: 'three', order: ['two', 'one', 'three'] });
-  await expect(page.locator('#list [data-login="two"] .spotlight')).toHaveAttribute('aria-pressed', 'false');
+  await expect(badge).toBeHidden();
   // spotlighting a tile already in the grid brings it in front
   await page.locator('#list [data-login="one"] .channel').click({ modifiers: ['Shift'] });
   expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: 'one', count: 3 });
+  // collapsed rail: the same badge on the avatar, a plain click still toggles presence and Shift+click still spotlights
+  await page.locator('#toggle').click();
+  await expect(page.locator('#list [data-login="one"] .spotlight')).toBeVisible();
+  await expect(row.locator('.spotlight')).toBeHidden();
+  await row.locator('.channel').click();
+  expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: 'one', count: 2 });
+  await row.locator('.channel').click({ modifiers: ['Shift'] });
+  expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: 'three', count: 3 });
+  await expect(page.locator('#list [data-login="one"] .spotlight')).toBeHidden();
+  await expect(row.locator('.spotlight')).toBeVisible();
   expect(errors).toEqual([]);
 });

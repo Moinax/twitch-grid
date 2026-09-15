@@ -873,13 +873,14 @@ export function startWorkspace(
         : viewers(s);
   }
 
-  // One temporary, muted player; removing its iframe stops playback and network activity.
+  // One temporary player; removing its iframe stops playback and network activity.
   const preview = $("#preview");
   const previewController = createPreviewController({
     element: preview,
     side: $("#side"),
     list,
     getChannels: () => streamers,
+    audible: () => !!soundFollow && !mutedAll,
     lifecycle,
   });
   const {
@@ -3518,12 +3519,17 @@ export function startWorkspace(
       }
       if (e.key !== "Shift" || e.repeat) return;
       document.body.classList.add("shift-spotlight");
-      if (soundFollow) return;
-      shiftStartedFollow = true;
-      actions.toggleSoundFollow?.();
+      if (!soundFollow) {
+        shiftStartedFollow = true;
+        actions.toggleSoundFollow?.();
+      }
+      // a row already under the pointer gets its preview card as soon as Shift goes down
+      const row = list.querySelector<HTMLLIElement>("li:hover");
+      if (row) queuePreview(row);
     });
     const releaseShiftFollow = () => {
       document.body.classList.remove("shift-spotlight");
+      hidePreview(); // the sidebar card lives only while Shift is held
       if (!shiftStartedFollow) return;
       shiftStartedFollow = false;
       if (soundFollow) actions.toggleSoundFollow?.();

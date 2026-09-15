@@ -1325,8 +1325,7 @@ body.collapsed #list-empty {
 #list .channel.blocked {
   @apply cursor-not-allowed;
 }
-#list .favorite,
-#list .spotlight {
+#list .favorite {
   flex: none;
   @apply flex;
   border: 0;
@@ -1339,18 +1338,9 @@ body.collapsed #list-empty {
     background-color 0.2s var(--ease),
     transform 0.2s var(--ease);
 }
-#list .favorite:hover,
-#list .spotlight:hover {
+#list .favorite:hover {
   color: var(--fg);
   background: #ffffff14;
-}
-/* under the pointer, and on the spotlight's own row, the viewer count steps aside for the spotlight button */
-#list li:not(:hover, :focus-within, .spot) .spotlight,
-#list li:is(:hover, :focus-within, .spot) .v {
-  @apply hidden;
-}
-#list .spotlight[aria-pressed="true"] {
-  color: #bf94ff;
 }
 #list .favorite svg {
   fill: none;

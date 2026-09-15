@@ -86,8 +86,7 @@ body.collapsed #list img {
 }
 body.collapsed #list .n,
 body.collapsed #list .v,
-body.collapsed #list .favorite,
-body.collapsed #list .spotlight {
+body.collapsed #list .favorite {
   @apply hidden;
 }
 .row {
@@ -241,16 +240,37 @@ body:not(.collapsed) #toggle .out {
   background: var(--raised);
 }
 #list li.on {
-  border-left-color: var(--accent);
   background: var(--accent-soft);
+}
+#list li.on:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--raised));
+}
+#list li.spot {
+  border-left-color: var(--accent);
 }
 #list li.off {
   opacity: 0.45;
+}
+#list .avatar {
+  @apply relative flex;
+  flex: none;
 }
 #list img {
   @apply w-[28px] h-[28px];
   border-radius: 50%;
   flex: none;
+}
+/* the spotlight wears a badge on its avatar; Shift+click on the row is the way to spotlight */
+#list .spotlight {
+  @apply absolute flex p-[2px] pointer-events-none;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--raised);
+}
+#list .spotlight svg {
+  @apply w-[10px] h-[10px];
 }
 /* loading rows: the shape of a channel row, pulsing until the list arrives; a row whose status is still unknown pulses its status line */
 #list li.skeleton {

@@ -186,7 +186,6 @@ export const translations: Record<string, [string, string]> = {
   "Revenir à la grille": ["Back to grid", "Terug naar het raster"],
   "Déposer ici": ["Drop here", "Hier neerzetten"],
   Spotlight: ["Spotlight", "Spotlight"],
-  "Spotlight : {name}": ["Spotlight: {name}", "Spotlight: {name}"],
   "Spotlight (SHIFT+CLICK)": [
     "Spotlight (SHIFT+CLICK)",
     "Spotlight (SHIFT+CLICK)",
