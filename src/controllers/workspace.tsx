@@ -2491,6 +2491,7 @@ export function startWorkspace(
   function dismissLiveNotification(login: string) {
     const toast = liveNotifications.get(login);
     if (toast) {
+      clearTimeout(Number(toast.dataset.timer));
       views.remove(toast);
       toast.remove();
     }
@@ -2544,6 +2545,9 @@ export function startWorkspace(
             onWatch={() => openLiveNotification(s.twitch)}
             onDismiss={() => dismissLiveNotification(s.twitch)}
           />,
+        );
+        toast.dataset.timer = String(
+          setTimeout(() => dismissLiveNotification(s.twitch), 30_000),
         );
         liveNotifications.set(s.twitch, toast);
         $("#live-notifications").prepend(toast);

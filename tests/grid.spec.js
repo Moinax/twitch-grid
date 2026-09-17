@@ -1344,6 +1344,16 @@ for (const connected of [false, true]) test(`live notifications track transition
     await expect(page.locator('.live-notification')).toHaveCount(1);
     await page.locator('#disconnect').click();
     await expect(page.locator('.live-notification')).toHaveCount(0);
+  } else {
+    await page.clock.install();   // a toast nobody touches gives up after 30 seconds
+    await page.evaluate(() => {
+      lastLiveStatus.set('already',false); updateLiveNotifications(favorites);
+    });
+    await expect(page.locator('.live-notification')).toHaveCount(1);
+    await page.clock.runFor(29_000);
+    await expect(page.locator('.live-notification')).toHaveCount(1);
+    await page.clock.runFor(1_000);
+    await expect(page.locator('.live-notification')).toHaveCount(0);
   }
   expect(errors).toEqual([]);
 });
