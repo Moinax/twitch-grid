@@ -19,6 +19,7 @@ Open http://localhost:8765. Vite serves the React app and the local search endpo
 pnpm check          # Strict TypeScript and server syntax checks
 pnpm build          # Validates and builds the app into dist
 pnpm preview        # Serves the production build and local search endpoint
+pnpm start          # Production API only, on 127.0.0.1:8766 (Caddy serves dist)
 pnpm test:server    # API behavior and translation coverage
 pnpm test           # Browser behavior tests
 pnpm format         # Formats frontend source and Vite configuration
@@ -36,7 +37,8 @@ The frontend uses React, strict TypeScript, and Tailwind CSS, built with Vite.
 - `src/types` defines channels, saved layouts, commands, and the Twitch player interface.
 - `src/styles` groups Tailwind styles by application area. The original reset, colors, dimensions, animations, and responsive rules are retained. Tailwind Preflight is intentionally omitted because it changes native buttons, dialogs, and typography.
 - `public` contains the public Twitch client configuration, favicon, and share image.
-- `api/search.js` remains the server-only search function, shared by local development and Vercel.
+- `api/search.js` and `api/stream.js` are shared by local development and the production Node server.
+- `production.cjs` serves the two API routes and `/healthz` using Node's built-in HTTP server; it needs no installed runtime dependencies.
 
 One React root owns the interface. A small external view store uses React portals to render into stable tile and list containers. Twitch owns its iframe mount nodes. Reordering changes CSS order without moving those nodes, and expanding a tile leaves its player in place. The workspace disposes timers, observers, subscriptions, and players when its mount is released.
 
@@ -76,11 +78,11 @@ The custom player draws its own bar in the site's theme instead of the browser's
 
 With no iframe to cover, styled tooltips come back on every action, the player's own controls included. Under the Twitch embed they stay suppressed: that player pauses as soon as anything covers it.
 
-`GET /api/stream?channel=…` obtains an anonymous playback token from Twitch GraphQL and retrieves the HLS master playlist from Usher. Twitch's playlist hosts answer 403 to any Origin outside their own list, which a deployed page cannot satisfy, so the master playlist comes back with its variant URLs rewritten to `GET /api/stream?playlist=…`. That form only accepts an HTTPS URL on `*.playlist.ttvnw.net` and sends no Origin upstream. Media segments carry an open CORS policy and keep loading straight from Twitch's CDN. No login token or application secret is sent to this endpoint. Responses are not cached, upstream calls have timeouts, and each client address is limited per minute and per server instance to 120 token requests and 600 playlist requests. No additional environment variables are required.
+`GET /api/stream?channel=…` obtains an anonymous playback token from Twitch GraphQL and retrieves the HLS master playlist from Usher. Twitch's playlist hosts answer 403 to any Origin outside their own list, which a deployed page cannot satisfy, so the master playlist comes back with its variant URLs rewritten to `GET /api/stream?playlist=…`. That form only accepts an HTTPS URL on `*.playlist.ttvnw.net` and sends no Origin upstream. Media segments carry an open CORS policy and keep loading straight from Twitch's CDN. No login token or application secret is sent to this endpoint. Responses are not cached, upstream calls have timeouts, and each client address is limited per minute and per server instance to 120 token requests and 3000 playlist requests. No additional environment variables are required.
 
 This uses an undocumented playback mechanism, also used by [Streamlink](https://github.com/streamlink/streamlink/blob/master/src/streamlink/plugins/twitch.py). [Helix Get Streams](https://dev.twitch.tv/docs/api/reference/#get-streams) only provides stream metadata. Twitch can refuse playback or change its query, require client integrity, or change CDN CORS behavior. Anonymous playback does not inherit subscriptions or other account entitlements. Ads remain part of the supplied stream. Browser autoplay rules and codec support still apply; chat remains an iframe. The custom player does not remove all Twitch or browser constraints.
 
-Validated with real Twitch playback in headless Chromium on this development machine. Deployment from a different IP and Safari native HLS still need verification. Browser tests use a small generated HLS media fixture to check playback and switching without depending on live channels.
+Validated with real Twitch playback in headless Chromium against the production apps-host, including playlist proxying and direct CDN media playback. Safari native HLS still needs verification. Browser tests use a small generated HLS media fixture to check playback and switching without depending on live channels.
 
 ## Playback, spotlight, and dragging
 
@@ -126,7 +128,7 @@ Create an application in the [Twitch developer console](https://dev.twitch.tv/co
 
 Register the exact OAuth return addresses, including `http://localhost:8765` for local development and the production origin. The current production origin is `https://twitch.moinax.com`, without a trailing slash. Login uses Twitch's implicit OAuth flow with only `user:read:follows`.
 
-Guest search uses a separate Confidential Twitch application. Set these server environment variables in `.env.local` for local development and in Vercel for deployment:
+Guest search uses a separate Confidential Twitch application. Set these server environment variables in `.env.local` for local development and in the production service environment for deployment:
 
 ```dotenv
 TWITCH_SEARCH_CLIENT_ID=your-confidential-client-id
@@ -141,7 +143,11 @@ The server caches successful results for one minute, shares concurrent requests,
 
 ## Deployment and share image
 
-Vercel builds with `pnpm build` and serves `dist`, as configured in `vercel.json`. The Node search function remains at `/api/search`. Configure the domain and server environment variables in Vercel.
+Production runs on the persistent DigitalOcean `apps-host`, at `https://twitch.moinax.com`. The dedicated public Caddy service serves `dist` and proxies `/api/*` to the loopback-only Node service on port 8766. Finance and Daylight use a separate private proxy and remain accessible only through Tailscale.
+
+Deploy from the dotfiles checkout with `dots hosting deploy twitch-grid`. This builds locally and transfers an explicit runtime archive without `.env.local` or browser state. The API uses only Node built-ins, so the host installs no npm dependencies. Services run as separate unprivileged users with root-owned releases. The two Twitch search credentials live in `/etc/personal-apps/twitch-grid.env`, loaded by systemd. Encrypted host backups include the release and configuration; favorites, grids and Twitch sessions remain in each browser on the unchanged origin.
+
+Host preparation and DNS activation are separate commands in `dots hosting help`. Activation checks HTTPS and private-app isolation before creating the explicit Twitch DNS record; the public wildcard is unchanged. The former Vercel project has been deleted; recover from host release archives rather than pointing DNS back to Vercel. The standalone host does not use Vercel Analytics.
 
 Open Graph and Twitter metadata remain in the HTML entry point. They reference the committed 1200 × 630 image at `public/assets/share-card.png`. Regenerate it after changing the landing hero:
 

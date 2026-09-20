@@ -26,9 +26,10 @@ module.exports = async function stream(req, res) {
   // behind a proxy the socket address is the proxy's own: count against the client it forwards for
   const client = req.headers?.['x-real-ip'] || String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim()
     || req.socket?.remoteAddress || 'unknown';
-  // a playing tile reloads its variant playlist every few seconds; the token path stays rare
+  // hls.js reloads a variant playlist every segment, ~30/min per tile; a whole household of grids
+  // stays far under this while a hammering script trips it at once. The token path stays rare.
   const key = (variant ? 'playlist ' : 'channel ') + client;
-  const limit = variant ? 600 : 120;
+  const limit = variant ? 3000 : 120;
   const entry = clients.get(key) || { count: 0, until: now + 60000 };
   if (entry.count >= limit || (!clients.has(key) && clients.size >= 10000)) return fail(429, 'RATE_LIMITED');
   entry.count++;
