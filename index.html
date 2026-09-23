@@ -29,6 +29,15 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap">
+<!-- boot: inline so it styles the very first paint, before the bundled CSS; covers the app until the account and the grid are known -->
+<style>
+#boot { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--bg, #181818); }
+body:not(.booting) #boot { display: none; }
+body.booting #root { visibility: hidden; }
+#boot img { animation: boot 1.4s cubic-bezier(0.32, 0.72, 0, 1) infinite; }
+@keyframes boot { 50% { opacity: 0.4; transform: scale(0.92); } }
+@media (prefers-reduced-motion: reduce) { #boot img { animation: none; } }
+</style>
 </head>
-<body><div id="root" style="display: contents"></div><script type="module" src="/src/main.tsx"></script></body>
+<body class="booting"><div id="boot" role="progressbar" aria-label="Twitch grid"><img src="/favicon.svg" alt="" width="72" height="72"></div><div id="root" style="display: contents"></div><script type="module" src="/src/main.tsx"></script></body>
 </html>

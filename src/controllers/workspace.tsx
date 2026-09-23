@@ -2782,15 +2782,18 @@ export function startWorkspace(
     const openTiles = restored
       ? order.length
       : readStored<LayoutSnapshot>("tg.layout.guest", {}).order?.length || 0;
-    document.body.classList.toggle(
-      "landing",
-      landingWanted ||
-        (!library?.user &&
-          !pending &&
-          !favorites.length &&
-          !openTiles &&
-          !readStored("tg.landing", false, sessionStorage)),
-    );
+    if (
+      document.body.classList.toggle(
+        "landing",
+        landingWanted ||
+          (!library?.user &&
+            !pending &&
+            !favorites.length &&
+            !openTiles &&
+            !readStored("tg.landing", false, sessionStorage)),
+      )
+    )
+      document.body.classList.remove("booting"); // a first visit is known at once: no account or grid to wait for
     for (const button of document.querySelectorAll<HTMLButtonElement>(
       "#landing .landing-connect",
     )) {
@@ -3066,9 +3069,11 @@ export function startWorkspace(
   });
   $<HTMLSelectElement>("#landing-language").value = preferences.language;
   splitReveal();
-  init().catch((error) => {
-    if (!lifecycle.disposed) handleError(error);
-  });
+  init()
+    .catch((error) => {
+      if (!lifecycle.disposed) handleError(error);
+    })
+    .finally(() => document.body.classList.remove("booting")); // account, grid and live statuses are known
   function refreshPosters() {
     if (document.hidden) return;
     for (const t of tiles.values()) if (t.poster?.isConnected) updatePoster(t);

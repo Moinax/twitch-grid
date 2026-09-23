@@ -1759,6 +1759,7 @@ async function nameGrid(page, name) {
   await expect(page.locator('#grids-dialog')).not.toBeVisible();
 }
 async function openGridManager(page) {
+  await expect(page.locator('body')).not.toHaveClass(/booting/);   // the switcher is hidden until the grid is known
   if (await page.locator('#grid-switcher summary').isVisible()) { await page.locator('#grid-switcher summary').click(); await page.locator('#grids-open').click(); }
   else await page.locator('#grids-shortcut').click();
 }
@@ -2437,6 +2438,7 @@ test('side tiles remain fully visible at fractional sizes and resume after a glo
     localStorage.setItem('tg.layout.guest',JSON.stringify({order:['one','two','three'],focused:'one',muted:{one:true,two:true,three:true}}));
   });
   await page.goto('/');
+  await expect(page.locator('body')).not.toHaveClass(/booting/);   // the boot screen would cover the players
   // Headless Chromium uses overlay scrollbars; reserve their width to also cover desktop scrollbars.
   await page.addStyleTag({content:'#grid { scrollbar-gutter: stable; }'});
   await page.evaluate(() => layout());
