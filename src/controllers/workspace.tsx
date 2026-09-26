@@ -1161,14 +1161,34 @@ export function startWorkspace(
       if (soundFollow && t.ready) applyMuted(t, wantMuted(t));
     });
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
-    el.addEventListener("mousemove", () => {
+    const showControls = () => {
       el.classList.remove("pointer-idle");
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => el.classList.add("pointer-idle"), 3000);
+    };
+    el.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      el.classList.remove("touch-input");
+      showControls();
+    });
+    for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
+      el.addEventListener(
+        type,
+        () => {
+          el.classList.add("touch-input");
+          showControls();
+        },
+        { passive: true },
+      );
+    }
+    el.addEventListener("fullscreenchange", () => {
+      if (document.fullscreenElement === el) showControls();
     });
     el.addEventListener("mouseleave", () => {
-      clearTimeout(idleTimer);
-      el.classList.remove("pointer-idle");
+      if (!el.classList.contains("touch-input")) {
+        clearTimeout(idleTimer);
+        el.classList.remove("pointer-idle");
+      }
       t.hovered = false;
       t.hoverSuppressed = false;
       sync(t);

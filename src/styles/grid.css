@@ -394,6 +394,8 @@ body.dragging .tile.dragged .bar {
 }
 /* a pointer resting on the bar, a keyboard focus or an open menu keep it in view; a zoomed video drops it outright */
 .tile:fullscreen.pointer-idle > .bar:not(:hover, :has(:focus-visible, [open])),
+.tile:fullscreen.pointer-idle.touch-input
+  > .bar:not(:has(:focus-visible, [open])),
 .tile:fullscreen.zoomed > .bar {
   opacity: 0;
   transform: translateY(-100%);
@@ -1546,7 +1548,9 @@ body.collapsed #list-empty {
   opacity: 0.5; /* the badge at rest sits back; the bar under the pointer comes forward */
 }
 .tile:fullscreen.pointer-idle
-  .custom-controls:not(:hover, :has(:focus-visible, .custom-quality[open])) {
+  .custom-controls:not(:hover, :has(:focus-visible, .custom-quality[open])),
+.tile:fullscreen.pointer-idle.touch-input
+  .custom-controls:not(:has(:focus-visible, .custom-quality[open])) {
   opacity: 0;
   pointer-events: none;
 }

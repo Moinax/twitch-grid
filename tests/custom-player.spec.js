@@ -733,7 +733,7 @@ test("the offline spotlight backs its letterbox and right-aligns its header", as
 test("fullscreen video supports pinch zoom without scaling controls", async ({
   page,
 }) => {
-  await setup(page, "custom");
+  const errors = await setup(page, "custom");
   const video = page.locator("#grid video");
   const controls = page.locator("#grid .custom-controls");
   const pinch = async (from, to) =>
@@ -834,4 +834,70 @@ test("fullscreen video supports pinch zoom without scaling controls", async ({
   await page.evaluate(() => document.exitFullscreen());
   await expect(video).toHaveCSS("scale", "none");
   await expect(video).toHaveCSS("translate", "none");
+  expect(errors).toEqual([]);
+});
+
+test.describe("fullscreen touch interactions", () => {
+  test.use({ hasTouch: true });
+  test("touch controls fade and zoom preserves taps but suppresses drag clicks", async ({
+    page,
+    context,
+  }) => {
+    const errors = await setup(page, "custom");
+    const video = page.locator("#grid video");
+    const tile = page.locator("#grid .tile");
+    const bar = tile.locator(":scope > .bar");
+    const controls = tile.locator(".custom-controls");
+    await video.dblclick();
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    const box = await video.boundingBox();
+    const x = Math.round(box.x + box.width / 2),
+      y = Math.round(box.y + box.height / 2);
+    await page.touchscreen.tap(x, y);
+    await expect(tile).toHaveClass(/touch-input/);
+    await expect(bar).toHaveCSS("opacity", "0", { timeout: 5000 });
+    await expect(controls).toHaveCSS("opacity", "0");
+    await page.touchscreen.tap(x, y);
+    await expect(bar).toHaveCSS("opacity", "1");
+    await expect(controls).toHaveCSS("opacity", "1");
+    // A touch on the header can leave the browser's emulated hover behind.
+    await bar.locator("b").tap();
+    await expect(bar).toHaveCSS("opacity", "0", { timeout: 5000 });
+    const cdp = await context.newCDPSession(page);
+    const send = (type, points) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points.map(([px, py], id) => ({ x: px, y: py, id })),
+      });
+    await send("touchStart", [
+      [x - 50, y],
+      [x + 50, y],
+    ]);
+    await send("touchMove", [
+      [x - 100, y],
+      [x + 100, y],
+    ]);
+    await send("touchEnd", []);
+    await expect(video).toHaveCSS("scale", "2");
+    await video.evaluate((video) => {
+      window.zoomClicks = 0;
+      video.addEventListener("click", () => window.zoomClicks++);
+    });
+    await page.touchscreen.tap(x, y);
+    await expect.poll(() => page.evaluate(() => window.zoomClicks)).toBe(1);
+    await send("touchStart", [[x, y]]);
+    await send("touchMove", [[x + 40, y]]);
+    await send("touchEnd", []);
+    await expect(video).toHaveCSS("translate", "40px");
+    expect(await page.evaluate(() => window.zoomClicks)).toBe(1);
+    // Small finger jitter remains a tap rather than starting a pan.
+    await send("touchStart", [[x, y]]);
+    await send("touchMove", [[x + 2, y]]);
+    await send("touchEnd", []);
+    await expect.poll(() => page.evaluate(() => window.zoomClicks)).toBe(2);
+    await cdp.detach();
+    expect(errors).toEqual([]);
+  });
 });

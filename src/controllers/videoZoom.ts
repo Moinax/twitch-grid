@@ -6,6 +6,7 @@ export function enableVideoZoom(video: HTMLVideoElement) {
   let distance = 0;
   let startScale = 1;
   let pinching = false;
+  let tracking = false;
   let x = 0;
   let y = 0;
   let startX = 0;
@@ -51,6 +52,7 @@ export function enableVideoZoom(video: HTMLVideoElement) {
     scale = startScale = 1;
     distance = 0;
     pinching = false;
+    tracking = false;
     x = y = 0;
     video.style.removeProperty("scale");
     video.style.removeProperty("translate");
@@ -59,10 +61,12 @@ export function enableVideoZoom(video: HTMLVideoElement) {
   video.addEventListener(
     "touchstart",
     (event) => {
-      if (!fullscreen() || event.touches.length > 2) return;
+      if (!fullscreen() || !event.touches.length || event.touches.length > 2)
+        return;
       if (event.touches.length !== 2 && scale === 1) return;
-      event.preventDefault();
-      pinching = true;
+      tracking = true;
+      if (event.touches.length === 2) pinching = true;
+      if (pinching) event.preventDefault();
       begin(event.touches);
     },
     options,
@@ -70,15 +74,21 @@ export function enableVideoZoom(video: HTMLVideoElement) {
   video.addEventListener(
     "touchmove",
     (event) => {
-      if (!fullscreen() || !pinching) return;
-      event.preventDefault();
+      if (!fullscreen() || !tracking) return;
       if (!event.touches.length || event.touches.length > 2) return;
+      const current = center(event.touches);
+      if (
+        !pinching &&
+        Math.hypot(current.x - origin.x, current.y - origin.y) < 5
+      )
+        return;
+      pinching = true;
+      event.preventDefault();
       if (event.touches.length === 2 && distance)
         scale = Math.min(
           4,
           Math.max(1, (startScale * gap(event.touches)) / distance),
         );
-      const current = center(event.touches);
       const frame = video.parentElement!.getBoundingClientRect();
       const ratio = scale / startScale;
       // Keep the image point under the fingers fixed as the pinch moves and scales.
@@ -97,11 +107,11 @@ export function enableVideoZoom(video: HTMLVideoElement) {
     options,
   );
   const end = (event: TouchEvent) => {
-    if (!pinching) return;
+    if (!tracking) return;
     // A completed pinch must not become a click or double click on the player.
-    event.preventDefault();
+    if (pinching) event.preventDefault();
     distance = 0;
-    if (!event.touches.length) pinching = false;
+    if (!event.touches.length) tracking = pinching = false;
     else if (event.touches.length <= 2) begin(event.touches);
   };
   video.addEventListener("touchend", end, options);
