@@ -30,6 +30,7 @@ export function enableVideoZoom(video: HTMLVideoElement) {
     y = Math.max(-maxY, Math.min(maxY, y));
     video.style.scale = String(scale);
     video.style.translate = `${x}px ${y}px`;
+    video.closest(".tile")?.classList.toggle("zoomed", scale > 1);
   };
   const begin = (touches: TouchList) => {
     distance = touches.length === 2 ? gap(touches) : 0;
@@ -53,6 +54,7 @@ export function enableVideoZoom(video: HTMLVideoElement) {
     x = y = 0;
     video.style.removeProperty("scale");
     video.style.removeProperty("translate");
+    video.closest(".tile")?.classList.remove("zoomed");
   };
   video.addEventListener(
     "touchstart",

@@ -392,7 +392,9 @@ body.dragging .tile.dragged .bar {
     opacity 0.25s var(--ease),
     transform 0.25s var(--ease);
 }
-.tile:fullscreen.pointer-idle > .bar {
+/* a pointer resting on the bar, a keyboard focus or an open menu keep it in view; a zoomed video drops it outright */
+.tile:fullscreen.pointer-idle > .bar:not(:hover, :has(:focus-visible, [open])),
+.tile:fullscreen.zoomed > .bar {
   opacity: 0;
   transform: translateY(-100%);
   pointer-events: none;
@@ -474,6 +476,10 @@ body.dragging .tile.dragged .bar {
 .tile:hover:not(.pointer-idle) .player::before,
 .tile:hover:not(.pointer-idle) .player::after {
   opacity: 1;
+}
+.tile:fullscreen.zoomed .player::before,
+.tile:fullscreen.zoomed .player::after {
+  opacity: 0;
 }
 /* touch screens have no hover, so they keep the controls in the flow */
 @media (hover: hover) {
@@ -1539,7 +1545,8 @@ body.collapsed #list-empty {
     opacity 0.25s var(--ease);
   opacity: 0.5; /* the badge at rest sits back; the bar under the pointer comes forward */
 }
-.tile:fullscreen.pointer-idle .custom-controls {
+.tile:fullscreen.pointer-idle
+  .custom-controls:not(:hover, :has(:focus-visible, .custom-quality[open])) {
   opacity: 0;
   pointer-events: none;
 }

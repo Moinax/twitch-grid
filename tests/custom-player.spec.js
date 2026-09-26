@@ -813,6 +813,8 @@ test("fullscreen video supports pinch zoom without scaling controls", async ({
   expect(await pan(1, 40)).toBeCloseTo(40);
   expect(await pan(2, -40)).toBeCloseTo(-40);
   await expect(video).toHaveCSS("scale", "2");
+  // zoomed in, the top bar steps aside
+  await expect(page.locator("#grid .tile > .bar")).toHaveCSS("opacity", "0");
   await pan(1, 10000);
   const offset = await video.evaluate((video) => ({
     x: parseFloat(video.style.translate),
@@ -827,6 +829,7 @@ test("fullscreen video supports pinch zoom without scaling controls", async ({
   await pinch(400, 50);
   await expect(video).toHaveCSS("scale", "1");
   await expect(video).toHaveCSS("translate", "0px");
+  await expect(page.locator("#grid .tile")).not.toHaveClass(/zoomed/);
   await pinch(100, 200);
   await page.evaluate(() => document.exitFullscreen());
   await expect(video).toHaveCSS("scale", "none");
