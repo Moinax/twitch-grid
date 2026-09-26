@@ -1543,6 +1543,9 @@ body.collapsed #list-empty {
   opacity: 0;
   pointer-events: none;
 }
+.tile:fullscreen .custom-video {
+  touch-action: none;
+}
 /* the blur lives on a layer of its own: a filter on the bar would pin the fixed menu inside the clipped tile */
 .custom-controls::before {
   content: "";

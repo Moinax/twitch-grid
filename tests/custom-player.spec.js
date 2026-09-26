@@ -729,3 +729,106 @@ test("the offline spotlight backs its letterbox and right-aligns its header", as
   expect(cover.opaque).toBe("rgb(24, 24, 24)");
   expect(errors).toEqual([]);
 });
+
+test("fullscreen video supports pinch zoom without scaling controls", async ({
+  page,
+}) => {
+  await setup(page, "custom");
+  const video = page.locator("#grid video");
+  const controls = page.locator("#grid .custom-controls");
+  const pinch = async (from, to) =>
+    video.evaluate(
+      (video, { from, to }) => {
+        const send = (type, gap) => {
+          const touches =
+            gap === null
+              ? []
+              : [0, gap].map(
+                  (x, identifier) =>
+                    new Touch({
+                      identifier,
+                      target: video,
+                      clientX: 300 + x,
+                      clientY: 300,
+                    }),
+                );
+          video.dispatchEvent(
+            new TouchEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              touches,
+              targetTouches: touches,
+            }),
+          );
+        };
+        send("touchstart", from);
+        send("touchmove", to);
+        send("touchend", null);
+      },
+      { from, to },
+    );
+  await pinch(100, 200);
+  await expect(video).toHaveCSS("scale", "none");
+  await video.dblclick();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement?.className))
+    .toContain("tile");
+  await pinch(100, 200);
+  await expect(video).toHaveCSS("scale", "2");
+  await expect(controls).toHaveCSS("scale", "none");
+  const pan = (fingers, delta) =>
+    video.evaluate(
+      (video, { fingers, delta }) => {
+        const before = parseFloat(video.style.translate);
+        const send = (type, offset) => {
+          const touches =
+            offset === null
+              ? []
+              : Array.from(
+                  { length: fingers },
+                  (_, identifier) =>
+                    new Touch({
+                      identifier,
+                      target: video,
+                      clientX: 300 + identifier * 100 + offset,
+                      clientY: 300,
+                    }),
+                );
+          video.dispatchEvent(
+            new TouchEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              touches,
+              targetTouches: touches,
+            }),
+          );
+        };
+        send("touchstart", 0);
+        send("touchmove", delta);
+        send("touchend", null);
+        return parseFloat(video.style.translate) - before;
+      },
+      { fingers, delta },
+    );
+  expect(await pan(1, 40)).toBeCloseTo(40);
+  expect(await pan(2, -40)).toBeCloseTo(-40);
+  await expect(video).toHaveCSS("scale", "2");
+  await pan(1, 10000);
+  const offset = await video.evaluate((video) => ({
+    x: parseFloat(video.style.translate),
+    limit: Math.max(
+      0,
+      (video.offsetWidth * 2 - video.parentElement.clientWidth) / 2,
+    ),
+  }));
+  expect(offset.x).toBeCloseTo(offset.limit);
+  await pinch(100, 400);
+  await expect(video).toHaveCSS("scale", "4");
+  await pinch(400, 50);
+  await expect(video).toHaveCSS("scale", "1");
+  await expect(video).toHaveCSS("translate", "0px");
+  await pinch(100, 200);
+  await page.evaluate(() => document.exitFullscreen());
+  await expect(video).toHaveCSS("scale", "none");
+  await expect(video).toHaveCSS("translate", "none");
+});
