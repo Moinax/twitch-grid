@@ -15,6 +15,8 @@ pnpm dev
 
 Open http://localhost:8765. Vite serves the React app and the local search endpoint. Twitch embeds require an HTTP hostname; opening the HTML as a local file does not work.
 
+To test on an iPad or another device on the same local network, run `pnpm dev:lan` and open the Network URL printed by Vite. You can choose a port with `pnpm dev:lan 8766`.
+
 ```sh
 pnpm check          # Strict TypeScript and server syntax checks
 pnpm build          # Validates and builds the app into dist
