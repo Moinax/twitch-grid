@@ -1166,6 +1166,11 @@ export function startWorkspace(
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => el.classList.add("pointer-idle"), 3000);
     };
+    const resetControls = () => {
+      clearTimeout(idleTimer);
+      idleTimer = undefined;
+      el.classList.remove("pointer-idle", "touch-input");
+    };
     el.addEventListener("pointermove", (event) => {
       if (event.pointerType === "touch") return;
       el.classList.remove("touch-input");
@@ -1175,6 +1180,7 @@ export function startWorkspace(
       el.addEventListener(
         type,
         () => {
+          if (document.fullscreenElement !== el) return;
           el.classList.add("touch-input");
           showControls();
         },
@@ -1182,7 +1188,11 @@ export function startWorkspace(
       );
     }
     el.addEventListener("fullscreenchange", () => {
-      if (document.fullscreenElement === el) showControls();
+      if (document.fullscreenElement === el) {
+        showControls();
+      } else {
+        resetControls();
+      }
     });
     el.addEventListener("mouseleave", () => {
       if (!el.classList.contains("touch-input")) {

@@ -848,6 +848,12 @@ test.describe("fullscreen touch interactions", () => {
     const tile = page.locator("#grid .tile");
     const bar = tile.locator(":scope > .bar");
     const controls = tile.locator(".custom-controls");
+    const gridBox = await video.boundingBox();
+    await page.touchscreen.tap(
+      Math.round(gridBox.x + gridBox.width / 2),
+      Math.round(gridBox.y + gridBox.height / 2),
+    );
+    await expect(tile).not.toHaveClass(/touch-input|pointer-idle/);
     await video.dblclick();
     await expect
       .poll(() => page.evaluate(() => !!document.fullscreenElement))
@@ -897,6 +903,8 @@ test.describe("fullscreen touch interactions", () => {
     await send("touchMove", [[x + 2, y]]);
     await send("touchEnd", []);
     await expect.poll(() => page.evaluate(() => window.zoomClicks)).toBe(2);
+    await page.evaluate(() => document.exitFullscreen());
+    await expect(tile).not.toHaveClass(/touch-input|pointer-idle/);
     await cdp.detach();
     expect(errors).toEqual([]);
   });
