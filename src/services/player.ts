@@ -38,15 +38,11 @@ export class CustomPlayer implements TwitchPlayer {
   private soundButton: HTMLButtonElement;
   private spotlightButton: HTMLButtonElement;
   private disposeZoom: () => void;
-  private sizeObserver = new ResizeObserver(() => {
-    if (this.hls) this.hls.capLevelToPlayerSize = this.capped();
-  });
 
   constructor(element: HTMLElement, options: Options) {
     this.latency = options.latency ?? preferences.latency;
     const video = this.video;
     this.disposeZoom = enableVideoZoom(video);
-    this.sizeObserver.observe(video);
     video.className = "custom-video";
     video.playsInline = true;
     video.muted = options.muted;
@@ -288,9 +284,10 @@ export class CustomPlayer implements TwitchPlayer {
     this.recoveryTimer = undefined;
     this.hls?.destroy();
     this.hls = null;
-    let Hls: typeof import("hls.js").default;
+    let Hls: typeof import("hls.js").default,
+      CapLevelController: typeof import("hls.js").CapLevelController;
     try {
-      Hls = (await import("hls.js")).default;
+      ({ default: Hls, CapLevelController } = await import("hls.js"));
     } catch {
       this.fail();
       return;
@@ -298,9 +295,18 @@ export class CustomPlayer implements TwitchPlayer {
     if (this.destroyed) return;
     const video = this.video;
     if (Hls.isSupported()) {
+      // hls.js holds every tile to the level its size shows; the tile may grow past that and want the best the line allows
+      class SizeCap extends CapLevelController {
+        getMaxLevel(capLevelIndex: number) {
+          return this.getDimensions().height > CustomPlayer.CAP_HEIGHT
+            ? capLevelIndex
+            : super.getMaxLevel(capLevelIndex);
+        }
+      }
       const hls = (this.hls = new Hls({
         lowLatencyMode: true,
-        capLevelToPlayerSize: this.capped(),
+        capLevelToPlayerSize: true,
+        capLevelController: SizeCap,
         preserveManualLevelOnError: true, // hls.js drops a pinned level on any level error; the viewer's choice outranks that
         backBufferLength: 15,
         maxBufferLength: 20,
@@ -337,9 +343,6 @@ export class CustomPlayer implements TwitchPlayer {
       this.emit(CustomPlayer.READY);
       if (!this.failed && autoplay) this.play();
     });
-  }
-  private capped() {
-    return this.video.clientHeight <= CustomPlayer.CAP_HEIGHT;
   }
   private emit(event: string) {
     if (!this.destroyed)
@@ -491,7 +494,6 @@ export class CustomPlayer implements TwitchPlayer {
   destroy() {
     this.destroyed = true;
     this.disposeZoom();
-    this.sizeObserver.disconnect();
     this.listeners.clear();
     clearTimeout(this.recoveryTimer);
     this.hls?.destroy();

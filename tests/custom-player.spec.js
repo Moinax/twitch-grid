@@ -190,11 +190,11 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
     .toBe(0.4);
   await page.locator("#grid video").hover();
   await page.locator("#grid .custom-pp").click();
-  await expect(page.locator("#grid video")).toHaveJSProperty("paused", true);
   await expect
     .poll(() => page.evaluate(() => tiles.get("example").paused))
     .toBe(true);
-  await page.locator("#grid .custom-pp").click();
+  await expect(page.locator("#grid video")).toHaveCount(0); // released for its poster
+  await page.locator("#grid .pause-play").click();
   await expect(page.locator("#grid video")).toHaveJSProperty("paused", false);
   await expect(page.locator("#grid .player")).toHaveCSS("cursor", "auto");
   // the global mute takes the bar's sound and volume away, and gives them back
@@ -306,14 +306,6 @@ test("latency settings retune custom players in place and the spotlight follows 
   await expect(first).toHaveClass(/big/);
   await expect.poll(() => config("example")).toEqual(low);
   expect((await config("second")).liveSyncDurationCount).not.toBe(2);
-  // only the small tile stays capped to its size; the spotlight loads the best level the line allows
-  const capped = (login) =>
-    page.evaluate(
-      (login) => tiles.get(login).player.hls.config.capLevelToPlayerSize,
-      login,
-    );
-  await expect.poll(() => capped("example")).toBe(false);
-  await expect.poll(() => capped("second")).toBe(true);
   await first.locator("video").hover();
   await first.locator(".custom-spotlight").click();
   await expect(first).not.toHaveClass(/big/);
@@ -335,7 +327,7 @@ test("latency settings retune custom players in place and the spotlight follows 
   expect(errors).toEqual([]);
 });
 for (const pauseMode of ["tile", "global", "native"]) {
-  test(`custom ${pauseMode} pause retains the video and last frame until resumed`, async ({
+  test(`custom ${pauseMode} pause releases the player until resumed`, async ({
     page,
   }) => {
     const errors = await setup(page, "custom");
@@ -344,9 +336,6 @@ for (const pauseMode of ["tile", "global", "native"]) {
     await expect
       .poll(() => video.evaluate((video) => video.currentTime))
       .toBeGreaterThan(0);
-    await page.evaluate(() => {
-      window.retainedVideo = document.querySelector("#grid video");
-    });
     if (pauseMode === "native") {
       await video.evaluate((video) => video.pause());
     } else {
@@ -372,23 +361,14 @@ for (const pauseMode of ["tile", "global", "native"]) {
         await tile.locator(".custom-pp").click();
       }
     }
-    await expect(video).toHaveJSProperty("paused", true);
-    const pausedAt = await video.evaluate((video) => video.currentTime);
+    // a paused player keeps loading its stream and holding decoders: the tile gives it back for its poster
+    await expect(tile).toHaveClass(/poster-only/);
+    await expect(video).toHaveCount(0);
     await tile.locator(".player").hover();
     // Span a watchdog tick to catch unintended hover or background resumption.
     await page.waitForTimeout(1200);
-    expect(
-      await page.evaluate(
-        () =>
-          retainedVideo ===
-          document.querySelector('#grid [data-login="example"] video'),
-      ),
-    ).toBe(true);
-    await expect(video).toHaveJSProperty("paused", true);
-    await expect(video).toHaveJSProperty("currentTime", pausedAt);
-    await expect(tile).not.toHaveClass(/poster-only/);
+    await expect(video).toHaveCount(0);
     await expect(tile.locator(".preview-cover")).toHaveClass(/pause-overlay/);
-    await expect(tile.locator(".stream-poster")).toBeHidden();
     const playButton = tile
       .locator(".preview-cover")
       .getByRole("button", { name: "Play", exact: true });
@@ -400,17 +380,50 @@ for (const pauseMode of ["tile", "global", "native"]) {
     await expect(playButton).toBeHidden();
     await expect
       .poll(() => video.evaluate((video) => video.currentTime))
-      .toBeGreaterThan(pausedAt);
-    expect(
-      await page.evaluate(
-        () =>
-          retainedVideo ===
-          document.querySelector('#grid [data-login="example"] video'),
-      ),
-    ).toBe(true);
+      .toBeGreaterThan(0);
     expect(errors).toEqual([]);
   });
 }
+
+test("custom players off screen are released until scrolled back in", async ({
+  page,
+}) => {
+  const errors = await setup(page, "custom");
+  await page.setViewportSize({ width: 1280, height: 760 }); // the spotlight's strip scrolls past a few tiles
+  await page.evaluate(() => {
+    for (let i = 0; i < 8; i++)
+      add({
+        ...tiles.get("example").channel,
+        twitch: "live" + i,
+        display: "Live" + i,
+      });
+  });
+  await page.keyboard.press("Control"); // nothing starts before the first gesture
+  await page
+    .locator('#grid [data-login="example"] .custom-spotlight')
+    .evaluate((button) => button.click());
+  await expect(page.locator("#grid .big")).toHaveAttribute(
+    "data-login",
+    "example",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() => [...tiles.values()].some((t) => t.visible === false)),
+    )
+    .toBe(true);
+  const hidden = await page.evaluate(
+    () =>
+      [...tiles.values()].findLast((t) => t.visible === false).el.dataset.login,
+  );
+  const tile = page.locator(`#grid [data-login="${hidden}"]`);
+  // an idle player off screen keeps loading its stream and holding decoders
+  await expect(tile.locator("video")).toHaveCount(0);
+  await tile.evaluate((tile) => tile.scrollIntoView());
+  await expect
+    .poll(() => tile.locator("video").evaluate((video) => video.currentTime))
+    .toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
 
 test("shortcut tooltips render keycaps and the collapsed toggle stays above GitHub", async ({
   page,
@@ -516,6 +529,7 @@ test("tile latency switches independently and global settings replace overrides"
     window.otherLatencyPlayer = tiles.get("second").player;
   });
   await expect(first.locator("video")).toHaveJSProperty("volume", 0.3);
+  await page.locator("#audio-overlay").click(); // the sound turned on asks for the first gesture
   const latency = (tile) =>
     tile.locator('.custom-latencies [aria-checked="true"]');
   const pick = async (tile, name) => {

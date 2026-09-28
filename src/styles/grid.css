@@ -1814,6 +1814,11 @@ body.collapsed #list-empty {
 .preview-cover.pause-overlay .preview-status {
   display: none;
 }
+/* a released player leaves its poster under the overlay: the same frosted still, drawn on the image itself */
+.poster-only .preview-cover.pause-overlay .stream-poster:not([hidden]) {
+  display: block;
+  filter: blur(6px) brightness(0.85);
+}
 .pause-overlay .pause-play {
   display: grid;
   place-items: center;

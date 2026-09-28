@@ -685,6 +685,11 @@ export function startWorkspace(
         releasePlayer(t);
         return;
       }
+      // off screen, an idle custom player still loads its stream and holds decoders: it comes back when scrolled in
+      if (!onScreen(t) && (t.playerMode ?? preferences.player) === "custom") {
+        releasePlayer(t);
+        return;
+      }
       if (!t.player) mountPlayer(t, !!t.controls);
       if (!t.ready) return;
       if (wantsPlayback(t)) start(t);
@@ -776,9 +781,9 @@ export function startWorkspace(
       !playing &&
       !offline &&
       !t.waitingForStatus &&
-      t.hasPlayed;
+      (t.hasPlayed || !t.player);
     t.cover.classList.toggle("pause-overlay", pauseOverlay);
-    // Reuse the cover over the frozen video while a custom player is paused.
+    // Reuse the cover over the frozen video while a custom player is paused, over its poster once released.
     t.cover.classList.toggle(
       "gone",
       !pauseOverlay && !offline && !showPoster(t) && (playing || t.hasPlayed),
@@ -1258,7 +1263,8 @@ export function startWorkspace(
     t.ppIcon();
     paintPlayAll();
   }
-  // Paused embeds use posters; mounted custom players retain their last frame.
+  // Paused tiles give their player back for a poster: a custom player held paused keeps its stream loading and its
+  // decoders open, and a grid of them starves the one being watched of frames.
   function showPoster(t: Tile) {
     // Keep the native player and its session through pauses and fullscreen transitions.
     if (inFullscreen(t)) return false;
@@ -1266,9 +1272,13 @@ export function startWorkspace(
       t.channel.online === false ||
       t.waitingForStatus ||
       ((allPaused || tilePaused(t)) &&
-        !((t.playerMode ?? preferences.player) === "custom" && t.player) &&
         !hoverPlayback(t) &&
-        !(t.nativeHold && ownsControls(t) && !allPaused))
+        !(
+          t.nativeHold &&
+          t.controls &&
+          (t.playerMode ?? preferences.player) !== "custom" &&
+          !allPaused
+        ))
     );
   }
   function updatePoster(t: Tile) {
