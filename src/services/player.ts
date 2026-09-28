@@ -10,6 +10,7 @@ export class CustomPlayer implements TwitchPlayer {
   static READY = "ready";
   static PLAYING = "playing";
   static GRACE = 10000; // ms a broken stream may take to come back before the retry shows
+  static CAP_HEIGHT = 360; // px up to which a tile only loads the level its size shows; a bigger one gets the best the line allows
   static AUTO_ICON =
     '<svg class="icon-auto" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 4 1.6 4.4L15 10l-4.4 1.6L9 16l-1.6-4.4L3 10l4.4-1.6zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>';
   static MANUAL_ICON =
@@ -37,11 +38,15 @@ export class CustomPlayer implements TwitchPlayer {
   private soundButton: HTMLButtonElement;
   private spotlightButton: HTMLButtonElement;
   private disposeZoom: () => void;
+  private sizeObserver = new ResizeObserver(() => {
+    if (this.hls) this.hls.capLevelToPlayerSize = this.capped();
+  });
 
   constructor(element: HTMLElement, options: Options) {
     this.latency = options.latency ?? preferences.latency;
     const video = this.video;
     this.disposeZoom = enableVideoZoom(video);
+    this.sizeObserver.observe(video);
     video.className = "custom-video";
     video.playsInline = true;
     video.muted = options.muted;
@@ -295,7 +300,7 @@ export class CustomPlayer implements TwitchPlayer {
     if (Hls.isSupported()) {
       const hls = (this.hls = new Hls({
         lowLatencyMode: true,
-        capLevelToPlayerSize: true,
+        capLevelToPlayerSize: this.capped(),
         preserveManualLevelOnError: true, // hls.js drops a pinned level on any level error; the viewer's choice outranks that
         backBufferLength: 15,
         maxBufferLength: 20,
@@ -332,6 +337,9 @@ export class CustomPlayer implements TwitchPlayer {
       this.emit(CustomPlayer.READY);
       if (!this.failed && autoplay) this.play();
     });
+  }
+  private capped() {
+    return this.video.clientHeight <= CustomPlayer.CAP_HEIGHT;
   }
   private emit(event: string) {
     if (!this.destroyed)
@@ -483,6 +491,7 @@ export class CustomPlayer implements TwitchPlayer {
   destroy() {
     this.destroyed = true;
     this.disposeZoom();
+    this.sizeObserver.disconnect();
     this.listeners.clear();
     clearTimeout(this.recoveryTimer);
     this.hls?.destroy();

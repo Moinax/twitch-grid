@@ -244,14 +244,12 @@ test("latency settings retune custom players in place and the spotlight follows 
       const config = tiles.get(login).player?.hls?.config;
       if (!config) return null; // HLS still loading: the polls try again
       return {
-        capLevelToPlayerSize: config.capLevelToPlayerSize,
         liveSyncDurationCount: config.liveSyncDurationCount,
         liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
         maxLiveSyncPlaybackRate: config.maxLiveSyncPlaybackRate,
       };
     }, login);
   const low = {
-    capLevelToPlayerSize: true,
     liveSyncDurationCount: 2,
     liveMaxLatencyDurationCount: 4,
     maxLiveSyncPlaybackRate: 1.05,
@@ -308,6 +306,14 @@ test("latency settings retune custom players in place and the spotlight follows 
   await expect(first).toHaveClass(/big/);
   await expect.poll(() => config("example")).toEqual(low);
   expect((await config("second")).liveSyncDurationCount).not.toBe(2);
+  // only the small tile stays capped to its size; the spotlight loads the best level the line allows
+  const capped = (login) =>
+    page.evaluate(
+      (login) => tiles.get(login).player.hls.config.capLevelToPlayerSize,
+      login,
+    );
+  await expect.poll(() => capped("example")).toBe(false);
+  await expect.poll(() => capped("second")).toBe(true);
   await first.locator("video").hover();
   await first.locator(".custom-spotlight").click();
   await expect(first).not.toHaveClass(/big/);
