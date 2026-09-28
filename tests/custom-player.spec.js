@@ -432,6 +432,56 @@ test("custom players off screen are released until scrolled back in", async ({
   expect(errors).toEqual([]);
 });
 
+// A tile resynced while the tab is hidden: the app pauses what it does not want playing, and that pause is its own.
+test("a hidden tab keeps the sound playing and never saves the app's own pause", async ({
+  page,
+}) => {
+  const errors = await setup(page, "custom");
+  await page.evaluate(() =>
+    add({
+      ...tiles.get("example").channel,
+      twitch: "second",
+      display: "Second",
+    }),
+  );
+  await page.keyboard.press("Control"); // nothing starts before the first gesture
+  const state = () =>
+    page.evaluate(() =>
+      [...tiles.values()].map((t) => ({
+        login: t.el.dataset.login,
+        muted: t.muted,
+        paused: !!t.paused,
+        playing: t.player?.getPlayerState().playback === "Playing",
+      })),
+    );
+  await page
+    .locator('#grid [data-login="example"] .custom-sound')
+    .evaluate((button) => button.click());
+  await expect
+    .poll(async () => (await state()).every((t) => t.playing))
+    .toBe(true);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => true,
+    });
+    tiles.forEach(sync);
+  });
+  // the stream being listened to plays on; the muted one stops, and neither counts as a pause the viewer chose
+  await expect.poll(state).toEqual([
+    { login: "example", muted: false, paused: false, playing: true },
+    { login: "second", muted: true, paused: false, playing: false },
+  ]);
+  await page.evaluate(() => {
+    delete document.hidden;
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect
+    .poll(async () => (await state()).every((t) => t.playing && !t.paused))
+    .toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test("shortcut tooltips render keycaps and the collapsed toggle stays above GitHub", async ({
   page,
 }) => {

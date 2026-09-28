@@ -133,9 +133,10 @@ export function startWorkspace(
   let shiftStartedFollow = false;
   const hoverSound = (t: Tile) => !!soundFollow && !mutedAll && !!t.hovered;
   const wantMuted = (t: Tile) => t.muted && !hoverSound(t);
+  // a hidden tab stops the picture, not the sound: a tile you listen to plays on behind another tab
   function wantsPlayback(t: Tile) {
     return (
-      !document.hidden &&
+      (!document.hidden || (!t.muted && !mutedAll)) &&
       !document.body.classList.contains("landing") &&
       $("#audio-overlay").hidden &&
       !showPoster(t) &&
@@ -1524,10 +1525,11 @@ export function startWorkspace(
           !(event === "pause" && (allPaused || tilePaused(t))) &&
           (t.hasPlayed || (event === "play" && t.ready))
         ) {
+          // the app pauses what it does not want playing (off screen, a hidden tab): only a pause it did not ask for is the viewer's
           if (
             event === "pause" &&
             !allPaused &&
-            onScreen(t) &&
+            wantsPlayback(t) &&
             !t.playbackBlocked
           ) {
             // Firefox answers an unmute in a frame never clicked by pausing the media: blocked playback, not a pause the viewer chose
