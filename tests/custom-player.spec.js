@@ -418,6 +418,13 @@ test("custom players off screen are released until scrolled back in", async ({
   const tile = page.locator(`#grid [data-login="${hidden}"]`);
   // an idle player off screen keeps loading its stream and holding decoders
   await expect(tile.locator("video")).toHaveCount(0);
+  // a relayout mounts the players it finds missing: not this one
+  const players = () =>
+    page.evaluate(() => document.querySelectorAll("#grid video").length);
+  const before = await players();
+  await page.setViewportSize({ width: 1300, height: 760 });
+  await page.waitForTimeout(150); // inside the settle delay, before sync() would release a stray mount
+  expect(await players()).toBe(before);
   await tile.evaluate((tile) => tile.scrollIntoView());
   await expect
     .poll(() => tile.locator("video").evaluate((video) => video.currentTime))

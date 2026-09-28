@@ -681,12 +681,7 @@ export function startWorkspace(
     }
     t.timer = setTimeout(() => {
       if (!t.el.isConnected) return;
-      if (showPoster(t)) {
-        releasePlayer(t);
-        return;
-      }
-      // off screen, an idle custom player still loads its stream and holds decoders: it comes back when scrolled in
-      if (!onScreen(t) && (t.playerMode ?? preferences.player) === "custom") {
+      if (idle(t)) {
         releasePlayer(t);
         return;
       }
@@ -1262,6 +1257,17 @@ export function startWorkspace(
     t.paused = false;
     t.ppIcon();
     paintPlayAll();
+  }
+  // Off screen, an idle custom player still loads its stream and holds decoders: it comes back when scrolled in.
+  function idle(t: Tile) {
+    return showPoster(t) || idleCustom(t);
+  }
+  // Every layout pass mounts the players it finds missing: it must skip these, or it mounts the whole grid again.
+  function idleCustom(t: Tile) {
+    return (
+      (t.playerMode ?? preferences.player) === "custom" &&
+      (showPoster(t) || !onScreen(t))
+    );
   }
   // Paused tiles give their player back for a poster: a custom player held paused keeps its stream loading and its
   // decoders open, and a grid of them starves the one being watched of frames.
@@ -2085,10 +2091,11 @@ export function startWorkspace(
       const byRole = n === 1 || front(login),
         want = byRole || t.fits;
       if (
-        !t.player ||
-        byRole ||
-        (t.controls && !t.sized && !want) ||
-        (t.player.getLatency && t.player.getLatency() !== wantedLatency(t))
+        !idleCustom(t) &&
+        (!t.player ||
+          byRole ||
+          (t.controls && !t.sized && !want) ||
+          (t.player.getLatency && t.player.getLatency() !== wantedLatency(t)))
       )
         mountPlayer(t, want);
       else if (want !== t.controls) sizeChange = true;
@@ -2101,7 +2108,12 @@ export function startWorkspace(
     clearTimeout(mountTimer);
     const applySizes = () => {
       for (const [login, t] of tiles)
-        if (tiles.size > 1 && login !== focused && t.fits !== t.controls) {
+        if (
+          tiles.size > 1 &&
+          login !== focused &&
+          t.fits !== t.controls &&
+          !idleCustom(t)
+        ) {
           mountPlayer(t, !!t.fits);
           t.sized = t.controls;
           fit(t.el.querySelector<HTMLDivElement>(".player")!);
