@@ -383,6 +383,24 @@ body.dragging .tile.dragged .bar {
 .tile .bar {
   @apply relative;
 }
+.tile:fullscreen > .bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 7;
+  transition:
+    background-color 0.2s var(--ease),
+    opacity 0.25s var(--ease),
+    transform 0.25s var(--ease);
+}
+/* a pointer resting on the bar, a keyboard focus or an open menu keep it in view; a zoomed video drops it outright */
+.tile:fullscreen.pointer-idle > .bar:not(:hover, :has(:focus-visible, [open])),
+.tile:fullscreen.pointer-idle.touch-input
+  > .bar:not(:has(:focus-visible, [open])),
+.tile:fullscreen.zoomed > .bar {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
 .tile .actions {
   flex: none;
   @apply flex items-center;
@@ -460,6 +478,10 @@ body.dragging .tile.dragged .bar {
 .tile:hover:not(.pointer-idle) .player::before,
 .tile:hover:not(.pointer-idle) .player::after {
   opacity: 1;
+}
+.tile:fullscreen.zoomed .player::before,
+.tile:fullscreen.zoomed .player::after {
+  opacity: 0;
 }
 /* touch screens have no hover, so they keep the controls in the flow */
 @media (hover: hover) {
@@ -1524,6 +1546,16 @@ body.collapsed #list-empty {
     box-shadow 0.25s var(--ease),
     opacity 0.25s var(--ease);
   opacity: 0.5; /* the badge at rest sits back; the bar under the pointer comes forward */
+}
+.tile:fullscreen.pointer-idle
+  .custom-controls:not(:hover, :has(:focus-visible, .custom-quality[open])),
+.tile:fullscreen.pointer-idle.touch-input
+  .custom-controls:not(:has(:focus-visible, .custom-quality[open])) {
+  opacity: 0;
+  pointer-events: none;
+}
+.tile:fullscreen .custom-video {
+  touch-action: none;
 }
 /* the blur lives on a layer of its own: a filter on the bar would pin the fixed menu inside the clipped tile */
 .custom-controls::before {

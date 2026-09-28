@@ -2,6 +2,7 @@ import type Hls from "hls.js";
 import type { Latency } from "../types/domain";
 import type { TwitchPlayer, PlayerConstructor } from "../types/player";
 import { preferences, setPreference, tr } from "./preferences";
+import { enableVideoZoom } from "../controllers/videoZoom";
 
 type Options = ConstructorParameters<PlayerConstructor>[1];
 
@@ -35,10 +36,12 @@ export class CustomPlayer implements TwitchPlayer {
   private slider = document.createElement("input");
   private soundButton: HTMLButtonElement;
   private spotlightButton: HTMLButtonElement;
+  private disposeZoom: () => void;
 
   constructor(element: HTMLElement, options: Options) {
     this.latency = options.latency ?? preferences.latency;
     const video = this.video;
+    this.disposeZoom = enableVideoZoom(video);
     video.className = "custom-video";
     video.playsInline = true;
     video.muted = options.muted;
@@ -479,6 +482,7 @@ export class CustomPlayer implements TwitchPlayer {
   }
   destroy() {
     this.destroyed = true;
+    this.disposeZoom();
     this.listeners.clear();
     clearTimeout(this.recoveryTimer);
     this.hls?.destroy();

@@ -729,3 +729,183 @@ test("the offline spotlight backs its letterbox and right-aligns its header", as
   expect(cover.opaque).toBe("rgb(24, 24, 24)");
   expect(errors).toEqual([]);
 });
+
+test("fullscreen video supports pinch zoom without scaling controls", async ({
+  page,
+}) => {
+  const errors = await setup(page, "custom");
+  const video = page.locator("#grid video");
+  const controls = page.locator("#grid .custom-controls");
+  const pinch = async (from, to) =>
+    video.evaluate(
+      (video, { from, to }) => {
+        const send = (type, gap) => {
+          const touches =
+            gap === null
+              ? []
+              : [0, gap].map(
+                  (x, identifier) =>
+                    new Touch({
+                      identifier,
+                      target: video,
+                      clientX: 300 + x,
+                      clientY: 300,
+                    }),
+                );
+          video.dispatchEvent(
+            new TouchEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              touches,
+              targetTouches: touches,
+            }),
+          );
+        };
+        send("touchstart", from);
+        send("touchmove", to);
+        send("touchend", null);
+      },
+      { from, to },
+    );
+  await pinch(100, 200);
+  await expect(video).toHaveCSS("scale", "none");
+  await video.dblclick();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement?.className))
+    .toContain("tile");
+  await pinch(100, 200);
+  await expect(video).toHaveCSS("scale", "2");
+  await expect(controls).toHaveCSS("scale", "none");
+  const pan = (fingers, delta) =>
+    video.evaluate(
+      (video, { fingers, delta }) => {
+        const before = parseFloat(video.style.translate);
+        const send = (type, offset) => {
+          const touches =
+            offset === null
+              ? []
+              : Array.from(
+                  { length: fingers },
+                  (_, identifier) =>
+                    new Touch({
+                      identifier,
+                      target: video,
+                      clientX: 300 + identifier * 100 + offset,
+                      clientY: 300,
+                    }),
+                );
+          video.dispatchEvent(
+            new TouchEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              touches,
+              targetTouches: touches,
+            }),
+          );
+        };
+        send("touchstart", 0);
+        send("touchmove", delta);
+        send("touchend", null);
+        return parseFloat(video.style.translate) - before;
+      },
+      { fingers, delta },
+    );
+  expect(await pan(1, 40)).toBeCloseTo(40);
+  expect(await pan(2, -40)).toBeCloseTo(-40);
+  await expect(video).toHaveCSS("scale", "2");
+  // zoomed in, the top bar steps aside
+  await expect(page.locator("#grid .tile > .bar")).toHaveCSS("opacity", "0");
+  await pan(1, 10000);
+  const offset = await video.evaluate((video) => ({
+    x: parseFloat(video.style.translate),
+    limit: Math.max(
+      0,
+      (video.offsetWidth * 2 - video.parentElement.clientWidth) / 2,
+    ),
+  }));
+  expect(offset.x).toBeCloseTo(offset.limit);
+  await pinch(100, 400);
+  await expect(video).toHaveCSS("scale", "4");
+  await pinch(400, 50);
+  await expect(video).toHaveCSS("scale", "1");
+  await expect(video).toHaveCSS("translate", "0px");
+  await expect(page.locator("#grid .tile")).not.toHaveClass(/zoomed/);
+  await pinch(100, 200);
+  await page.evaluate(() => document.exitFullscreen());
+  await expect(video).toHaveCSS("scale", "none");
+  await expect(video).toHaveCSS("translate", "none");
+  expect(errors).toEqual([]);
+});
+
+test.describe("fullscreen touch interactions", () => {
+  test.use({ hasTouch: true });
+  test("touch controls fade and zoom preserves taps but suppresses drag clicks", async ({
+    page,
+    context,
+  }) => {
+    const errors = await setup(page, "custom");
+    const video = page.locator("#grid video");
+    const tile = page.locator("#grid .tile");
+    const bar = tile.locator(":scope > .bar");
+    const controls = tile.locator(".custom-controls");
+    const gridBox = await video.boundingBox();
+    await page.touchscreen.tap(
+      Math.round(gridBox.x + gridBox.width / 2),
+      Math.round(gridBox.y + gridBox.height / 2),
+    );
+    await expect(tile).not.toHaveClass(/touch-input|pointer-idle/);
+    await video.dblclick();
+    await expect
+      .poll(() => page.evaluate(() => !!document.fullscreenElement))
+      .toBe(true);
+    const box = await video.boundingBox();
+    const x = Math.round(box.x + box.width / 2),
+      y = Math.round(box.y + box.height / 2);
+    await page.touchscreen.tap(x, y);
+    await expect(tile).toHaveClass(/touch-input/);
+    await expect(bar).toHaveCSS("opacity", "0", { timeout: 5000 });
+    await expect(controls).toHaveCSS("opacity", "0");
+    await page.touchscreen.tap(x, y);
+    await expect(bar).toHaveCSS("opacity", "1");
+    await expect(controls).toHaveCSS("opacity", "1");
+    // A touch on the header can leave the browser's emulated hover behind.
+    await bar.locator("b").tap();
+    await expect(bar).toHaveCSS("opacity", "0", { timeout: 5000 });
+    const cdp = await context.newCDPSession(page);
+    const send = (type, points) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points.map(([px, py], id) => ({ x: px, y: py, id })),
+      });
+    await send("touchStart", [
+      [x - 50, y],
+      [x + 50, y],
+    ]);
+    await send("touchMove", [
+      [x - 100, y],
+      [x + 100, y],
+    ]);
+    await send("touchEnd", []);
+    await expect(video).toHaveCSS("scale", "2");
+    await video.evaluate((video) => {
+      window.zoomClicks = 0;
+      video.addEventListener("click", () => window.zoomClicks++);
+    });
+    await page.touchscreen.tap(x, y);
+    await expect.poll(() => page.evaluate(() => window.zoomClicks)).toBe(1);
+    await send("touchStart", [[x, y]]);
+    await send("touchMove", [[x + 40, y]]);
+    await send("touchEnd", []);
+    await expect(video).toHaveCSS("translate", "40px");
+    expect(await page.evaluate(() => window.zoomClicks)).toBe(1);
+    // Small finger jitter remains a tap rather than starting a pan.
+    await send("touchStart", [[x, y]]);
+    await send("touchMove", [[x + 2, y]]);
+    await send("touchEnd", []);
+    await expect.poll(() => page.evaluate(() => window.zoomClicks)).toBe(2);
+    await page.evaluate(() => document.exitFullscreen());
+    await expect(tile).not.toHaveClass(/touch-input|pointer-idle/);
+    await cdp.detach();
+    expect(errors).toEqual([]);
+  });
+});
