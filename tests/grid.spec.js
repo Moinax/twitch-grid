@@ -633,6 +633,19 @@ test('a pointer drag scrolls the tile column and stops scrolling when cancelled'
   expect(errors).toEqual([]);
 });
 
+test('a wide grid shows every small tile beside the spotlight', async ({ page }) => {
+  const errors = await setup(page);
+  await page.setViewportSize({ width: 2000, height: 870 });
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four', 'five'], focused: 'one', collapsed: true })));
+  await page.goto('/');
+  await expect(page.locator('#grid')).not.toHaveClass(/below/);
+  const gridBox = await page.locator('#grid').boundingBox();
+  for (const login of ['two', 'three', 'four', 'five']) {
+    const b = await page.locator(`#grid [data-login="${login}"]`).boundingBox();
+    expect(b.y + b.height).toBeLessThanOrEqual(gridBox.y + gridBox.height + 1);
+  }
+  expect(errors).toEqual([]);
+});
 test('a portrait grid keeps the small tiles in a strip under the front row', async ({ page }) => {
   const errors = await setup(page);
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven'], focused: 'one', collapsed: true })));

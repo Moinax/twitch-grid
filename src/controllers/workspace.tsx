@@ -1939,8 +1939,9 @@ export function startWorkspace(
       const tall = (width: number) => (width * 9) / 16 + bar; // a tile hugging a 16:9 video under its bar
       // The spotlight keeps the whole width, the small tiles in a strip under it, or the whole height, the small tiles
       // in a column beside it. They take the room it cannot use, less what an open chat asks for. Every column count
-      // is scored in both orientations, in the order the rules come: the widest spotlight first, then the most tiles
-      // on screen, then the fewest holes, then the least room left unused.
+      // is scored in both orientations, in the order the rules come: every tile on screen with a spotlight at least
+      // three quarters as wide as it can get, then the widest spotlight, then the most tiles on screen, then the fewest
+      // holes, then the least room left unused.
       const room = {
         below: box.height - tall(box.width) - (chat ? CHAT_BELOW : 0),
         beside:
@@ -1959,14 +1960,25 @@ export function startWorkspace(
         cols: number;
         tile: number;
         band: number;
+        video: number;
         rank: number[];
       };
       const plan = (below: boolean, cols: number): Plan | null => {
         const free = below ? room.below : room.beside;
-        // the strip spreads over the whole width; the column takes the room left, never narrower than a player's bar
+        // the strip spreads over the whole width; the column takes the room left, but no wider than lets every row
+        // fit in the height, and never narrower than a player's bar
         const tile = below
           ? (box.width - GAP * (cols - 1)) / cols
-          : Math.max(MIN_SMALL, free / cols);
+          : Math.max(
+              MIN_SMALL,
+              Math.min(
+                free / cols,
+                Math.floor(
+                  ((box.height + GAP) / Math.ceil(small / cols) - GAP - bar) *
+                    (16 / 9),
+                ),
+              ),
+            );
         if (tile < MIN_SMALL && cols > 1) return null;
         const step = tall(tile) + GAP,
           fits = below
@@ -1988,6 +2000,7 @@ export function startWorkspace(
           cols,
           tile,
           band,
+          video,
           rank: [
             Math.round(video),
             seen,
@@ -1996,20 +2009,25 @@ export function startWorkspace(
           ],
         };
       };
-      let best = plan(false, 1)!; // a single column always holds, however narrow the box
+      const plans: Plan[] = [];
       for (const below of [true, false])
         for (
           let cols = 1;
-          cols <=
-          Math.max(
-            1,
-            Math.floor((below ? box.width : room.beside) / MIN_SMALL),
-          );
+          cols <= Math.max(1, Math.floor(box.width / MIN_SMALL));
           cols++
         ) {
           const p = plan(below, cols);
-          if (p && outranks(p.rank, best.rank)) best = p;
-        }
+          if (p) plans.push(p);
+        } // a single column beside always holds, however narrow the box
+      // ponytail: a fixed quarter of the spotlight is what the small tiles may take to all show
+      const widest = Math.max(...plans.map((p) => p.video)),
+        score = (p: Plan) => [
+          +(p.rank[1] === small && p.video >= widest * 0.75),
+          ...p.rank,
+        ];
+      const best = plans.reduce((a, b) =>
+        outranks(score(b), score(a)) ? b : a,
+      );
       grid.classList.toggle("below", best.below);
       const bandRows = Math.max(Math.ceil(small / best.cols), 1);
       grid.style.setProperty("--cols", String(best.cols));
