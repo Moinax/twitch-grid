@@ -236,6 +236,7 @@ export const translations: Record<string, [string, string]> = {
     "Het laden van het voorbeeld duurt langer",
   ],
   "Afficher dans la grille": ["Show in grid", "In raster tonen"],
+  "Ajouté à la grille": ["Added to the grid", "Aan het raster toegevoegd"],
   "Fermer la notification": ["Dismiss notification", "Melding sluiten"],
   "Nouveaux streams en direct": ["New live streams", "Nieuwe livestreams"],
   "{name} est en direct": ["{name} is live", "{name} is live"],

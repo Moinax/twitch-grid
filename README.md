@@ -118,7 +118,7 @@ Visible pages refresh live status every 30 seconds and follows about every minut
 
 With the custom player, hovering a live channel opens a still preview after a short delay, then a muted video preview; holding Shift gives the card its sound, and releasing it mutes the card again while it stays under the pointer. With Twitch's embed the card opens only while Shift is held. The card follows movement between rows and fades on leaving. Playback failures and slow previews show status outside the iframe.
 
-A favorite or follow transitioning from offline to live triggers an in-page notification. Clicking it adds the stream with the grid's pause state, muted and without spotlight. Initial live channels do not trigger notifications. Notifications disappear when dismissed, when the channel goes offline or leaves the list, or when the account disconnects.
+A favorite or follow transitioning from offline to live triggers an in-page notification. Clicking it adds the stream with the grid's pause state, muted and without spotlight. On the Live follows grid, which takes the stream on its own, the notification says so and clicking it brings the stream into the spotlight. Initial live channels do not trigger notifications. Notifications disappear when dismissed, after 30 seconds untouched, when the channel goes offline or leaves the list, when another grid opens, or when the account disconnects.
 
 A playing channel that ends is removed after one minute unless it is spotlighted or the grid is locked. Returning live during that minute cancels removal. Channels initially added offline stay in place and wait for their stream.
 

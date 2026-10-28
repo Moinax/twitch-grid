@@ -1385,6 +1385,38 @@ for (const connected of [false, true]) test(`live notifications track transition
 });
 
 
+test('the Live follows grid tells which stream joined it, and the toast brings it in front', async ({ page }) => {
+  const errors = await setup(page, true); await api(page);
+  const online = new Set(['already']);
+  await page.route('https://api.twitch.tv/helix/channels/followed?**', route => route.fulfill({json:{
+    data:['already','newlive','later'].map(login=>({broadcaster_login:login,broadcaster_name:login})),pagination:{}
+  }}));
+  await page.route('https://api.twitch.tv/helix/streams?**', route => route.fulfill({json:{data:[...online].map(login => ({user_login:login,game_name:'Art',title:'A new stream',viewer_count:42}))}}));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('tg.session',JSON.stringify('valid'));
+    localStorage.setItem('tg.grids.connected',JSON.stringify({activeId:'live-follows',items:[{id:'default',layout:{order:[]}},{id:'live-follows',layout:{order:[],locked:true}}]}));
+  });
+  await page.goto('/');
+  await expect(page.locator('#grid .tile')).toHaveCount(1);
+  await expect(page.locator('.live-notification')).toHaveCount(0);   // the streams live at load stay quiet
+  online.add('newlive');
+  await page.evaluate(() => refresh());
+  await expect(page.locator('#grid .tile')).toHaveCount(2);   // the grid takes the stream on its own
+  const toast = page.locator('.live-notification[data-login="newlive"]');
+  await expect(toast.locator('small')).toHaveText('Ajouté à la grille');
+  await page.evaluate(() => refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(1);   // a refresh keeps it
+  await toast.locator('.watch').click();
+  await expect(page.locator('#grid [data-login="newlive"]')).toHaveClass(/big/);
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  online.add('later');
+  await page.evaluate(() => refresh());
+  await expect(page.locator('.live-notification')).toHaveCount(1);
+  await page.evaluate(() => switchNamedGrid('default'));   // the toast belongs to the grid it was raised in
+  await expect(page.locator('.live-notification')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 for (const gesture of ['background', 'button', 'keyboard']) test(`reload audio overlay resumes all requested sounds with ${gesture}`, async ({ page }) => {
   const errors=await setup(page); await page.clock.install();
   await page.setViewportSize({width:2560,height:1440});
@@ -2110,7 +2142,7 @@ test('live follows grid locks membership, plays at nine and removes offline tile
     lastLiveStatus.set('live0',false); updateLiveNotifications(follows);
     const t=tiles.get('live0'); t.channel.online=false; trackOnline(t,false);
   });
-  await expect(page.locator('.live-notification')).toHaveCount(0);
+  await expect(page.locator('.live-notification small')).toHaveText('Ajouté à la grille');   // the grid took the stream, the toast says so
   // Keep network polling from replacing the fixture during the grace period.
   await page.evaluate(() => { refreshInFlight=true; });
   await page.clock.fastForward(59000);

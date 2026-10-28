@@ -2,10 +2,12 @@ import type { Channel } from "../types/domain";
 import { tr } from "../services/preferences";
 export function LiveNotification({
   channel,
+  added,
   onWatch,
   onDismiss,
 }: {
   channel: Channel;
+  added: boolean; // the Live follows grid took the stream already
   onWatch: () => void;
   onDismiss: () => void;
 }) {
@@ -15,8 +17,10 @@ export function LiveNotification({
         <img alt="" src={channel.profileUrl} />
         <span>
           <b>{tr("{name} est en direct", { name: channel.display })}</b>
-          <small data-i18n="Afficher dans la grille">
-            {tr("Afficher dans la grille")}
+          <small
+            data-i18n={added ? "Ajouté à la grille" : "Afficher dans la grille"}
+          >
+            {tr(added ? "Ajouté à la grille" : "Afficher dans la grille")}
           </small>
         </span>
       </button>

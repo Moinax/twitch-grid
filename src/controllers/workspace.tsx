@@ -147,8 +147,6 @@ export function startWorkspace(
   }
   function syncLiveGrid() {
     if (!restored || !isLiveGrid()) return;
-    for (const login of liveNotifications.keys())
-      dismissLiveNotification(login);
     if (liveLayoutToRestore && !lastFollows) return; // Wait for the first verified list before restoring saved settings.
     const live = follows.filter((s) => s.online);
     batching = true;
@@ -2618,11 +2616,13 @@ export function startWorkspace(
       dismissLiveNotification(login);
       return;
     }
-    // The stream joins the grid, nothing more: no spotlight, no sound, and the pauses stay as they are.
+    // The stream joins the grid, nothing more: no spotlight, no sound, and the pauses stay as they are. The Live follows
+    // grid took it already: there the toast brings it in front instead.
     if (!tiles.has(login)) add(s);
     const t = tiles.get(login)!;
     if (!t) return;
     if (expanded) setExpanded(null); // an expanded tile would hide the newcomer
+    if (isLiveGrid() && focused !== login && tiles.size > 1) focus(login);
     if (innerWidth <= 700) document.body.classList.add("collapsed");
     dismissLiveNotification(login);
     renderList();
@@ -2636,7 +2636,6 @@ export function startWorkspace(
     pruneLiveNotifications(channels);
     for (const s of channels) {
       if (
-        !isLiveGrid() &&
         s.online &&
         lastLiveStatus.get(s.twitch) === false &&
         !liveNotifications.has(s.twitch)
@@ -2648,6 +2647,7 @@ export function startWorkspace(
           toast,
           <LiveNotification
             channel={s}
+            added={isLiveGrid()}
             onWatch={() => openLiveNotification(s.twitch)}
             onDismiss={() => dismissLiveNotification(s.twitch)}
           />,
@@ -3332,6 +3332,9 @@ export function startWorkspace(
   }
   function switchNamedGrid(id: string) {
     if (!gridStore || gridStore!.activeId === id || !restored) return;
+    // a toast speaks for the grid it was raised in: "join the grid" or "joined it"
+    for (const login of liveNotifications.keys())
+      dismissLiveNotification(login);
     saveCurrentLayout();
     restored = false;
     clearTiles();
