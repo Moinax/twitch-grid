@@ -12,7 +12,6 @@ export interface TwitchPlayer {
   getLatency?(): Latency;
   setLatency?(latency: Latency): void;
   setSoundLocked?(button: boolean, slider: boolean): void;
-  setSpotlight?(front: boolean, available: boolean): void;
   play(): void;
   pause(): void;
   destroy(): void;
@@ -31,7 +30,6 @@ export interface PlayerConstructor {
       latency?: Latency;
       onLatencyChange?: (latency: Latency) => void;
       onPlayerChange?: (mode: "embed" | "custom") => void;
-      onSpotlight?: () => void;
     },
   ): TwitchPlayer;
   READY: string;

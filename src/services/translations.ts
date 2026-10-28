@@ -10,10 +10,6 @@ export const translations: Record<string, [string, string]> = {
   "Latence globale": ["Global latency", "Algemene latentie"],
   "Latence spotlight": ["Spotlight latency", "Spotlight-latentie"],
   Résolution: ["Resolution", "Resolutie"],
-  "Revenir à la grille (SHIFT+CLICK)": [
-    "Back to the grid (SHIFT+CLICK)",
-    "Terug naar het raster (SHIFT+CLICK)",
-  ],
   "Résolution et latence": ["Resolution and latency", "Resolutie en latentie"],
   Stable: ["Stable", "Stabiel"],
   Faible: ["Low", "Laag"],

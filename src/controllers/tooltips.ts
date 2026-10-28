@@ -73,6 +73,8 @@ export function syncPlayerTooltips(
       if (tipTarget !== el || !el.isConnected) return;
       const side = el.closest("#side")?.getBoundingClientRect();
       const beside = !!el.closest("#list"); // a channel row's tooltip sits to its right, over the grid
+      // where the row's preview card opened, the card speaks for the row
+      if (beside && document.querySelector("#preview.in")) return;
       const contained =
         side && !beside && !document.body.classList.contains("collapsed");
       tooltip.style.maxWidth = contained

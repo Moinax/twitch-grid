@@ -1,6 +1,6 @@
 import { CollaborationMenu } from "./CollaborationMenu";
 import { StreamPoster } from "./StreamPoster";
-import type { PointerEventHandler } from "react";
+import type { MouseEvent, PointerEventHandler } from "react";
 import type { ChatPosition } from "../types/domain";
 interface Props {
   display: string;
@@ -12,6 +12,7 @@ interface Props {
   onVolume: (value: number) => void;
   onSound: () => void;
   onResume: () => void;
+  onPlayerClick: (event: MouseEvent<HTMLDivElement>) => void;
   onRemove: () => void;
   onChat: () => void;
   onChatPosition: (position: ChatPosition) => void;
@@ -32,6 +33,7 @@ export function StreamTile({
   onVolume,
   onSound,
   onResume,
+  onPlayerClick,
   onRemove,
   onChat,
   onChatPosition,
@@ -341,7 +343,7 @@ export function StreamTile({
               onSpotlight();
             }
           }}
-          onClick={onResume}
+          onClick={onPlayerClick}
           onDoubleClick={onPlayerFullscreen}
         >
           <div className="preview-cover">

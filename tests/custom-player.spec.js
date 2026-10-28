@@ -86,14 +86,6 @@ test("switches between embed and HLS while preserving tile settings", async ({
     .toBeGreaterThan(0);
   await expect(page.locator("#grid video")).toHaveJSProperty("volume", 0.3);
   // With no iframe to cover, the styled tooltips come back on every action, the player's own included.
-  await expect(page.locator("#grid .custom-spotlight")).toHaveAttribute(
-    "data-tip",
-    "Spotlight (SHIFT+CLICK)",
-  );
-  await expect(page.locator("#grid .custom-spotlight")).toHaveJSProperty(
-    "hidden",
-    false,
-  ); // a lone tile can be the spotlight too
   await expect(page.locator("#grid .custom-fullscreen")).toHaveAttribute(
     "data-tip",
     "Fullscreen",
@@ -188,6 +180,16 @@ test("custom mode starts without the Twitch SDK and survives reload", async ({
   await expect
     .poll(() => page.evaluate(() => tiles.get("example").volume))
     .toBe(0.4);
+  // a press anywhere on the thumb's height moves the thumb there, not only on the thin line
+  await page.locator("#grid video").hover();
+  const track = await page.locator("#grid .custom-volume").boundingBox();
+  await page.mouse.click(
+    track.x + 6 + 0.75 * 60, // the thumb's centre runs from 6px to 66px
+    track.y + track.height / 2 - 5, // above the line, still on the thumb
+  );
+  await expect
+    .poll(() => page.evaluate(() => tiles.get("example").volume))
+    .toBe(0.75);
   await page.locator("#grid video").hover();
   await page.locator("#grid .custom-pp").click();
   await expect
@@ -302,13 +304,13 @@ test("latency settings retune custom players in place and the spotlight follows 
       '#grid [data-login="example"] video',
     );
   });
-  await first.locator(".custom-spotlight").click();
+  await first.locator("video").click(); // a click on the video brings it in front
   await expect(first).toHaveClass(/big/);
   await expect.poll(() => config("example")).toEqual(low);
   expect((await config("second")).liveSyncDurationCount).not.toBe(2);
-  await first.locator("video").hover();
-  await first.locator(".custom-spotlight").click();
+  await first.locator(".bar .close").click(); // the spotlight's cross only sends it back
   await expect(first).not.toHaveClass(/big/);
+  await expect(page.locator("#grid .tile")).toHaveCount(2);
   await expect
     .poll(async () => (await config("example")).liveSyncDurationCount)
     .not.toBe(2);
@@ -399,9 +401,7 @@ test("custom players off screen are released until scrolled back in", async ({
       });
   });
   await page.keyboard.press("Control"); // nothing starts before the first gesture
-  await page
-    .locator('#grid [data-login="example"] .custom-spotlight')
-    .evaluate((button) => button.click());
+  await page.locator('#grid [data-login="example"] video').click();
   await expect(page.locator("#grid .big")).toHaveAttribute(
     "data-login",
     "example",
@@ -493,24 +493,22 @@ test("shortcut tooltips render keycaps and the collapsed toggle stays above GitH
       display: "Second",
     }),
   );
-  await page.locator('#grid [data-login="example"] video').hover();
-  await page.locator('#grid [data-login="example"] .custom-spotlight').hover();
-  await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "Click"]);
   await page.locator("#soundfollow").hover();
   await expect(page.locator("#tooltip kbd")).toHaveText(["Shift"]);
   await page.locator("#playall").hover();
   await expect(page.locator("#tooltip kbd")).toHaveText(["Space"]);
   await page.locator("#muteall").hover();
   await expect(page.locator("#tooltip kbd")).toHaveText(["Shift", "M"]);
-  // the avatar names its stream, and once the rail is collapsed it points at the Shift+click spotlight instead
-  await page.route("**/api/search?q=**", (route) =>
+  // the avatar names its stream, and once the rail is collapsed it points at the Shift+click spotlight instead; an
+  // offline row, since a live one opens its preview card in place of the tooltip
+  await page.route("**/api/search?**", (route) =>
     route.fulfill({
       json: {
         data: [
           {
             broadcaster_login: "example",
             display_name: "Example",
-            is_live: true,
+            is_live: false,
           },
         ],
       },
@@ -555,6 +553,47 @@ test("shortcut tooltips render keycaps and the collapsed toggle stays above GitH
   expect(errors).toEqual([]);
 });
 
+// The custom player previews a live row on a plain hover, quiet; Shift gives the card its sound, and takes it back.
+test("a plain hover previews a live channel without sound, Shift adds it", async ({
+  page,
+}) => {
+  const errors = await setup(page, "custom");
+  await page.route("**/api/search?q=**", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            broadcaster_login: "example",
+            display_name: "Example",
+            is_live: true,
+          },
+        ],
+      },
+    }),
+  );
+  await page.locator("#q").fill("example");
+  await page.locator('#list [data-login="example"] .favorite').click();
+  await page.locator("#q").fill("");
+  await page.locator("#q").blur(); // Shift is a shortcut only outside a text field
+  const row = page.locator('#list [data-login="example"] .channel'),
+    card = page.locator("#preview"),
+    muted = () => page.evaluate(() => previewPlayer?.getMuted() ?? null);
+  await page.mouse.move(900, 700);
+  await row.hover();
+  await expect(card).toBeVisible();
+  await expect(card.locator(".name")).toHaveText("Example");
+  await expect.poll(muted).toBe(true);
+  await page.waitForTimeout(500);
+  await expect(page.locator("#tooltip")).toBeHidden(); // the card speaks for the row
+  await page.keyboard.down("Shift");
+  await expect.poll(muted).toBe(false);
+  await page.keyboard.up("Shift");
+  await expect.poll(muted).toBe(true);
+  await expect(card).toBeVisible(); // still under the pointer, only quiet
+  await page.mouse.move(900, 700);
+  await expect(card).toBeHidden();
+  expect(errors).toEqual([]);
+});
 test("tile latency switches independently and global settings replace overrides", async ({
   page,
 }) => {
@@ -656,8 +695,7 @@ test("large tiles switch players independently and keep the return button after 
       display: "Second",
     }),
   );
-  await tile.locator("video").hover();
-  await tile.locator(".custom-spotlight").click();
+  await tile.locator("video").click();
   await page.evaluate(() => {
     window.otherPlayer = tiles.get("second").player;
   });

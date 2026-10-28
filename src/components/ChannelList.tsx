@@ -16,6 +16,7 @@ interface Props {
   onToggle: (channel: Channel, spotlight: boolean) => void;
   onFavorite: (channel: Channel) => void;
   onPreview: (row: HTMLLIElement) => void;
+  onHover: (row: HTMLLIElement, shift: boolean) => void;
   onLeavePreview: () => void;
 }
 function FavoriteIcon() {
@@ -66,6 +67,7 @@ export function ChannelList(props: Props) {
     onToggle,
     onFavorite,
     onPreview,
+    onHover,
     onLeavePreview,
   } = props;
   return (
@@ -98,9 +100,8 @@ export function ChannelList(props: Props) {
               (s.online == null && refreshing ? " pending" : "")
             }
             onPointerEnter={(e) => {
-              // the card only opens under a held Shift: a sweep down the list stays quiet
-              if (e.pointerType !== "touch" && e.shiftKey)
-                onPreview(e.currentTarget);
+              if (e.pointerType !== "touch")
+                onHover(e.currentTarget, e.shiftKey);
             }}
             onPointerLeave={onLeavePreview}
           >

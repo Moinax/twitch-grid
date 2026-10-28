@@ -220,6 +220,15 @@
 #grid:not(.single) .tile:where(:not(.big):not(:fullscreen)):hover .bar b {
   color: #fff;
 }
+/* a click on its video brings the tile in front; the controls over it keep their own cursor */
+#grid:not(.single)
+  .tile:where(:not(.big):not(.expanded):not(:fullscreen))
+  .player {
+  @apply cursor-pointer;
+}
+#grid .player .custom-controls {
+  @apply cursor-default;
+}
 /* Hit testing must find the tile underneath an iframe during a pointer drag. */
 body.dragging #grid iframe {
   @apply pointer-events-none;
@@ -732,17 +741,17 @@ body.dragging .tile.dragged .bar {
   @apply flex;
 }
 
-/* A thin track with a round thumb. */
+/* A thin track with a round thumb. The input is as tall as the thumb and paints the track as a centered line, so a
+   press anywhere on the thumb's height takes, and the thumb jumps to it. */
 .tile .volume input,
 #sound-board input {
   appearance: none;
   -webkit-appearance: none;
   writing-mode: horizontal-tb;
   direction: ltr;
-  @apply w-[72px] h-[3px];
+  @apply w-[72px] h-[12px];
   margin: 0 auto;
-  @apply rounded-[2px];
-  background: #ffffff33;
+  background: linear-gradient(#ffffff33, #ffffff33) center / 100% 3px no-repeat;
   @apply cursor-pointer;
 }
 .tile .volume input::-webkit-slider-thumb,
@@ -1169,11 +1178,6 @@ body.dragging .tile.dragged .bar {
 .tile .snd-wrap:hover .volume {
   visibility: visible;
   opacity: 1;
-}
-.tile .volume input {
-  writing-mode: horizontal-tb;
-  direction: ltr;
-  @apply w-[72px] h-[3px];
 }
 #grid {
   --cols: 1;
@@ -1667,19 +1671,16 @@ body.collapsed #list-empty {
     .tile:not(.pointer-idle) .player:hover .custom-controls,
     .custom-controls:is(:hover, :focus-within, :has(.custom-quality[open]))
   ):not(.muted)
-  .custom-sound,
-.custom-spotlight[aria-pressed="true"] {
+  .custom-sound {
   color: var(--accent);
-}
-.custom-spotlight[hidden] {
-  @apply hidden;
 }
 .custom-volume {
   appearance: none;
   -webkit-appearance: none;
-  @apply w-[72px] h-[3px] mx-[4px];
-  @apply rounded-[2px];
-  background: color-mix(in srgb, var(--dim) 45%, transparent);
+  @apply w-[72px] h-[12px] mx-[4px];
+  --track: color-mix(in srgb, var(--dim) 45%, transparent);
+  background: linear-gradient(var(--track), var(--track)) center / 100% 3px
+    no-repeat; /* the thin line in a thumb-tall input, as in the header */
   @apply cursor-pointer;
 }
 .custom-volume::-webkit-slider-thumb {

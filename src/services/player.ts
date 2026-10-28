@@ -36,7 +36,6 @@ export class CustomPlayer implements TwitchPlayer {
   private latencies = document.createElement("div");
   private slider = document.createElement("input");
   private soundButton: HTMLButtonElement;
-  private spotlightButton: HTMLButtonElement;
   private disposeZoom: () => void;
 
   constructor(element: HTMLElement, options: Options) {
@@ -197,15 +196,6 @@ export class CustomPlayer implements TwitchPlayer {
     video.addEventListener("resize", () =>
       this.paintQuality(video.videoHeight),
     );
-    // The spotlight lives here too: the tile header keeps the rest.
-    const spotlight = (this.spotlightButton = button(
-      "spotlight",
-      "Spotlight (SHIFT+CLICK)",
-      '<rect x="3" y="5" width="12" height="14" rx="1"/><rect x="17" y="5" width="4" height="6" rx="1"/><rect x="17" y="13" width="4" height="6" rx="1"/>',
-      () => options.onSpotlight?.(),
-    ));
-    spotlight.setAttribute("aria-pressed", "false");
-    spotlight.hidden = !options.onSpotlight;
     // Fullscreen the whole tile, so its bar keeps offering the chat and the rest.
     const fullscreen = button(
       "fullscreen",
@@ -226,7 +216,7 @@ export class CustomPlayer implements TwitchPlayer {
     this.bar.append(
       fold(playPause),
       sound,
-      fold(this.slider, spotlight, fullscreen),
+      fold(this.slider, fullscreen),
       this.qualityMenu,
     );
     element.append(video, this.error);
@@ -428,17 +418,6 @@ export class CustomPlayer implements TwitchPlayer {
       );
     if (this.hls)
       Object.assign(this.hls.config, CustomPlayer.latencyConfig(latency));
-  }
-  setSpotlight(front: boolean, available: boolean) {
-    const key = front
-      ? "Revenir à la grille (SHIFT+CLICK)"
-      : "Spotlight (SHIFT+CLICK)";
-    this.spotlightButton.title = tr(key);
-    this.spotlightButton.dataset.i18nTitle = key;
-    this.spotlightButton.setAttribute("aria-label", tr(key));
-    this.spotlightButton.dataset.i18nAriaLabel = key;
-    this.spotlightButton.setAttribute("aria-pressed", String(front));
-    this.spotlightButton.hidden = !available;
   }
   setSoundLocked(button: boolean, slider: boolean) {
     this.soundButton.disabled = button;

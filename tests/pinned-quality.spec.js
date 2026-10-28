@@ -143,9 +143,7 @@ test("the cap follows the tile across the spotlight", async ({ page }) => {
       login,
     );
   const spotlight = (login) =>
-    page
-      .locator(`#grid [data-login="${login}"] .custom-spotlight`)
-      .evaluate((button) => button.click());
+    page.locator(`#grid [data-login="${login}"] video`).click();
   await spotlight("example");
   await expect.poll(() => cap("example")).toBe(1); // 1080p
   await expect.poll(() => cap("second")).toBe(0); // 360p in the strip

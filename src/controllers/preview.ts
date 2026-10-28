@@ -217,14 +217,34 @@ export function createPreviewController({
       previewMessage.hidden = false;
     }, 12000);
   }
-  function queuePreview(row: HTMLLIElement) {
+  // Shift opens the card at once. A plain hover waits, so a pointer sweeping down the list does not flash a card per
+  // row; once a card is open it follows the pointer at once.
+  function queuePreview(row: HTMLLIElement, wait = false) {
     clearTimeout(previewCloseTimer);
     if (previewRow === row && !preview.hidden) {
       resumePreview();
       return;
     }
+    const open = preview.classList.contains("in");
     hidePreview();
-    showPreview(row);
+    if (open || !wait) showPreview(row);
+    else
+      previewTimer = setTimeout(
+        () =>
+          showPreview(
+            list.querySelector<HTMLLIElement>(
+              `[data-login="${CSS.escape(row.dataset.login!)}"]`,
+            ) || row,
+          ),
+        250,
+      ); // the list may have re-rendered meanwhile
+  }
+  // Shift pressed or released over an open card gives it the sound or takes it back.
+  function syncPreviewSound() {
+    if (!previewPlayer || !previewReady) return; // the ready player reads audible() itself
+    const on = audible();
+    previewPlayer.setMuted(!on);
+    if (on && !previewPlayer.getVolume()) previewPlayer.setVolume(1);
   }
   function leavePreview() {
     clearTimeout(previewTimer);
@@ -271,6 +291,7 @@ export function createPreviewController({
     previewInfo,
     queuePreview,
     leavePreview,
+    syncPreviewSound,
     get row() {
       return previewRow;
     },

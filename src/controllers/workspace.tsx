@@ -82,7 +82,8 @@ export function startWorkspace(
     dragging: string | null = null,
     allPaused = false,
     restored = false,
-    layoutMode: AccountMode | null = null;
+    layoutMode: AccountMode | null = null,
+    spotlightClick: ReturnType<typeof setTimeout> | undefined;
   const collaborations = new Map<string, Collaboration>();
 
   // everything needed to come back to the same screen: tile order, zoom, global pause, sidebar, per-tile mute
@@ -881,7 +882,11 @@ export function startWorkspace(
     side: $("#side"),
     list,
     getChannels: () => streamers,
-    audible: () => !!soundFollow && !mutedAll,
+    // only a held Shift gives the card its sound, a plain hover keeps it quiet
+    audible: () =>
+      document.body.classList.contains("shift-spotlight") &&
+      !!soundFollow &&
+      !mutedAll,
     lifecycle,
   });
   const {
@@ -891,6 +896,7 @@ export function startWorkspace(
     previewInfo,
     queuePreview,
     leavePreview,
+    syncPreviewSound,
   } = previewController;
   // The sidebar spotlight works like Twitch: a lone tile gives its place to the newcomer, a grid keeps its tiles and
   // puts the newcomer in front.
@@ -1008,6 +1014,13 @@ export function startWorkspace(
     const el = document.createElement("div");
     el.className = "tile loading";
     el.dataset.login = s.twitch;
+    const resume = () => {
+      if (allPaused || tilePaused(t)) {
+        resumeTile(t);
+        sync(t);
+        save();
+      }
+    };
     const togglePause = () => {
       if (t.channel.online === false) return;
       t.nativeHold = false;
@@ -1033,19 +1046,40 @@ export function startWorkspace(
         onPause={togglePause}
         onPlayerToggle={() => togglePlayer(t)}
         onPlayerFullscreen={() => {
+          clearTimeout(spotlightClick);
           if (document.fullscreenElement) void document.exitFullscreen();
           else void t.el.requestFullscreen();
         }}
         onVolume={(value) => setVolume(t, value)}
         onSound={() => toggleSound(t)}
-        onResume={() => {
-          if (allPaused || tilePaused(t)) {
-            resumeTile(t);
-            sync(t);
-            save();
-          }
+        onResume={resume}
+        onPlayerClick={(event) => {
+          clearTimeout(spotlightClick);
+          if (allPaused || tilePaused(t)) return resume();
+          // A click on the video brings it in front, once the double click that goes fullscreen is ruled out: the
+          // spotlight moves the tile, the second click would land on another one.
+          if (
+            event.detail > 1 ||
+            focused === s.twitch ||
+            expanded ||
+            tiles.size < 2 ||
+            document.fullscreenElement
+          )
+            return;
+          spotlightClick = setTimeout(() => {
+            // an expand or a fullscreen asked meanwhile wins
+            if (
+              tiles.get(s.twitch) === t &&
+              focused !== s.twitch &&
+              !expanded &&
+              !document.fullscreenElement
+            )
+              focus(s.twitch);
+          }, 250);
         }}
         onRemove={() => {
+          // the spotlight's cross only sends it back to the grid; a lone tile has no grid to go back to
+          if (focused === s.twitch && tiles.size > 1) return focus(s.twitch);
           if (isLiveGrid()) return;
           remove(s.twitch);
           renderList();
@@ -1121,7 +1155,7 @@ export function startWorkspace(
     vol.value = String(volume);
     // one button, two states: a sound turned on here stays on until turned off here
     const bar = el.querySelector<HTMLDivElement>(".bar")!;
-    // A click on a paused still resumes it. The spotlight belongs to its header button alone.
+    // A click on a paused still resumes it.
     // The bar drags to reorder; a press on the volume slider must move the thumb, not the tile: the bar stops being
     // draggable while the pointer is on the slider, whatever the browser makes of a drag started inside an input.
     // Capture the pointer before it crosses an iframe. Native cross-document drops
@@ -1437,9 +1471,6 @@ export function startWorkspace(
       },
       onPlayerChange: (mode) => {
         if (t.player === player) setPlayerMode(t, mode);
-      },
-      onSpotlight: () => {
-        if (t.player === player) focus(t.el.dataset.login!);
       },
     });
     t.player = player;
@@ -1784,7 +1815,6 @@ export function startWorkspace(
     spot.title = `${tr(front ? "Revenir à la grille" : "Spotlight")} (SHIFT+CLICK)`;
     spot.setAttribute("aria-label", spot.title);
     spot.setAttribute("aria-pressed", String(front));
-    t.player?.setSpotlight?.(front, true);
     paintSound(t);
   }
   // Saved intent survives reloads; the icon reports whether the current player is actually unmuted.
@@ -1920,7 +1950,11 @@ export function startWorkspace(
         front(login) ? frontOrder.indexOf(login) : order.indexOf(login),
       );
       t.ppIcon();
-      t.bar.querySelector<HTMLButtonElement>(".close")!.disabled = isLiveGrid();
+      const close = t.bar.querySelector<HTMLButtonElement>(".close")!;
+      close.disabled = isLiveGrid() && !(split && front(login));
+      close.dataset.i18nTitle =
+        split && front(login) ? "Revenir à la grille" : "Retirer";
+      close.title = tr(close.dataset.i18nTitle);
       sync(t);
       t.bar.draggable = canDrag(login);
     }
@@ -2757,6 +2791,11 @@ export function startWorkspace(
         }}
         onFavorite={toggleFavorite}
         onPreview={queuePreview}
+        onHover={(row, shift) => {
+          // the custom player previews on a plain hover too, quiet; the embed waits for Shift
+          if (shift) queuePreview(row);
+          else if (preferences.player === "custom") queuePreview(row, true);
+        }}
         onLeavePreview={leavePreview}
       />,
     );
@@ -3662,13 +3701,22 @@ export function startWorkspace(
       // a row already under the pointer gets its preview card as soon as Shift goes down
       const row = list.querySelector<HTMLLIElement>("li:hover");
       if (row) queuePreview(row);
+      syncPreviewSound();
     });
     const releaseShiftFollow = () => {
       document.body.classList.remove("shift-spotlight");
-      hidePreview(); // the sidebar card lives only while Shift is held
-      if (!shiftStartedFollow) return;
-      shiftStartedFollow = false;
-      if (soundFollow) actions.toggleSoundFollow?.();
+      if (shiftStartedFollow) {
+        shiftStartedFollow = false;
+        if (soundFollow) actions.toggleSoundFollow?.();
+      }
+      // the embed's card lives only while Shift is held; the custom player's stays under the pointer, quiet
+      if (
+        preferences.player === "custom" &&
+        (list.querySelector("li:hover") || preview.matches(":hover")) &&
+        !document.hidden
+      )
+        syncPreviewSound();
+      else hidePreview();
     };
     listenDocument("keyup", (e) => {
       if (e.key === "Shift" && !e.shiftKey) releaseShiftFollow();

@@ -440,6 +440,10 @@ test('removing the second tile keeps a saved spotlight without recreating the re
   await expect(page.locator('#grid .spotlight')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => tiles.get('one').player === window.singlePlayer)).toBe(true);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('tg.layout.guest')).focused)).toBe('one');
+  // a lone spotlight has no grid to go back to: its cross removes it at once
+  await expect(page.locator('#grid [data-login="one"] .close')).toHaveAttribute('aria-label', 'Retirer');
+  await page.locator('#grid [data-login="one"] .close').click();
+  await expect(page.locator('#grid .tile')).toHaveCount(0);
 });
 test('the spotlight button and a click on a small tile bring one stream in front with the sound', async ({ page }) => {
   const errors = await setup(page); await page.goto('/');
@@ -477,8 +481,12 @@ test('the spotlight button and a click on a small tile bring one stream in front
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => ({ focused, muted: [...tiles.values()].map(t => t.muted) }))).toEqual({ focused: null, muted: [true, true, true, true] });
   await expect(page.locator('#grid .tile iframe[data-controls="false"]')).toHaveCount(4);
-  // removing the spotlight itself clears the front
+  // the spotlight's cross only sends it back to the grid; once there, the cross removes it
   await one.hover(); await one.locator('.spotlight').click();
+  await expect(one.locator('.close')).toHaveAttribute('aria-label', 'Revenir à la grille');
+  await one.locator('.close').click();
+  expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: null, count: 4 });
+  await expect(one.locator('.close')).toHaveAttribute('aria-label', 'Retirer');
   await one.locator('.close').click();
   expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: null, count: 3 });
   expect(errors).toEqual([]);
@@ -866,24 +874,29 @@ test('clearing empties an unlocked grid and stays out of reach otherwise', async
   await expect(page.locator('#grid .tile')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
-test('a miniature plays and pauses on click and fullscreens on double click', async ({ page }) => {
+test('a miniature comes in front or resumes on click and fullscreens on double click', async ({ page }) => {
   const errors = await setup(page);
   await page.route('**/api/search?**', r => r.fulfill({ json: { data: ['one', 'two'].map(broadcaster_login => ({ broadcaster_login, is_live: true })) } }));
   await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'] })));
   await page.goto('/');
   const tile = page.locator('#grid [data-login="two"]'), player = tile.locator('.player');
   await expect(tile).not.toHaveClass(/full-player/);
-  await player.click();   // the surface only resumes: a playing tile stays as it is
+  await player.click();   // a playing tile comes in front, and its cross only sends it back
+  await expect.poll(() => page.evaluate(() => focused)).toBe('two');
   await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'false');
+  await tile.locator('.bar .close').click();
+  expect(await page.evaluate(() => ({ focused, count: tiles.size }))).toEqual({ focused: null, count: 2 });
   await tile.hover(); await tile.locator('.bar .pp').click();
   await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => tiles.get('two').paused)).toBe(true);
-  await player.click();
+  await player.click();   // a paused tile only resumes
   await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'false');
-  // the double click fullscreens the tile instead of toggling playback twice
+  // the double click fullscreens the tile instead of toggling playback twice, or bringing it in front
   await player.dblclick();
   await expect.poll(() => page.evaluate(() => document.fullscreenElement?.dataset.login)).toBe('two');
   await expect(tile.locator('.bar .pp')).toHaveAttribute('aria-pressed', 'false');
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => focused)).toBeNull();
   await player.dblclick();
   await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   expect(errors).toEqual([]);
