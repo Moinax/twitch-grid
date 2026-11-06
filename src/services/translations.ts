@@ -140,6 +140,13 @@ export const translations: Record<string, [string, string]> = {
     "Spotlight chat position",
     "Chatpositie in spotlight",
   ],
+  "Position des tuiles en spotlight": [
+    "Spotlight tiles position",
+    "Tegelpositie in spotlight",
+  ],
+  "Position des tuiles": ["Tiles position", "Tegelpositie"],
+  "Redimensionner les tuiles": ["Resize the tiles", "Tegelgrootte aanpassen"],
+  "Taille auto": ["Auto size", "Automatische grootte"],
   Actif: ["On", "Aan"],
   Inactif: ["Off", "Uit"],
   "Position du chat": ["Chat position", "Chatpositie"],

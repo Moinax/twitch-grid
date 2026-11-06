@@ -90,6 +90,31 @@ export function SettingsDialog({ actions }: { actions: WorkspaceActions }) {
           </select>
         </label>
         <label>
+          <span data-i18n="Position des tuiles en spotlight">
+            Spotlight tiles position
+          </span>
+          <select
+            id="spotlight-tiles-setting"
+            onChange={(e) => actions.setSpotlightTiles?.(e.currentTarget.value)}
+          >
+            <option value="auto" data-i18n="Auto">
+              Auto
+            </option>
+            <option value="top" data-i18n="Top">
+              Top
+            </option>
+            <option value="bottom" data-i18n="Bottom">
+              Bottom
+            </option>
+            <option value="left" data-i18n="Left">
+              Left
+            </option>
+            <option value="right" data-i18n="Right">
+              Right
+            </option>
+          </select>
+        </label>
+        <label>
           <span data-i18n="Langue">Langue</span>
           <select
             id="language-setting"

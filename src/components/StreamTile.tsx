@@ -2,6 +2,13 @@ import { CollaborationMenu } from "./CollaborationMenu";
 import { StreamPoster } from "./StreamPoster";
 import type { MouseEvent, PointerEventHandler } from "react";
 import type { ChatPosition } from "../types/domain";
+const TILE_POSITIONS: [ChatPosition, string, number[] | null][] = [
+  ["top", "Top", [0, 0, 36, 8]],
+  ["left", "Left", [0, 0, 11, 24]],
+  ["auto", "Auto", null],
+  ["right", "Right", [25, 0, 11, 24]],
+  ["bottom", "Bottom", [0, 16, 36, 8]],
+];
 interface Props {
   display: string;
   onSpotlight: () => void;
@@ -16,7 +23,9 @@ interface Props {
   onRemove: () => void;
   onChat: () => void;
   onChatPosition: (position: ChatPosition) => void;
-  onChatMenu: (menu: HTMLDetailsElement) => void;
+  onTileMenu: (menu: HTMLDetailsElement) => void;
+  onTilesPosition: (position: ChatPosition) => void;
+  onTilesSizeReset: () => void;
   onVolumeEnter: () => void;
   onVolumeLeave: () => void;
   onPointerDown: PointerEventHandler<HTMLDivElement>;
@@ -37,7 +46,9 @@ export function StreamTile({
   onRemove,
   onChat,
   onChatPosition,
-  onChatMenu,
+  onTileMenu,
+  onTilesPosition,
+  onTilesSizeReset,
   onVolumeEnter,
   onVolumeLeave,
   onPointerDown,
@@ -122,7 +133,7 @@ export function StreamTile({
               e.preventDefault();
               e.stopPropagation();
             }}
-            onToggle={(e) => onChatMenu(e.currentTarget)}
+            onToggle={(e) => onTileMenu(e.currentTarget)}
             hidden
           >
             <summary
@@ -173,6 +184,104 @@ export function StreamTile({
               <a target="_blank" rel="noopener" data-i18n="Ouvrir sur Twitch ↗">
                 Ouvrir sur Twitch ↗
               </a>
+            </div>
+          </details>
+          <details
+            className="tiles-options"
+            onClick={(e) => e.stopPropagation()}
+            onDragStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onToggle={(e) => onTileMenu(e.currentTarget)}
+          >
+            <summary
+              title="Position des tuiles"
+              data-i18n-title="Position des tuiles"
+              aria-label="Position des tuiles"
+              data-i18n-aria-label="Position des tuiles"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M3 15h18M9 15v5M15 15v5" />
+              </svg>
+            </summary>
+            <div className="chat-menu tiles-menu">
+              <span data-i18n="Position des tuiles">Position des tuiles</span>
+              <div className="tiles-picker">
+                {TILE_POSITIONS.map(([position, label, zone]) => (
+                  <button
+                    key={position}
+                    data-tiles-position={position}
+                    title={label}
+                    data-i18n-title={label}
+                    aria-label={label}
+                    data-i18n-aria-label={label}
+                    aria-pressed="false"
+                    style={{
+                      gridArea: position === "auto" ? "center" : position,
+                    }}
+                    onClick={() => onTilesPosition(position)}
+                  >
+                    <svg
+                      viewBox="0 0 36 24"
+                      width="36"
+                      height="24"
+                      aria-hidden="true"
+                    >
+                      <rect
+                        x=".5"
+                        y=".5"
+                        width="35"
+                        height="23"
+                        rx="2"
+                        fill="none"
+                        stroke="currentColor"
+                        opacity=".55"
+                      />
+                      {zone ? (
+                        <rect
+                          x={zone[0]}
+                          y={zone[1]}
+                          width={zone[2]}
+                          height={zone[3]}
+                          fill="currentColor"
+                          opacity=".75"
+                        />
+                      ) : (
+                        <text
+                          x="18"
+                          y="16"
+                          textAnchor="middle"
+                          fontSize="10"
+                          fontWeight="600"
+                          fill="currentColor"
+                        >
+                          Auto
+                        </text>
+                      )}
+                    </svg>
+                  </button>
+                ))}
+              </div>
+              <button
+                className="tiles-size-reset"
+                hidden
+                data-i18n="Taille auto"
+                onClick={onTilesSizeReset}
+              >
+                Taille auto
+              </button>
             </div>
           </details>
           <button

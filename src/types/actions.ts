@@ -18,6 +18,7 @@ export interface WorkspaceActions {
   setPlayer?: (value: string) => void;
   setSpotlightChat?: (value: string) => void;
   setSpotlightChatPosition?: (value: string) => void;
+  setSpotlightTiles?: (value: string) => void;
   setLatency?: (value: string) => void;
   setSpotlightLatency?: (value: string) => void;
   setListOrder?: (value: string) => void;

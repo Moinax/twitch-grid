@@ -870,7 +870,20 @@ body.dragging .tile.dragged .bar {
   margin-left: -8px;
   @apply cursor-default;
 }
-.chat-options summary {
+.tiles-options {
+  display: none;
+  flex: none;
+  @apply relative cursor-default;
+}
+#grid.focused .tile.big .tiles-options {
+  display: block;
+}
+/* an open menu paints over the divider */
+#grid.focused .tile.big:not(.expanded):has(details[open]) {
+  z-index: 7;
+}
+.chat-options summary,
+.tiles-options summary {
   @apply flex items-center;
   @apply justify-center w-[22px];
   @apply h-[28px] rounded-[4px];
@@ -885,11 +898,14 @@ body.dragging .tile.dragged .bar {
 .chat-options[open] summary svg {
   transform: rotate(180deg);
 }
-.chat-options summary::-webkit-details-marker {
+.chat-options summary::-webkit-details-marker,
+.tiles-options summary::-webkit-details-marker {
   @apply hidden;
 }
 .chat-options summary:hover,
-.chat-options[open] summary {
+.chat-options[open] summary,
+.tiles-options summary:hover,
+.tiles-options[open] summary {
   background: #ffffff26;
 }
 .chat-menu {
@@ -939,6 +955,51 @@ body.dragging .tile.dragged .bar {
 }
 .chat-menu a:hover {
   background: #ffffff0a;
+}
+.tiles-menu {
+  @apply w-[168px];
+}
+.tiles-menu > span {
+  @apply block;
+  padding: 4px 4px 8px;
+}
+.tiles-picker {
+  @apply grid gap-[4px];
+  grid-template-areas:
+    ". top ."
+    "left center right"
+    ". bottom .";
+  padding: 0 4px 4px;
+}
+.tile .bar .tiles-picker button {
+  @apply grid place-items-center w-full h-auto rounded-[4px] cursor-pointer;
+  padding: 3px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--dim);
+}
+.tile .bar .tiles-picker button:hover {
+  border-color: var(--dim);
+  color: var(--fg);
+}
+.tile .bar .tiles-picker button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.tile .bar .tiles-size-reset {
+  @apply block w-full h-auto cursor-pointer;
+  margin-top: 4px;
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+.tile .bar .tiles-size-reset[hidden] {
+  @apply hidden;
 }
 .collaboration {
   flex: none;
@@ -1199,6 +1260,17 @@ body.dragging .tile.dragged .bar {
   grid-column: 1 / -1;
   grid-row: 1;
 } /* portrait: holds the first row, the small tiles flow underneath */
+#grid.focused[data-tiles-side="left"]::before {
+  grid-column: -2 / -1;
+  grid-row: 1 / -1;
+} /* tiles on the left: holds the last column */
+#grid.focused[data-tiles-side="top"] {
+  align-content: safe end; /* room to spare stays above the strip, which keeps to the spotlight */
+}
+#grid.focused[data-tiles-side="top"]::before {
+  grid-column: 1 / -1;
+  grid-row: -2 / -1;
+} /* tiles on top: holds the last row, so the last tiles can scroll clear of the spotlight */
 #grid.focused .tile.big {
   @apply fixed;
   left: var(--x);
@@ -1444,7 +1516,8 @@ body.collapsed #list-empty {
     width: auto;
   }
   /* the menu hangs from the bar, not from its button, so a full row of controls cannot push it off the screen */
-  .chat-options {
+  .chat-options,
+  .tiles-options {
     @apply static;
   }
 }
@@ -1855,6 +1928,41 @@ body.collapsed #list-empty {
 }
 .tile-body[data-chat-position] > .chat-resize {
   display: block;
+}
+/* the divider between the spotlight and the small tiles: above both, and placed by layout() */
+.spotlight-resize {
+  position: fixed;
+  z-index: 6;
+  cursor: col-resize;
+}
+#grid.focused ~ .spotlight-resize {
+  display: block;
+}
+/* out of reach under an expanded tile, the keyboard included */
+#grid.focused:has(.tile.expanded) ~ .spotlight-resize {
+  display: none;
+}
+body.dragging .spotlight-resize {
+  pointer-events: none;
+}
+.spotlight-resize[aria-orientation="horizontal"] {
+  cursor: row-resize;
+}
+.chat-resize.spotlight-resize::after {
+  width: 6px; /* the width of its gutter: wider, it would cover the videos beside it */
+}
+.spotlight-resize[aria-orientation="horizontal"]::before {
+  top: 0;
+  width: 100%;
+  height: 2px;
+  transform: translateX(-50%);
+}
+.spotlight-resize[aria-orientation="horizontal"]::after {
+  top: 0;
+  width: 36px;
+  height: 8px;
+  background-size: 16px 2px;
+  transform: translateX(-50%);
 }
 .chat-resize::before,
 .chat-resize::after {

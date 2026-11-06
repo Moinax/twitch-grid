@@ -1,8 +1,29 @@
 import type { Tile } from "../types/player";
 import { layoutChat } from "./videoLayout";
 
-export function setupChatResize(tile: Tile, save: () => void) {
-  const handle = tile.body.querySelector<HTMLElement>(".chat-resize")!;
+const isHorizontal = (position: string) =>
+  position === "left" || position === "right";
+
+const DRAG_THRESHOLD = 3; // a press that barely moves is a click, not a resize
+
+// A panel docked on one side of a box, resized by dragging its edge or with the arrows; Home and End jump to the
+// handle's aria-valuemin and aria-valuemax.
+export function setupResizeHandle(
+  handle: HTMLElement,
+  {
+    position,
+    measure,
+    resize,
+    dragging,
+    save,
+  }: {
+    position: () => string | undefined;
+    measure: (position: string) => { size: number; extent: number };
+    resize: (position: string, fraction: number, pointer: boolean) => void;
+    dragging: (active: boolean) => void;
+    save: () => void;
+  },
+) {
   let drag:
     | {
         id: number;
@@ -10,62 +31,53 @@ export function setupChatResize(tile: Tile, save: () => void) {
         size: number;
         extent: number;
         position: string;
+        moved: boolean;
       }
     | undefined;
-  const horizontal = (position: string) =>
-    position === "left" || position === "right";
-  const update = (position: string, fraction: number) => {
-    tile.chatSize = {
-      ...tile.chatSize,
-      [horizontal(position) ? "horizontal" : "vertical"]: Math.min(
-        0.9,
-        Math.max(0.1, fraction),
-      ),
-    };
-    layoutChat(tile);
-  };
   handle.addEventListener("pointerdown", (event) => {
-    const position = tile.body.dataset.chatPosition;
-    if (event.button !== 0 || !position) return;
+    const side = position();
+    if (event.button !== 0 || !side) return;
     event.preventDefault();
-    const bounds = tile.body.getBoundingClientRect();
-    const chat = tile.chat.getBoundingClientRect();
     drag = {
       id: event.pointerId,
-      start: horizontal(position) ? event.clientX : event.clientY,
-      size: horizontal(position) ? chat.width : chat.height,
-      extent: horizontal(position) ? bounds.width : bounds.height,
-      position,
+      start: isHorizontal(side) ? event.clientX : event.clientY,
+      position: side,
+      moved: false,
+      ...measure(side),
     };
     handle.setPointerCapture(event.pointerId);
     handle.focus({ preventScroll: true });
-    tile.body.classList.add("resizing-chat");
+    dragging(true);
   });
   handle.addEventListener("pointermove", (event) => {
     if (!drag || event.pointerId !== drag.id) return;
-    if (tile.body.dataset.chatPosition !== drag.position) {
+    if (position() !== drag.position) {
       handle.releasePointerCapture(drag.id);
       return;
     }
-    const coordinate = horizontal(drag.position)
+    const coordinate = isHorizontal(drag.position)
       ? event.clientX
       : event.clientY;
+    if (!drag.moved && Math.abs(coordinate - drag.start) < DRAG_THRESHOLD)
+      return;
+    drag.moved = true;
     const sign = drag.position === "left" || drag.position === "top" ? 1 : -1;
-    update(
+    resize(
       drag.position,
       (drag.size + sign * (coordinate - drag.start)) / drag.extent,
+      true,
     );
   });
   handle.addEventListener("lostpointercapture", () => {
     if (!drag) return;
     drag = undefined;
-    tile.body.classList.remove("resizing-chat");
+    dragging(false);
     save();
   });
   handle.addEventListener("keydown", (event) => {
-    const position = tile.body.dataset.chatPosition;
-    if (!position) return;
-    const keys = horizontal(position)
+    const side = position();
+    if (!side) return;
+    const keys = isHorizontal(side)
       ? ["ArrowLeft", "ArrowRight"]
       : ["ArrowUp", "ArrowDown"];
     if (
@@ -76,16 +88,43 @@ export function setupChatResize(tile: Tile, save: () => void) {
       return;
     event.preventDefault();
     event.stopPropagation();
-    const sign = position === "left" || position === "top" ? 1 : -1;
-    const current = Number(handle.getAttribute("aria-valuenow")) / 100;
-    update(
-      position,
+    const sign = side === "left" || side === "top" ? 1 : -1;
+    const percent = (name: string) => Number(handle.getAttribute(name)) / 100;
+    resize(
+      side,
       event.key === "Home"
-        ? 0.1
+        ? percent("aria-valuemin")
         : event.key === "End"
-          ? 0.9
-          : current + (event.key === keys[1] ? 0.02 : -0.02) * sign,
+          ? percent("aria-valuemax")
+          : percent("aria-valuenow") +
+            (event.key === keys[1] ? 0.02 : -0.02) * sign,
+      false,
     );
     save();
+  });
+}
+
+export function setupChatResize(tile: Tile, save: () => void) {
+  setupResizeHandle(tile.body.querySelector<HTMLElement>(".chat-resize")!, {
+    position: () => tile.body.dataset.chatPosition,
+    measure: (position) => {
+      const bounds = tile.body.getBoundingClientRect();
+      const chat = tile.chat.getBoundingClientRect();
+      return isHorizontal(position)
+        ? { size: chat.width, extent: bounds.width }
+        : { size: chat.height, extent: bounds.height };
+    },
+    resize: (position, fraction) => {
+      tile.chatSize = {
+        ...tile.chatSize,
+        [isHorizontal(position) ? "horizontal" : "vertical"]: Math.min(
+          0.9,
+          Math.max(0.1, fraction),
+        ),
+      };
+      layoutChat(tile);
+    },
+    dragging: (active) => tile.body.classList.toggle("resizing-chat", active),
+    save,
   });
 }

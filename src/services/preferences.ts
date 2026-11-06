@@ -1,22 +1,25 @@
 import { translations } from "./translations";
 
-import type { Preferences } from "../types/domain";
+import type { ChatPosition, Preferences } from "../types/domain";
 let stored: Partial<Preferences>;
 try {
   stored = JSON.parse(localStorage.getItem("tg.preferences") || "{}") || {};
 } catch {
   stored = {};
 }
+const POSITIONS = ["auto", "top", "bottom", "left", "right"];
 const preferenceValues = {
   language: ["fr", "en", "nl"],
   player: ["embed", "custom"],
   latency: ["stable", "low"],
   spotlightLatency: ["stable", "low"],
   spotlightChat: ["on", "off"],
-  spotlightChatPosition: ["auto", "top", "bottom", "left", "right"],
+  spotlightChatPosition: POSITIONS,
   listOrder: ["popular", "watched", "recent"],
   theme: ["system", "light", "dark"],
 };
+const storedFraction = (value: unknown) =>
+  typeof value === "number" && value > 0 && value < 1 ? value : undefined;
 const preferences: Preferences = {
   player: stored.player === "embed" ? "embed" : "custom",
   latency: stored.latency === "low" ? "low" : "stable",
@@ -29,6 +32,14 @@ const preferences: Preferences = {
     )
       ? stored.spotlightChatPosition
       : "auto",
+  spotlightTiles:
+    stored.spotlightTiles && POSITIONS.includes(stored.spotlightTiles)
+      ? stored.spotlightTiles
+      : "auto",
+  spotlightTilesSize: {
+    horizontal: storedFraction(stored.spotlightTilesSize?.horizontal),
+    vertical: storedFraction(stored.spotlightTilesSize?.vertical),
+  },
   listOrder:
     stored.listOrder && preferenceValues.listOrder.includes(stored.listOrder)
       ? stored.listOrder
@@ -98,7 +109,14 @@ systemTheme.addEventListener("change", () => {
     dispatchEvent(new Event("preferenceschange"));
   }
 });
-function setPreference(key: keyof Preferences, value: string) {
+function persistPreferences() {
+  try {
+    localStorage.setItem("tg.preferences", JSON.stringify(preferences));
+  } catch {
+    /* Preferences still work for this visit. */
+  }
+}
+function setPreference(key: keyof typeof preferenceValues, value: string) {
   if (!preferenceValues[key]?.includes(value)) return;
   if (key === "language")
     preferences.language = value as Preferences["language"];
@@ -116,13 +134,31 @@ function setPreference(key: keyof Preferences, value: string) {
     preferences.spotlightChatPosition =
       value as Preferences["spotlightChatPosition"];
   else preferences.theme = value as Preferences["theme"];
-  try {
-    localStorage.setItem("tg.preferences", JSON.stringify(preferences));
-  } catch {
-    /* Preferences still work for this visit. */
-  }
+  persistPreferences();
   applyPreferences();
   dispatchEvent(new Event("preferenceschange"));
 }
+// Where the small tiles sit beside the spotlight, and how much room that side gets: no fraction keeps the size saved for
+// it, null hands it back. Auto hands every size back. It only moves tiles, so it skips the preferenceschange refresh: a
+// drag of the divider lands here on every move.
+function setSpotlightTiles(position: string, fraction?: number | null) {
+  if (!POSITIONS.includes(position)) return;
+  preferences.spotlightTiles = position as ChatPosition;
+  if (position === "auto") preferences.spotlightTilesSize = {};
+  else if (fraction !== undefined)
+    preferences.spotlightTilesSize = {
+      ...preferences.spotlightTilesSize,
+      [position === "left" || position === "right" ? "horizontal" : "vertical"]:
+        fraction ?? undefined,
+    };
+  persistPreferences();
+}
 
-export { preferences, tr, translateTree, relocalizeMessage, setPreference };
+export {
+  preferences,
+  tr,
+  translateTree,
+  relocalizeMessage,
+  setPreference,
+  setSpotlightTiles,
+};

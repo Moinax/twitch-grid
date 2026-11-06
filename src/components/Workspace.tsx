@@ -4,6 +4,13 @@ export function Workspace({ actions }: { actions: WorkspaceActions }) {
     <>
       <main id="main">
         <div id="grid"></div>
+        <div
+          className="chat-resize spotlight-resize"
+          role="separator"
+          tabIndex={0}
+          aria-label="Redimensionner les tuiles"
+          data-i18n-aria-label="Redimensionner les tuiles"
+        />
         <section id="empty" aria-labelledby="empty-title">
           <span className="hero">
             <span className="float">
