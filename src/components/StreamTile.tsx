@@ -70,6 +70,12 @@ export function StreamTile({
           <span className="stream-title"></span>
         </div>
         <span className="viewers"></span>
+        <span
+          className="uptime"
+          title="Temps de stream"
+          data-i18n-title="Temps de stream"
+          hidden
+        ></span>
         <div className="actions">
           <details className="collaboration" hidden>
             <CollaborationMenu />

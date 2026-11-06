@@ -3246,6 +3246,41 @@ test('spotlight chat defaults allow tile overrides and settings replace them', a
   expect(errors).toEqual([]);
 });
 
+test('the tile header counts the time since the stream started, until it ends', async ({ page }) => {
+  const now = Date.UTC(2026, 0, 1, 12), elapsed = (2 * 3600 + 5 * 60 + 9) * 1000;
+  let online = true;
+  const errors = await setup(page);
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  await page.route('**/api/search?**', route => route.fulfill({ json: { data: ['one', 'two'].map(login => ({
+    broadcaster_login: login, display_name: login, is_live: online, viewer_count: 42,
+    started_at: online ? new Date(now - elapsed).toISOString() : '',
+  })) } }));
+  await page.addInitScript(() => localStorage.setItem('tg.layout.guest', JSON.stringify({ order: ['one', 'two'], focused: 'one' })));
+  await page.clock.setFixedTime(new Date(now));
+  await page.goto('/');
+  const uptime = page.locator('#grid .big .uptime');
+  await expect(uptime).toHaveText('2:05:09');
+  const small = page.locator('#grid .tile:not(.big)');
+  await small.evaluate(el => { el.style.width = '350px'; });
+  await expect(small.locator('.uptime')).toBeHidden();
+  await page.clock.setFixedTime(new Date(now + 60000));
+  await expect(uptime).toHaveText('2:06:09');
+  await page.clock.setFixedTime(new Date(now - 3 * 3600000));
+  await expect(uptime).toHaveText('0:00:00');
+  const viewers = page.locator('#grid .big .viewers');
+  const viewersIcon = () => viewers.evaluate(el => getComputedStyle(el, '::before').content);
+  expect(await viewersIcon()).not.toBe('none');
+  await page.evaluate(() => tiles.get('one').player.emit('offline'));
+  await expect(uptime).toBeHidden();
+  await expect(viewers).toHaveText('Hors ligne');
+  expect(await viewersIcon()).toBe('none');
+  online = false;
+  await expect.poll(() => page.evaluate(() => refreshInFlight)).toBe(false);
+  await page.evaluate(() => refresh());
+  await expect(small.locator('.uptime')).toHaveAttribute('hidden', '');
+  expect(errors).toEqual([]);
+});
+
 test('the sidebar order follows viewers, watch time or stream start', async ({ page }) => {
   const hour = 3600000, now = Date.UTC(2026, 0, 1, 12);
   const channels = {

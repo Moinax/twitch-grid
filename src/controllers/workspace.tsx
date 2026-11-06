@@ -45,6 +45,12 @@ import {
 import { GridStore } from "../services/grids";
 import { credit, decayed, type WatchEntry } from "../services/watchtime";
 
+function formatUptime(elapsed: number) {
+  const seconds = Math.max(0, Math.floor(elapsed / 1000)), // a viewer's clock can sit behind Twitch's
+    pad = (value: number) => String(value).padStart(2, "0");
+  return `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+}
+
 export function startWorkspace(
   views: WorkspaceViews,
   actions: WorkspaceActions,
@@ -963,8 +969,11 @@ export function startWorkspace(
         : collaborations.get(s.twitch)?.participants || [],
     );
     t.bar.querySelector<HTMLImageElement>(".stream-avatar")!.src = s.profileUrl;
-    t.bar.querySelector<HTMLElement>(".viewers")!.textContent =
+    const viewerCount = t.bar.querySelector<HTMLElement>(".viewers")!;
+    viewerCount.textContent =
       s.online === false ? tr("Hors ligne") : s.viewersAmount.formatted;
+    viewerCount.classList.toggle("off", s.online === false);
+    paintUptime(t);
     const info = t.bar.querySelector<HTMLElement>(".stream-info")!;
     const game = s.online === false ? "" : s.game,
       title = s.online === false ? "" : s.title;
@@ -1818,6 +1827,12 @@ export function startWorkspace(
     spot.setAttribute("aria-pressed", String(front));
     paintSound(t);
   }
+  function paintUptime(t: Tile) {
+    const uptime = t.bar.querySelector<HTMLElement>(".uptime")!,
+      started = t.channel.online === false ? 0 : t.channel.startedAt; // the player reports the end before the next status clears startedAt
+    uptime.hidden = !started;
+    if (started) uptime.textContent = formatUptime(Date.now() - started);
+  }
   // Saved intent survives reloads; the icon reports whether the current player is actually unmuted.
   function playerMuted(t: Tile) {
     return (
@@ -2446,6 +2461,7 @@ export function startWorkspace(
     tiles.forEach((t) => {
       watchdog(t);
       paint(t);
+      paintUptime(t);
     });
     markPreview();
     updateAudioOverlay();
@@ -2537,7 +2553,7 @@ export function startWorkspace(
       for (const name of ["id", "title", "data-tip"]) el.removeAttribute(name);
     }
     for (const control of header.querySelectorAll<HTMLElement>(
-      "button, details, .snd-wrap, .stream-info, .viewers",
+      "button, details, .snd-wrap, .stream-info, .viewers, .uptime",
     ))
       control.remove();
     const tile = tiles.get(dragPointer.login)!,

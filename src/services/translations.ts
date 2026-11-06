@@ -213,6 +213,7 @@ export const translations: Record<string, [string, string]> = {
   Lecture: ["Play", "Afspelen"],
   Pause: ["Pause", "Pauze"],
   "Hors ligne": ["Offline", "Offline"],
+  "Temps de stream": ["Stream uptime", "Streamduur"],
   "En direct": ["Live", "Live"],
   "Chaîne Twitch": ["Twitch channel", "Twitch-kanaal"],
   "Fais défiler pour lire": ["Scroll to play", "Scroll om af te spelen"],
